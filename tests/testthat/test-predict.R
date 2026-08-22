@@ -126,7 +126,7 @@ test_that("norm_assess requires newdata, honours by=, checks every covariate, an
   expect_true(".group" %in% names(a$marginal))
   expect_setequal(a$marginal$.group, levels(test$site))
   expect_equal(sum(a$marginal$n), nrow(test))
-  expect_equal(sort(unique(a$conditional$covariate)), "age")
+  expect_equal(sort(unique(a$conditional$covariate)), c("age", "sex"))
   expect_true(all(c("location_se", "scale_se") %in% names(a$conditional)))
   expect_true(all(a$conditional$location_se > 0))
   ov <- a$overall
@@ -195,4 +195,101 @@ test_that("shifted log density agrees with the distribution methods", {
     shifted_log_density(dist_unpack(total), y[1:10], -0.2, 0.05),
     dist_log_density(shift_params(total, -0.2, 0.05), y[1:10])
   )
+})
+
+test_that("an unseen parametric factor level NAs only its own rows", {
+  dat <- norm_simulate(120, seed = 7)
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), dat, "y")
+  new <- dat[1:6, ]
+  new$sex <- as.character(new$sex)
+  new$sex[2] <- "X"
+  for (unc in c("conditional", "total")) {
+    sc <- predict(fit, newdata = new, uncertainty = unc, allow_extrapolation = TRUE)
+    expect_equal(sc$status, c("ok", "new_group", "ok", "ok", "ok", "ok"))
+    expect_true(is.na(sc$z[[2]]))
+    expect_true(all(is.finite(sc$z[-2])))
+    expect_equal(sc$z[-2], predict(fit, new[-2, ], uncertainty = unc)$z)
+  }
+  # all rows unseen: every row NA, no error
+  new$sex <- "X"
+  sc <- predict(fit, newdata = new, uncertainty = "total")
+  expect_true(all(is.na(sc$z)))
+  expect_true(all(sc$status == "new_group"))
+})
+
+test_that("allow_extrapolation = FALSE masks every probability column and new groups", {
+  dat <- norm_simulate(120, seed = 8)
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + s(site, bs = "re")), dat, "y")
+  new <- dat[1:4, ]
+  new$age[1] <- 200
+  new$site <- as.character(new$site)
+  new$site[2] <- "ZZ"
+  sc <- predict(fit, new, uncertainty = "conditional")
+  expect_equal(sc$support[1:2], c("out", "new_group"))
+  for (col in c("z", "centile", "tail_prob", "tail_surprisal", "log_density")) {
+    expect_true(all(is.na(sc[[col]][1:2])), info = col)
+    expect_true(all(is.finite(sc[[col]][3:4])), info = col)
+  }
+  sc2 <- predict(fit, new, uncertainty = "conditional", allow_extrapolation = TRUE)
+  expect_true(all(is.finite(sc2$z)))
+})
+
+test_that("calibration leaves calibrated = FALSE where no map could be estimated", {
+  dat <- norm_simulate(200, seed = 9)
+  fit <- norm_fit(simple_spec(), data = dat[1:120, ], outcomes = "y")
+  cal <- dat[121:160, ]
+  cal$site <- as.character(cal$site)
+  cal$site[1] <- "solo" # one row: no map for this group, pooled map applies
+  fit_by <- norm_calibrate(fit, data = cal, by = site)
+  expect_null(fit_by$calibration$maps$y$solo)
+  new <- dat[161:170, ]
+  new$site <- as.character(new$site)
+  new$site[1] <- "solo"
+  sc <- predict(fit_by, new, uncertainty = "conditional")
+  expect_true(all(sc$calibrated))
+  # an outcome with a single calibration row has no map at all
+  fit1 <- norm_calibrate(fit, data = dat[121, ])
+  expect_null(fit1$calibration$maps$y$.global)
+  sc1 <- predict(fit1, new, uncertainty = "conditional")
+  expect_true(all(!sc1$calibrated))
+  expect_equal(sc1$z, predict(fit, new, uncertainty = "conditional")$z)
+})
+
+test_that("norm_support gives NA d2 for rows with a missing covariate", {
+  dat <- norm_simulate(120, seed = 10)
+  dat$x2 <- dat$age / 2 + stats::rnorm(120)
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ age + x2), dat, "y")
+  new <- dat[1:3, ]
+  new$x2[2] <- NA
+  st <- norm_support(fit, new)
+  expect_equal(st$support[2], "unknown")
+  expect_true(is.na(st$d2[2]))
+  expect_true(all(is.finite(st$d2[-2])))
+})
+
+test_that("the conditional table tests drift properly and covers factor levels", {
+  dat <- norm_simulate(1500, seed = 12)
+  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
+  new <- norm_simulate(400, seed = 13)
+  a <- norm_assess(fit, new)
+  cond <- a$conditional
+  expect_true(all(c("level", "n", "location_p", "scale_p") %in% names(cond)))
+  num <- cond[is.na(cond$level), ]
+  expect_equal(num$covariate, "age")
+  # correctly specified: no drift detected
+  expect_gt(num$location_p, 0.01)
+  expect_gt(num$scale_p, 0.01)
+  lev <- cond[!is.na(cond$level), ]
+  expect_setequal(lev$level, c("F", "M"))
+  expect_equal(lev$covariate, rep("sex", 2))
+  expect_true(all(abs(lev$location_drift) < 3 * lev$location_se))
+  expect_true(all(lev$location_p > 0.001))
+  # a shifted group is detected
+  shifted <- new
+  shifted$y[shifted$sex == "M"] <- shifted$y[shifted$sex == "M"] + 1
+  b <- norm_assess(fit, shifted)$conditional
+  expect_lt(b$location_p[b$level %in% "M"], 1e-4)
+  g <- glance(a)
+  expect_true(all(c("smse", "ev") %in% names(g)))
+  expect_equal(g$ev, a$overall$ev)
 })

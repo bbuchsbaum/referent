@@ -22,9 +22,10 @@ norm_crossfit(
 
 \item{outcomes}{Outcome selection, as in \code{\link[=norm_fit]{norm_fit()}}.}
 
-\item{folds}{Number of folds.}
+\item{folds}{Number of folds (at least 2).}
 
-\item{strata}{Optional stratification column.}
+\item{strata}{Optional stratification column. Rows with a missing
+stratum form a stratum of their own.}
 
 \item{cluster}{Optional cluster / subject column. Entire clusters stay
 in one fold.}

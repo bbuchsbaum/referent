@@ -100,3 +100,16 @@ test_that("fits are reproducible under a parallel future plan", {
   b <- predict(par_fit, newdata = dat[1:5, ], uncertainty = "conditional")
   expect_equal(a$z, b$z, tolerance = 1e-10)
 })
+
+test_that("named smooth arguments such as k = kk are not covariates", {
+  kk <- 6
+  spec <- norm_spec(norm_gaussian(), ~ s(age, k = kk) + sex + s(site, bs = "re"),
+                    scale = ~ s(age, k = kk, by = sex))
+  expect_setequal(spec_covariates(spec), c("age", "sex", "site"))
+  dat <- norm_simulate(150, seed = 14)
+  fit <- norm_fit(spec, dat, "y")
+  expect_equal(fit$covariates, c("age", "sex", "site"))
+  expect_equal(unname(fit_statuses(fit)), "ok")
+  sc <- predict(fit, dat[1:3, ], uncertainty = "conditional")
+  expect_true(all(is.finite(sc$z)))
+})

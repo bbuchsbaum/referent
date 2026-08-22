@@ -23,7 +23,8 @@ covariate-dependent skew/tail model.}
 \value{
 A \code{norm_selection}: the selected spec and name, the selected
 model's cross-fit scores, and a \code{comparison} table with the
-out-of-fold log score, CRPS, and calibration gate values per model.
+out-of-fold log score, CRPS, the paired standard errors used by the
+one-SE rule, and calibration gate values per model.
 }
 \description{
 Every criterion is computed from out-of-fold cross-fitted scores:
@@ -37,9 +38,10 @@ calibration gate below).
 out-of-fold CRPS.
 \item Keep the candidates within one standard error of the best, where
 the standard error is that of the \emph{paired} per-observation
-log-density difference against the best model. A candidate whose
-CRPS is worse than the best by more than one paired standard error
-is dropped as well.
+log-density difference between the candidate and the best model
+(column \code{se_log_score_paired}; 0 for the best model itself). A
+candidate whose CRPS is worse than the best by more than one paired
+standard error (\code{se_crps_paired}) is dropped as well.
 \item Require \code{shape_threshold} extra mean log score before accepting any
 spec with covariate-dependent skew or tail.
 \item Choose the simplest remaining model (lowest ladder level).

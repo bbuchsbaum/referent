@@ -147,3 +147,43 @@ test_that("total-uncertainty adaptation propagates the offset SE exactly for a d
   c_ad <- predict(ad, newdata = new, type = "distribution", uncertainty = "conditional")$y
   expect_equal(variance(c_ad), variance(c_base))
 })
+
+test_that("joint location+scale adaptation is not biased by feedback between the offsets", {
+  # A site shifted by 6 units (~4.6 SD) with log-scale 0.2. The shrunk
+  # targets are n / (n + prior_n) * 6 for the location and about
+  # 2n / (2n + prior_n) * 0.2 for the log scale; with zero priors the
+  # truth itself. Under the old joint fit the location came out at a
+  # third of the truth at n = 20 and the log scale at 0.7.
+  ref <- norm_simulate(1000, seed = 100)
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), data = ref, outcomes = "y")
+  one <- function(seed, n_local, lp = 10, sp = 25) {
+    site <- norm_simulate(n_local + 1000, site_shift = 6, site_log_scale = 0.2, seed = seed)
+    loc <- site[seq_len(n_local), ]
+    held <- site[-seq_len(n_local), ]
+    ad <- norm_adapt(fit, loc, parameters = c("location", "scale"),
+                     location_prior_n = lp, scale_prior_n = sp)
+    off <- ad$adaptation$offsets$y$.all
+    both <- norm_adapt(fit, loc, parameters = "location", location_prior_n = lp)
+    sc <- predict(ad, held, uncertainty = "conditional", allow_extrapolation = TRUE)
+    c(location = off$location, location_se = off$location_se, scale = off$scale,
+      scale_se = off$scale_se, loc_only = both$adaptation$offsets$y$.all$location,
+      var_z = stats::var(sc$z))
+  }
+  small <- t(sapply(1:6, one, n_local = 20))
+  # the scale estimate must not drag the location away from the
+  # location-only estimate, and the log scale must not explode
+  expect_equal(small[, "location"], small[, "loc_only"], tolerance = 1e-3)
+  expect_lt(abs(mean(small[, "location"]) - 20 / 30 * 6), 0.4)
+  expect_lt(mean(small[, "scale"]), 0.45)
+
+  mid <- t(sapply(1:6, one, n_local = 200))
+  expect_lt(abs(mean(mid[, "location"]) - 200 / 210 * 6), 2 * mean(mid[, "location_se"]))
+  expect_lt(abs(mean(mid[, "scale"]) - 400 / 425 * 0.2), 2 * mean(mid[, "scale_se"]))
+  expect_true(all(abs(mid[, "location"] - 200 / 210 * 6) < 3 * mid[, "location_se"]))
+  expect_lt(abs(mean(mid[, "var_z"]) - 1), 0.1)
+  expect_true(all(abs(mid[, "var_z"] - 1) < 0.3))
+
+  free <- t(sapply(1:6, one, n_local = 200, lp = 0, sp = 0))
+  expect_lt(abs(mean(free[, "location"]) - 6), 0.15)
+  expect_lt(abs(mean(free[, "scale"]) - 0.2), 0.05)
+})

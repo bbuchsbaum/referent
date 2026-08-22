@@ -9,9 +9,10 @@
 #'    out-of-fold CRPS.
 #' 4. Keep the candidates within one standard error of the best, where
 #'    the standard error is that of the *paired* per-observation
-#'    log-density difference against the best model. A candidate whose
-#'    CRPS is worse than the best by more than one paired standard error
-#'    is dropped as well.
+#'    log-density difference between the candidate and the best model
+#'    (column `se_log_score_paired`; 0 for the best model itself). A
+#'    candidate whose CRPS is worse than the best by more than one paired
+#'    standard error (`se_crps_paired`) is dropped as well.
 #' 5. Require `shape_threshold` extra mean log score before accepting any
 #'    spec with covariate-dependent skew or tail.
 #' 6. Choose the simplest remaining model (lowest ladder level).
@@ -37,7 +38,8 @@
 #' @param ... Passed to [norm_crossfit()].
 #' @return A `norm_selection`: the selected spec and name, the selected
 #'   model's cross-fit scores, and a `comparison` table with the
-#'   out-of-fold log score, CRPS, and calibration gate values per model.
+#'   out-of-fold log score, CRPS, the paired standard errors used by the
+#'   one-SE rule, and calibration gate values per model.
 #' @export
 norm_select <- function(specs,
                         data,
@@ -66,7 +68,7 @@ norm_select <- function(specs,
     if (inherits(cf, "error") || !any(cf$status == "ok")) {
       return(tibble::tibble(
         model = nm, level = level, status = "nonconverged", shape = shape,
-        mean_log_score = -Inf, se_log_score = NA_real_, crps = Inf,
+        mean_log_score = -Inf, crps = Inf,
         n = 0L, mean_z = NA_real_, var_z = NA_real_, cover_95 = NA_real_,
         tail_05 = NA_real_, calibrated = FALSE, selected = FALSE
       ))
@@ -80,7 +82,6 @@ norm_select <- function(specs,
       status = if (all(cf$status %in% c("ok", "missing_predictor"))) "ok" else "partial",
       shape = shape,
       mean_log_score = mean(cf$log_density[ok]),
-      se_log_score = se_mean(cf$log_density),
       crps = mean(cf$crps, na.rm = TRUE),
       n = sum(ok),
       mean_z = stats::weighted.mean(marg$mean_z, marg$n),
@@ -106,10 +107,13 @@ norm_select <- function(specs,
   }
   ord <- order(-survivors$mean_log_score, survivors$crps)
   best <- survivors$model[[ord[[1L]]]]
-  paired <- paired_se(fits, best, survivors$model)
+  paired <- paired_se(fits, best, tab$model[usable])
+  tab$se_log_score_paired <- unname(paired$log_density[match(tab$model, names(paired$log_density))])
+  tab$se_crps_paired <- unname(paired$crps[match(tab$model, names(paired$crps))])
+  survivors <- tab[usable & tab$model %in% survivors$model, , drop = FALSE]
   within <- survivors$mean_log_score >= tab$mean_log_score[tab$model == best] -
-    paired$log_density &
-    survivors$crps <= tab$crps[tab$model == best] + paired$crps
+    survivors$se_log_score_paired &
+    survivors$crps <= tab$crps[tab$model == best] + survivors$se_crps_paired
   cand <- survivors[within, , drop = FALSE]
   if (any(cand$shape) && any(!cand$shape)) {
     base_best <- max(cand$mean_log_score[!cand$shape])
@@ -133,20 +137,19 @@ spec_has_covariate_shape <- function(spec) {
   length(all.vars(spec$skew)) > 0L || length(all.vars(spec$tail)) > 0L
 }
 
-# Standard errors of the paired per-row differences (best minus model)
-# in log density and CRPS, keyed by (.row, .outcome).
+# Standard errors, per model, of the paired per-row differences (best
+# minus model) in log density and CRPS, keyed by (.row, .outcome). The
+# best model's own entries are 0.
 paired_se <- function(fits, best, models) {
   ref <- fits[[best]]
   key_ref <- paste(ref$.row, ref$.outcome)
-  se_ld <- 0
-  se_crps <- 0
+  se_ld <- stats::setNames(rep(0, length(models)), models)
+  se_crps <- se_ld
   for (nm in setdiff(models, best)) {
     cf <- fits[[nm]]
     m <- match(paste(cf$.row, cf$.outcome), key_ref)
-    d_ld <- ref$log_density[m] - cf$log_density
-    d_crps <- ref$crps[m] - cf$crps
-    se_ld <- max(se_ld, se_mean(d_ld), na.rm = TRUE)
-    se_crps <- max(se_crps, se_mean(d_crps), na.rm = TRUE)
+    se_ld[[nm]] <- se_mean(ref$log_density[m] - cf$log_density)
+    se_crps[[nm]] <- se_mean(ref$crps[m] - cf$crps)
   }
   list(log_density = se_ld, crps = se_crps)
 }

@@ -9,14 +9,22 @@
 #' (log scale) are estimated per outcome and group by penalised maximum
 #' likelihood on the reference family's own density with the shared
 #' trajectory frozen, so the estimates are correct for SHASH as well as
-#' Gaussian fits. The ridge penalties are worth `location_prior_n` and
-#' `scale_prior_n` pseudo-observations of Fisher information, giving a
-#' shrinkage factor of about \eqn{n/(n + \text{prior}_n)}. For a Gaussian
+#' Gaussian fits. The estimation is in two stages: the location offset
+#' with the scale held at the reference's, then the scale offset given
+#' that location. (A joint fit lets the shrunk-away part of the location
+#' inflate the scale, which in turn weakens the location likelihood; at
+#' small local n that feedback roughly halves the location estimate.)
+#' The ridge penalties are worth `location_prior_n` and `scale_prior_n`
+#' pseudo-observations of Fisher information, giving a shrinkage factor
+#' of \eqn{n/(n + \text{prior}_n)} on the location and about
+#' \eqn{2n/(2n + \text{prior}_n)} on the log scale. For a Gaussian
 #' fit this is the shrunk mean residual and
 #' \eqn{\tfrac12\log \mathrm{mean}(z^2)} with \eqn{z} the normal scores
 #' under the location-shifted reference; a site drawn from the reference
 #' generator has an expected offset of zero. Standard errors come from
-#' the penalised Hessian.
+#' the penalised Hessian and do not include the shrinkage bias, so with
+#' the default priors a large true offset is recovered only as its
+#' shrunk value.
 #'
 #' Adaptation is applied inside [predict.norm_fit()]: the location of
 #' every predictive distribution (including coefficient draws under
@@ -88,12 +96,20 @@ norm_adapt <- function(fit,
   fit
 }
 
-# Penalised maximum-likelihood offsets on the family's own density. The
-# location offset is parameterised in units of the mean predictive SD and
-# the scale offset on the log scale, with ridge penalties equal to
-# `prior_n` pseudo-observations of Fisher information, so the shrinkage
-# factor is about n / (n + prior_n) for both. For a Gaussian family the
-# estimates are the shrunk mean residual and 0.5 * log(mean(z^2)).
+# Penalised maximum-likelihood offsets on the family's own density,
+# estimated in two stages so that the two offsets do not feed back on
+# each other. Stage 1 estimates the location with the scale held at the
+# reference's, in units of the mean predictive SD `s_bar`, under a ridge
+# worth `location_prior_n` pseudo-observations: for a Gaussian family the
+# shrunk mean residual, n / (n + prior_n) times the sample mean. Stage 2
+# estimates the log scale given that location under a ridge worth
+# `scale_prior_n` pseudo-observations (the Fisher information for the log
+# scale is 2n, so the penalty is scale_prior_n * log_s^2). Estimating
+# the two jointly lets an unshrunk part of the location leak into the
+# scale, whose inflation weakens the location likelihood and shrinks the
+# location further; at small n that loop halves the location estimate.
+# Standard errors are from the penalised Hessian at the final estimate
+# and do not include the shrinkage bias.
 estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) {
   ok <- is.finite(y)
   n <- sum(ok)
@@ -119,12 +135,17 @@ estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) 
     -ll + 0.5 * location_prior_n * theta[[1L]]^2 +
       (if (fit_scale) scale_prior_n * log_s^2 else 0)
   }
-  opt <- stats::optim(if (fit_scale) c(0, 0) else 0, objective,
-                      method = "BFGS", hessian = TRUE)
-  se <- tryCatch(sqrt(diag(solve(opt$hessian))), error = function(e) rep(NA_real_, 2))
+  theta1 <- stats::optimize(function(t) objective(c(t, 0)), c(-50, 50))$minimum
+  theta <- theta1
+  if (fit_scale) {
+    theta2 <- stats::optimize(function(t) objective(c(theta1, t)), c(-6, 6))$minimum
+    theta <- c(theta1, theta2)
+  }
+  hess <- tryCatch(stats::optimHess(theta, objective), error = function(e) NULL)
+  se <- tryCatch(sqrt(diag(solve(hess))), error = function(e) rep(NA_real_, 2))
   list(
-    location = opt$par[[1L]] * s_bar,
-    scale = if (fit_scale) opt$par[[2L]] else 0,
+    location = theta[[1L]] * s_bar,
+    scale = if (fit_scale) theta[[2L]] else 0,
     n = n,
     location_se = se[[1L]] * s_bar,
     scale_se = if (fit_scale) se[[2L]] else NA_real_,

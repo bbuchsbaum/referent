@@ -37,3 +37,19 @@ test_that("joint centiles are calibrated irrespective of how many outcomes are o
   far$z <- c(4, 4, 4)
   expect_gt(predict(jt, far)$joint_centile, 0.99)
 })
+
+test_that("norm_joint drops constant outcomes instead of producing a NaN correlation", {
+  dat <- norm_simulate(100, seed = 3)
+  dat$const <- 1
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5)), dat,
+                  c("y", "marker_01", "const"))
+  aug <- augment(fit, dat, uncertainty = "conditional")
+  expect_message(joint <- norm_joint(aug), "const")
+  expect_equal(joint$outcomes, c("y", "marker_01"))
+  expect_true(all(is.finite(joint$correlation)))
+  expect_true(is.finite(attr(joint$correlation, "lambda")))
+  pr <- predict(joint, aug)
+  expect_true(all(is.finite(pr$joint_z)))
+  expect_equal(pr$n_observed, rep(2L, nrow(aug)))
+  expect_error(norm_joint(aug[, ".z_const", drop = FALSE]), "finite")
+})

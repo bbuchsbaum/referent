@@ -42,14 +42,22 @@ Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
 (log scale) are estimated per outcome and group by penalised maximum
 likelihood on the reference family's own density with the shared
 trajectory frozen, so the estimates are correct for SHASH as well as
-Gaussian fits. The ridge penalties are worth \code{location_prior_n} and
-\code{scale_prior_n} pseudo-observations of Fisher information, giving a
-shrinkage factor of about \eqn{n/(n + \text{prior}_n)}. For a Gaussian
+Gaussian fits. The estimation is in two stages: the location offset
+with the scale held at the reference's, then the scale offset given
+that location. (A joint fit lets the shrunk-away part of the location
+inflate the scale, which in turn weakens the location likelihood; at
+small local n that feedback roughly halves the location estimate.)
+The ridge penalties are worth \code{location_prior_n} and \code{scale_prior_n}
+pseudo-observations of Fisher information, giving a shrinkage factor
+of \eqn{n/(n + \text{prior}_n)} on the location and about
+\eqn{2n/(2n + \text{prior}_n)} on the log scale. For a Gaussian
 fit this is the shrunk mean residual and
 \eqn{\tfrac12\log \mathrm{mean}(z^2)} with \eqn{z} the normal scores
 under the location-shifted reference; a site drawn from the reference
 generator has an expected offset of zero. Standard errors come from
-the penalised Hessian.
+the penalised Hessian and do not include the shrinkage bias, so with
+the default priors a large true offset is recovered only as its
+shrunk value.
 
 Adaptation is applied inside \code{\link[=predict.norm_fit]{predict.norm_fit()}}: the location of
 every predictive distribution (including coefficient draws under

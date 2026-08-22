@@ -12,7 +12,7 @@ test_that("frozen bundle is small and reproduces the fit after a round trip", {
     thawed <- readRDS(path)
     size <- function(x) length(suppressWarnings(serialize(x, NULL)))
     expect_lt(size(bundle), 0.8 * size(fit), label = paste(nm, "bundle size"))
-    expect_null(thawed$models$y$model$model)
+    expect_equal(nrow(thawed$models$y$model$model), 0L)
     expect_null(thawed$models$y$model$family)
     expect_null(thawed$models$y$model$fitted.values)
     for (u in c("conditional", "total")) {

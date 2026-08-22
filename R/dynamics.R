@@ -295,10 +295,18 @@ fit_process <- function(process, z, id, time, ident = NULL) {
   }
   best <- fits[ok][[which.min(vapply(fits[ok], `[[`, numeric(1), "value"))]]
   theta <- best$par
-  hess <- tryCatch(
-    stats::optimHess(theta, process_nll, process = process, pd = pd),
-    error = function(e) NULL
-  )
+  # An optimum on the box is not an interior maximum: the curvature there
+  # says nothing about the sampling variability, so no standard errors
+  # are reported and the fit is flagged.
+  at_boundary <- any(abs(theta - lower) < 1e-6 | abs(theta - upper) < 1e-6)
+  hess <- if (at_boundary) {
+    NULL
+  } else {
+    tryCatch(
+      stats::optimHess(theta, process_nll, process = process, pd = pd),
+      error = function(e) NULL
+    )
+  }
   vc <- NULL
   if (!is.null(hess) && all(is.finite(hess))) {
     vc <- tryCatch(solve(hess), error = function(e) NULL)
@@ -325,13 +333,20 @@ fit_process <- function(process, z, id, time, ident = NULL) {
     vcov = vc,
     nll = best$value,
     identified = TRUE,
-    ell_identified = !stable,
+    ell_identified = !stable && !at_boundary,
+    at_boundary = at_boundary,
     reduced = reduced,
     r_median = r_med,
     r_median_se = r_se,
     median_lag = med_lag,
     n_subject = pd$n_subject,
-    reason = if (reduced) "lags do not vary; Matern length-scale not identified, stable kernel used" else NULL,
+    reason = if (at_boundary) {
+      "optimum at the parameter boundary; estimates are limits, no standard errors"
+    } else if (reduced) {
+      "lags do not vary; Matern length-scale not identified, stable kernel used"
+    } else {
+      NULL
+    },
     components = c(stable = psi$tau_b^2, dynamic = psi$tau_g^2, measurement = psi$sigma_e^2)
   )
 }
@@ -350,6 +365,7 @@ process_components <- function(processes) {
       .outcome = nm,
       process = pr$process$name,
       identified = isTRUE(pr$identified),
+      at_boundary = isTRUE(pr$at_boundary),
       stable = unname(pr$components[["stable"]]),
       dynamic = unname(pr$components[["dynamic"]]),
       measurement = unname(pr$components[["measurement"]]),

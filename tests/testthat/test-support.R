@@ -10,8 +10,10 @@ test_that("out-of-range ages are out, near-boundary ages are edge, and z is mask
   expect_equal(sc$support, st$support)
   expect_true(all(is.na(sc$z[c(1, 3)])))
   expect_true(all(is.finite(sc$z[c(2, 4)])))
-  # centiles are still computed; only z is masked for out-of-support rows
-  expect_true(all(is.finite(sc$centile)))
+  # every probability column is masked together with z; median is kept
+  expect_true(all(is.na(sc$centile[c(1, 3)])))
+  expect_true(all(is.finite(sc$centile[c(2, 4)])))
+  expect_true(all(is.finite(sc$median)))
   sc2 <- predict(fit, newdata = extra, uncertainty = "conditional", allow_extrapolation = TRUE)
   expect_true(all(is.finite(sc2$z)))
   expect_equal(sc2$z[c(2, 4)], sc$z[c(2, 4)])

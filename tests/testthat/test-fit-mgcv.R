@@ -83,3 +83,41 @@ test_that("predict carries the declared subject id", {
   sc <- predict(fit, newdata = dat[1:5, ], uncertainty = "conditional")
   expect_equal(as.character(sc$.id), dat$participant_id[1:5])
 })
+
+test_that("non-numeric outcomes are reported as unsupported_type without aborting the panel", {
+  dat <- norm_simulate(100, seed = 3)
+  dat$f <- factor(sample(c("a", "b"), 100, TRUE))
+  dat$lg <- dat$y > 10
+  dat$ch <- as.character(dat$f)
+  spec <- norm_spec(norm_gaussian(), ~ s(age, k = 5))
+  expect_silent(fit <- suppressMessages(norm_fit(spec, dat, c("y", "f", "lg", "ch"))))
+  expect_equal(unname(fit_statuses(fit)),
+               c("ok", "unsupported_type", "unsupported_type", "unsupported_type"))
+  expect_match(fit$models$f$message, "factor")
+  expect_null(fit$reference_baseline$f)
+  sc <- predict(fit, dat[1:3, ], uncertainty = "conditional")
+  expect_equal(unique(sc$status[sc$.outcome == "lg"]), "unsupported_type")
+  expect_true(all(is.finite(sc$z[sc$.outcome == "y"])))
+})
+
+test_that("norm_fit aborts when the id column is missing", {
+  dat <- norm_simulate(60, seed = 4)
+  spec <- norm_spec(norm_gaussian(), ~ age)
+  expect_error(norm_fit(spec, dat, "y", id = "nope"), "nope")
+  expect_error(norm_fit(spec, dat, "y", id = nope), "nope")
+})
+
+test_that("predicting on 0-row newdata with ok and failed outcomes gives a typed 0-row table", {
+  dat <- norm_simulate(100, seed = 3)
+  dat$const <- 1
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5)), dat, c("y", "const"))
+  expect_equal(unname(fit_statuses(fit)), c("ok", "insufficient_variation"))
+  for (unc in c("conditional", "total")) {
+    sc <- predict(fit, dat[0, ], uncertainty = unc)
+    expect_s3_class(sc, "norm_scores")
+    expect_equal(nrow(sc), 0L)
+    full <- predict(fit, dat[1:2, ], uncertainty = unc)
+    expect_equal(names(sc), names(full))
+    expect_equal(vapply(sc, class, ""), vapply(full, class, ""))
+  }
+})

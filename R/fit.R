@@ -1,6 +1,10 @@
 #' Fit distributional reference models
 #'
-#' Fits one model per outcome. A failed outcome does not abort the panel.
+#' Fits one model per outcome. A failed outcome does not abort the panel:
+#' a non-numeric outcome (factor, character, logical) gets the status
+#' `"unsupported_type"`, one with fewer than eight finite values or no
+#' spread `"insufficient_variation"`, and an engine failure
+#' `"nonconverged"`.
 #'
 #' @param spec A [norm_spec].
 #' @param data A data frame of reference observations.
@@ -34,26 +38,28 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
   id_quo <- rlang::enquo(id)
   id_name <- as_col_name(id_quo)
   if (!is.null(id_name) && !id_name %in% names(data)) {
-    id_name <- NULL
+    cli::cli_abort("{.arg id} column {.field {id_name}} not found in {.arg data}.")
   }
   covariate_names <- spec_covariates(spec)
   missing_cov <- setdiff(covariate_names, names(data))
   if (length(missing_cov)) {
     cli::cli_abort("Covariate{?s} {.field {missing_cov}} not found in {.arg data}.")
   }
+  failed <- function(nm, status, message) {
+    list(
+      engine = spec$engine, family = spec$family, outcome = nm,
+      status = status, message = message, model = NULL, spec = spec
+    )
+  }
   fit_one <- function(nm) {
     y <- data[[nm]]
-    if (stats::sd(y, na.rm = TRUE) < .Machine$double.eps ||
-        sum(is.finite(y)) < 8L) {
-      return(list(
-        engine = spec$engine,
-        family = spec$family,
-        outcome = nm,
-        status = "insufficient_variation",
-        message = "Outcome has insufficient variation.",
-        model = NULL,
-        spec = spec
-      ))
+    if (!is.numeric(y)) {
+      return(failed(nm, "unsupported_type", paste0(
+        "Outcome is ", class(y)[[1L]], "; only numeric outcomes are supported."
+      )))
+    }
+    if (sum(is.finite(y)) < 8L || stats::sd(y, na.rm = TRUE) < .Machine$double.eps) {
+      return(failed(nm, "insufficient_variation", "Outcome has insufficient variation."))
     }
     cc <- stats::complete.cases(data[, c(nm, covariate_names), drop = FALSE])
     n_drop <- sum(!cc)
@@ -96,6 +102,9 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
 reference_baseline <- function(data, outcomes) {
   out <- lapply(outcomes, function(nm) {
     y <- data[[nm]]
+    if (!is.numeric(y)) {
+      return(NULL)
+    }
     y <- y[is.finite(y)]
     if (length(y) < 2L) {
       return(NULL)
@@ -110,12 +119,32 @@ reference_baseline <- function(data, outcomes) {
   out
 }
 
-# Covariates are exactly the variables named in the spec's formulas.
+# Covariates are exactly the data variables named in the spec's formulas,
+# as mgcv reads them: inside a smooth call (`s()`, `te()`, `ti()`,
+# `t2()`) only the unnamed arguments and `by =` name data; named
+# arguments such as `k = kk` or `xt = list(...)` are evaluated in the
+# formula environment and are not covariates.
 spec_covariates <- function(spec) {
   unique(unlist(lapply(
     spec[c("location", "scale", "skew", "tail")],
-    all.vars
+    function(f) formula_variables(f[[length(f)]])
   ), use.names = FALSE))
+}
+
+formula_variables <- function(expr) {
+  if (is.name(expr)) {
+    return(as.character(expr))
+  }
+  if (!is.call(expr)) {
+    return(character())
+  }
+  fn <- as.character(expr[[1L]])[[1L]]
+  args <- as.list(expr)[-1L]
+  if (fn %in% c("s", "te", "ti", "t2")) {
+    nms <- names(args) %||% rep("", length(args))
+    args <- args[nms == "" | nms == "by"]
+  }
+  unique(unlist(lapply(args, formula_variables), use.names = FALSE))
 }
 
 # Fit outcomes in parallel when a non-sequential future plan is active.
@@ -202,15 +231,26 @@ fit_ok <- function(fit_one) {
 #'   location is identity-linked with constant scale); `"conditional"`
 #'   uses the point estimates.
 #' @param outcomes Optional subset of outcomes.
-#' @param allow_extrapolation If `FALSE` (default), severe out-of-support
-#'   rows have `z = NA`.
+#' @param allow_extrapolation If `FALSE` (default), rows with support
+#'   `"out"` or `"new_group"` have `NA` for `z`, `centile`, `tail_prob`,
+#'   `tail_surprisal`, and `log_density` (`median` and `residual` are
+#'   kept). An unseen level of a grouping covariate is extrapolation
+#'   unless the fit has been adapted to it with [norm_adapt()]; a
+#'   parametric factor has no prediction at all for such a row.
 #' @param n_draw Number of coefficient draws for `"total"`; defaults to
 #'   `spec$control$n_draw` or 200. Draws are seeded from
 #'   `spec$control$seed` (default 1) so repeated calls agree exactly.
+#'   With 200 draws the Monte Carlo error of a score is about 0.02 in
+#'   `z` near the centre and larger in the far tails; it falls as
+#'   \eqn{1/\sqrt{n_{draw}}}, so pass `n_draw = 2000` (or set
+#'   `control = list(n_draw = 2000)` in [norm_spec()]) for reporting
+#'   extreme centiles. The constant-scale Gaussian uses the exact
+#'   analytic total and is unaffected.
 #' @param ... Unused.
 #' @return For `"scores"`, a `norm_scores` tibble with one row per
 #'   observation and outcome. `status` is `"ok"`, `"missing_predictor"`
-#'   (a covariate is `NA`), or the fit status of a failed outcome.
+#'   (a covariate is `NA`), `"new_group"` (an unseen factor level), or
+#'   the fit status of a failed outcome.
 #'   For `"distribution"`, a tibble with `.id` and one
 #'   [distribution][dist_shash] column per outcome (missing distributions
 #'   for failed outcomes).
@@ -277,21 +317,31 @@ scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE
   cal_group <- calibration_groups(object$calibration, newdata)
   rows <- lapply(names(dists), function(nm) {
     d <- dists[[nm]]
-    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
+    y <- if (nm %in% names(newdata) && is.numeric(newdata[[nm]])) {
+      newdata[[nm]]
+    } else {
+      rep(NA_real_, n)
+    }
     if (is.null(d)) {
       sc <- as_scores(distributional::dist_missing(n), y)
       status <- rep(object$models[[nm]]$status %||% "nonconverged", n)
     } else {
       sc <- as_scores(d, y)
-      status <- ifelse(missing_cov, "missing_predictor", "ok")
+      status <- rep("ok", n)
+      status[support %in% "new_group"] <- "new_group"
+      status[missing_cov] <- "missing_predictor"
     }
-    calibrated <- FALSE
+    calibrated <- rep(FALSE, n)
     if (!is.null(cal_group) && !is.null(d)) {
       sc <- calibrate_scores(object$calibration, nm, cal_group, sc)
-      calibrated <- TRUE
+      calibrated <- sc$calibrated
+      sc$calibrated <- NULL
     }
     if (!isTRUE(allow_extrapolation)) {
-      sc$z[support %in% "out"] <- NA_real_
+      mask <- support %in% c("out", "new_group")
+      for (col in c("z", "centile", "tail_prob", "tail_surprisal", "log_density")) {
+        sc[[col]][mask] <- NA_real_
+      }
     }
     tibble::tibble(
       .row = seq_len(n),

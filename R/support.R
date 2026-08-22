@@ -41,7 +41,8 @@ support_reference <- function(data, covariate_names) {
 #' @param fit A [norm_fit].
 #' @param newdata Target data.
 #' @return A tibble with `.row`, `support`, and the squared Mahalanobis
-#'   distance `d2` (`NA` when there are fewer than two numeric covariates).
+#'   distance `d2` (`NA` when there are fewer than two numeric covariates
+#'   or the row has a missing covariate).
 #' @examples
 #' ref <- norm_simulate(80, seed = 1)
 #' spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
@@ -83,6 +84,7 @@ classify_support <- function(ref, newdata) {
       all(numeric_names %in% names(newdata))) {
     X <- scale_with_ref(newdata[, numeric_names, drop = FALSE], ref)
     d2 <- mahalanobis_safe(X, ref$cov)
+    d2[!stats::complete.cases(newdata[, numeric_names, drop = FALSE])] <- NA_real_
     q <- stats::qchisq(0.99, df = max(ncol(X), 1))
     status[is.finite(d2) & d2 > q & status == "in"] <- "edge"
     status[is.finite(d2) & d2 > q * 2] <- "out"
@@ -100,16 +102,17 @@ scale_with_ref <- function(data, ref) {
     }
     X[, j] <- (X[, j] - ref$numeric[[nm]]$mean) / s
   }
-  X[!is.finite(X)] <- 0
   X
 }
 
+# Squared Mahalanobis distance per row; NA for rows with a missing
+# covariate and for every row when the covariance is singular.
 mahalanobis_safe <- function(X, cov) {
   cov <- as.matrix(cov)
   cov <- cov + diag(1e-6, nrow(cov))
   inv <- tryCatch(solve(cov), error = function(e) NULL)
   if (is.null(inv)) {
-    return(rep(0, nrow(X)))
+    return(rep(NA_real_, nrow(X)))
   }
   rowSums((X %*% inv) * X)
 }

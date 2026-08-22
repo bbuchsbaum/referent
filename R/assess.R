@@ -26,9 +26,16 @@
 #' `rmse`, `mae`, `mean_log_score`, and `crps` are the usual proper and
 #' point scores.
 #'
-#' `conditional` fits light diagnostic GAMs of \eqn{z} and \eqn{z^2 - 1}
-#' against every numeric covariate the model uses and reports the
-#' largest fitted drift with the GAM standard error at that point.
+#' `conditional` checks the scores against every covariate the model
+#' uses. For a numeric covariate it fits light diagnostic GAMs of
+#' \eqn{z} and \eqn{z^2 - 1} against it and reports the largest absolute
+#' fitted value with its pointwise standard error (`location_drift`,
+#' `location_se`, `scale_drift`, `scale_se`; descriptive amplitudes, since
+#' the maximum is selected) and the approximate p-value of the smooth
+#' term (`location_p`, `scale_p`), which is the test of no drift. For a
+#' factor covariate it reports one row per `level` with the mean of
+#' \eqn{z} and the excess of \eqn{\mathrm{var}(z)} over 1, their standard
+#' errors, and two-sided p-values.
 #'
 #' @param fit A [norm_fit].
 #' @param newdata Held-out validation data (required; training data are
@@ -156,35 +163,81 @@ std_moment <- function(x, k) {
 
 assess_conditional <- function(scores, newdata, fit) {
   covs <- intersect(fit$covariates, names(newdata))
-  numeric_covs <- covs[vapply(newdata[covs], is.numeric, logical(1))]
   rows <- list()
   for (nm in unique(scores$.outcome)) {
     sc <- scores[scores$.outcome == nm, , drop = FALSE]
-    for (cv in numeric_covs) {
+    for (cv in covs) {
       x <- newdata[[cv]][sc$.row]
-      ok <- is.finite(sc$z) & is.finite(x)
-      dat <- data.frame(z = sc$z[ok], x = x[ok])
-      loc <- drift_gam(z ~ s(x, k = 5), dat)
-      sc2 <- drift_gam(I(z^2 - 1) ~ s(x, k = 5), dat)
-      rows[[length(rows) + 1L]] <- tibble::tibble(
-        .outcome = nm, covariate = cv,
-        location_drift = loc$drift, location_se = loc$se,
-        scale_drift = sc2$drift, scale_se = sc2$se
-      )
+      ok <- is.finite(sc$z) & !is.na(x)
+      z <- sc$z[ok]
+      x <- x[ok]
+      rows[[length(rows) + 1L]] <- if (is.numeric(x)) {
+        tibble::tibble(.outcome = nm, covariate = cv, level = NA_character_,
+                       n = length(z), drift_numeric(z, x))
+      } else {
+        drift_levels(nm, cv, z, as.character(x))
+      }
     }
   }
   if (!length(rows)) {
     return(tibble::tibble(
-      .outcome = character(), covariate = character(),
-      location_drift = numeric(), location_se = numeric(),
-      scale_drift = numeric(), scale_se = numeric()
+      .outcome = character(), covariate = character(), level = character(),
+      n = integer(),
+      location_drift = numeric(), location_se = numeric(), location_p = numeric(),
+      scale_drift = numeric(), scale_se = numeric(), scale_p = numeric()
     ))
   }
   dplyr_bind(rows)
 }
 
-# Largest absolute fitted value of a diagnostic GAM and its SE there; NA
-# with fewer than 20 usable rows or when the GAM fails.
+# Numeric covariate: diagnostic GAMs of z and z^2 - 1 on x. The drift is
+# the largest absolute fitted value with its pointwise SE (a descriptive
+# amplitude; the maximum of a fitted curve is selected, so its SE does
+# not give a test), and `p` is the approximate p-value of the smooth term
+# (Wood 2013), which is the test of no drift.
+drift_numeric <- function(z, x) {
+  dat <- data.frame(z = z, x = x)
+  loc <- drift_gam(z ~ s(x, k = 5), dat)
+  sc2 <- drift_gam(I(z^2 - 1) ~ s(x, k = 5), dat)
+  tibble::tibble(
+    location_drift = loc$drift, location_se = loc$se, location_p = loc$p,
+    scale_drift = sc2$drift, scale_se = sc2$se, scale_p = sc2$p
+  )
+}
+
+# Factor covariate: one row per level with the mean of z and the excess
+# of var(z) over 1, their standard errors, and two-sided normal p-values.
+drift_levels <- function(nm, cv, z, lev) {
+  parts <- split(z, lev)
+  dplyr_bind(lapply(names(parts), function(l) {
+    zl <- parts[[l]]
+    n <- length(zl)
+    if (n < 2L) {
+      return(tibble::tibble(
+        .outcome = nm, covariate = cv, level = l, n = n,
+        location_drift = if (n) mean(zl) else NA_real_, location_se = NA_real_,
+        location_p = NA_real_, scale_drift = NA_real_, scale_se = NA_real_,
+        scale_p = NA_real_
+      ))
+    }
+    loc <- mean(zl)
+    loc_se <- stats::sd(zl) / sqrt(n)
+    sq <- zl^2 - 1
+    sc <- mean(sq)
+    sc_se <- stats::sd(sq) / sqrt(n)
+    tibble::tibble(
+      .outcome = nm, covariate = cv, level = l, n = n,
+      location_drift = loc, location_se = loc_se,
+      location_p = 2 * stats::pnorm(-abs(loc / loc_se)),
+      scale_drift = sc, scale_se = sc_se,
+      scale_p = if (sc_se > 0) 2 * stats::pnorm(-abs(sc / sc_se)) else NA_real_
+    )
+  }))
+}
+
+# Largest absolute fitted value of a diagnostic GAM, its SE there, and
+# the p-value of the smooth term; NA with fewer than 20 usable rows or
+# when the GAM fails.
 drift_gam <- function(formula, dat) {
   m <- if (nrow(dat) < 20L) {
     NULL
@@ -192,11 +245,13 @@ drift_gam <- function(formula, dat) {
     tryCatch(mgcv::gam(formula, data = dat), error = function(e) NULL)
   }
   if (is.null(m)) {
-    return(list(drift = NA_real_, se = NA_real_))
+    return(list(drift = NA_real_, se = NA_real_, p = NA_real_))
   }
   pr <- stats::predict(m, se.fit = TRUE)
   i <- which.max(abs(pr$fit))
-  list(drift = abs(pr$fit[[i]]), se = as.numeric(pr$se.fit[[i]]))
+  st <- tryCatch(summary(m)$s.table, error = function(e) NULL)
+  p <- if (is.null(st) || !nrow(st)) NA_real_ else unname(st[1L, "p-value"])
+  list(drift = abs(pr$fit[[i]]), se = as.numeric(pr$se.fit[[i]]), p = p)
 }
 
 assess_tail <- function(scores) {

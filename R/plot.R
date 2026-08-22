@@ -22,7 +22,7 @@ ggplot2::autoplot
 #'
 #' For a `norm_assessment`, `"calibration"` plots observed against nominal
 #' coverage, `"conditional"` the largest fitted drift of `z` against each
-#' covariate, and `"qq"` / `"worm"` the ordered Z scores against their
+#' numeric covariate (factor levels are in the table only), and `"qq"` / `"worm"` the ordered Z scores against their
 #' expected normal order statistics, raw or detrended (observed minus
 #' expected), inside the envelope a calibrated model implies. Under a
 #' correctly specified model the held-out centiles are iid uniform, so
@@ -541,6 +541,9 @@ qq_envelope <- function(n, level = 0.95, reps = 2000L, seed = 20240619L) {
 
 plot_conditional <- function(assessment) {
   df <- assessment$conditional
+  if ("level" %in% names(df)) {
+    df <- df[is.na(df$level), , drop = FALSE]
+  }
   df$.outcome <- factor(df$.outcome, levels = unique(df$.outcome))
   p <- ggplot2::ggplot(df, ggplot2::aes(.data$.outcome, .data$location_drift)) +
     ggplot2::geom_col(fill = referent_cols()$band, width = 0.65, na.rm = TRUE) +

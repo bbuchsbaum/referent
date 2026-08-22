@@ -29,10 +29,14 @@ norm_joint <- function(scores,
   covariance <- match.arg(covariance)
   value <- value %||% if ("innovation_z" %in% names(scores)) "innovation_z" else "z"
   wide <- scores_matrix(scores, value = value)
-  Z <- wide$matrix
+  Z <- drop_degenerate_columns(wide$matrix)
   R <- joint_correlation(Z, covariance)
   base <- joint_base_pit(Z, R)
   p_ref <- base$p[is.finite(base$p)]
+  # Leave-one-out mid-rank: predict() maps a new PIT to
+  # (#{reference PITs below it} + 0.5) / (n + 1); for reference row i
+  # against the other n - 1 rows that count is rank_i - 1, giving
+  # (rank_i - 0.5) / n.
   loo <- (rank(base$p, na.last = "keep", ties.method = "average") - 0.5) / length(p_ref)
   obj <- structure(
     list(
@@ -81,6 +85,24 @@ joint_table <- function(wide, base, centile) {
   )
 }
 
+# Outcomes with fewer than two finite scores or no spread cannot enter a
+# correlation matrix; they are dropped with a message.
+drop_degenerate_columns <- function(Z) {
+  spread <- apply(Z, 2, function(z) {
+    z <- z[is.finite(z)]
+    length(z) >= 2L && stats::sd(z) > 0
+  })
+  if (any(!spread)) {
+    cli::cli_inform(
+      "Dropping outcome{?s} {.field {colnames(Z)[!spread]}} from the joint model: constant or fewer than two finite scores."
+    )
+  }
+  if (!any(spread)) {
+    cli::cli_abort("No outcome has two or more finite, varying scores.")
+  }
+  Z[, spread, drop = FALSE]
+}
+
 joint_base_pit <- function(Z, R) {
   d2 <- apply(Z, 1, function(z) {
     ok <- is.finite(z)
@@ -102,7 +124,7 @@ joint_base_pit <- function(Z, R) {
 joint_correlation <- function(Z, covariance) {
   p <- ncol(Z)
   if (identical(covariance, "identity") || p < 2L) {
-    return(diag(p))
+    return(matrix(diag(p), p, p, dimnames = list(colnames(Z), colnames(Z))))
   }
   X <- scale(Z)
   X[!is.finite(X)] <- 0
@@ -116,6 +138,9 @@ joint_correlation <- function(Z, covariance) {
   var_r <- (n / (n - 1)^3) * (w2 - n * w_mean^2)
   off <- row(r) != col(r)
   lambda <- sum(var_r[off]) / sum(r[off]^2)
+  if (!is.finite(lambda)) {
+    lambda <- 1
+  }
   lambda <- min(max(lambda, 0), 1)
   out <- (1 - lambda) * r
   diag(out) <- 1

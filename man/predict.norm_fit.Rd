@@ -30,19 +30,30 @@ uses the point estimates.}
 
 \item{outcomes}{Optional subset of outcomes.}
 
-\item{allow_extrapolation}{If \code{FALSE} (default), severe out-of-support
-rows have \code{z = NA}.}
+\item{allow_extrapolation}{If \code{FALSE} (default), rows with support
+\code{"out"} or \code{"new_group"} have \code{NA} for \code{z}, \code{centile}, \code{tail_prob},
+\code{tail_surprisal}, and \code{log_density} (\code{median} and \code{residual} are
+kept). An unseen level of a grouping covariate is extrapolation
+unless the fit has been adapted to it with \code{\link[=norm_adapt]{norm_adapt()}}; a
+parametric factor has no prediction at all for such a row.}
 
 \item{n_draw}{Number of coefficient draws for \code{"total"}; defaults to
 \code{spec$control$n_draw} or 200. Draws are seeded from
-\code{spec$control$seed} (default 1) so repeated calls agree exactly.}
+\code{spec$control$seed} (default 1) so repeated calls agree exactly.
+With 200 draws the Monte Carlo error of a score is about 0.02 in
+\code{z} near the centre and larger in the far tails; it falls as
+\eqn{1/\sqrt{n_{draw}}}, so pass \code{n_draw = 2000} (or set
+\code{control = list(n_draw = 2000)} in \code{\link[=norm_spec]{norm_spec()}}) for reporting
+extreme centiles. The constant-scale Gaussian uses the exact
+analytic total and is unaffected.}
 
 \item{...}{Unused.}
 }
 \value{
 For \code{"scores"}, a \code{norm_scores} tibble with one row per
 observation and outcome. \code{status} is \code{"ok"}, \code{"missing_predictor"}
-(a covariate is \code{NA}), or the fit status of a failed outcome.
+(a covariate is \code{NA}), \code{"new_group"} (an unseen factor level), or
+the fit status of a failed outcome.
 For \code{"distribution"}, a tibble with \code{.id} and one
 \link[=dist_shash]{distribution} column per outcome (missing distributions
 for failed outcomes).

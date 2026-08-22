@@ -142,20 +142,65 @@ predict_gam_quiet <- function(model, newdata, ...) {
   )
 }
 
-# One `predict(type = "link", se.fit = TRUE)` call: a list of linear
-# predictors (one vector per lp) and the standard error of the first.
-mgcv_link <- function(model, newdata) {
+# Rows of `newdata` whose parametric factor level was not seen in the fit.
+# predict.gam cannot build the parametric model matrix for such rows and
+# fails for the whole call, so they are held out of prediction and given
+# NA parameters.
+unseen_level_rows <- function(model, newdata) {
+  bad <- rep(FALSE, nrow(newdata))
+  for (nm in intersect(names(model$xlevels), names(newdata))) {
+    v <- as.character(newdata[[nm]])
+    bad <- bad | (!is.na(v) & !v %in% model$xlevels[[nm]])
+  }
+  bad
+}
+
+# predict.gam on the rows without unseen parametric levels; NULL when
+# prediction fails. `pad` rebuilds a full-length result from the kept
+# rows' values.
+predict_gam_rows <- function(model, newdata, pad, ...) {
+  bad <- unseen_level_rows(model, newdata)
+  if (all(bad)) {
+    return(pad(NULL, bad))
+  }
   pr <- tryCatch(
-    predict_gam_quiet(model, newdata, type = "link", se.fit = TRUE),
+    predict_gam_quiet(model, newdata[!bad, , drop = FALSE], ...),
     error = function(e) NULL
   )
   if (is.null(pr)) {
     return(NULL)
   }
-  eta <- as.matrix(pr$fit)
-  se <- as.matrix(pr$se.fit)
-  list(eta = lapply(seq_len(ncol(eta)), function(k) eta[, k]),
-       se = as.numeric(se[, 1L]))
+  pad(pr, bad)
+}
+
+# One `predict(type = "link", se.fit = TRUE)` call: a list of linear
+# predictors (one vector per lp) and the standard error of the first.
+mgcv_link <- function(model, newdata) {
+  predict_gam_rows(model, newdata, type = "link", se.fit = TRUE, pad = function(pr, bad) {
+    n <- length(bad)
+    if (is.null(pr)) {
+      return(list(eta = list(rep(NA_real_, n)), se = rep(NA_real_, n)))
+    }
+    eta <- as.matrix(pr$fit)
+    se <- as.matrix(pr$se.fit)
+    full <- function(v) replace(rep(NA_real_, n), !bad, v)
+    list(eta = lapply(seq_len(ncol(eta)), function(k) full(eta[, k])),
+         se = full(as.numeric(se[, 1L])))
+  })
+}
+
+# The lp matrix with NA rows for unseen parametric levels; NULL when
+# prediction fails or no row can be predicted.
+mgcv_lpmatrix <- function(model, newdata) {
+  predict_gam_rows(model, newdata, type = "lpmatrix", pad = function(lp, bad) {
+    if (is.null(lp)) {
+      return(NULL)
+    }
+    out <- matrix(NA_real_, length(bad), ncol(lp))
+    out[!bad, ] <- lp
+    attr(out, "lpi") <- attr(lp, "lpi")
+    out
+  })
 }
 
 mgcv_parameters <- function(model, newdata, fam, fit_one) {
@@ -208,10 +253,7 @@ residual_scale <- function(model) {
 # Equal-weight mixture over coefficient draws from N(beta_hat, Vp). Each
 # linear predictor is one product of the lp matrix with the draw matrix.
 mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1L) {
-  lp <- tryCatch(
-    predict_gam_quiet(model, newdata, type = "lpmatrix"),
-    error = function(e) NULL
-  )
+  lp <- mgcv_lpmatrix(model, newdata)
   if (is.null(lp) || is.null(model$Vp)) {
     return(make_dist(fam, cond))
   }
@@ -271,10 +313,12 @@ mvtnorm_draw <- function(n, mean, sigma) {
 
 # Reduce a fitted gam to what prediction needs: coefficients and their
 # covariance, the smooth constructions, the formula and terms objects,
-# factor levels, and a few scalars. The model frame, fitted values,
-# residuals, weights, and the family (rebuilt by `thaw_model()`) are
-# dropped, and the formula environments are replaced by an empty child of
-# the global environment so no enclosing frame is serialised.
+# factor levels, and a few scalars. The model frame is kept with zero
+# rows: predict.gam reads its column classes and factor levels (to
+# coerce newdata) and its terms attribute (to find offset terms). Fitted
+# values, residuals, weights, and the family (rebuilt by `thaw_model()`)
+# are dropped, and the formula environments are replaced by an empty
+# child of the global environment so no enclosing frame is serialised.
 strip_gam <- function(model) {
   keep <- c(
     "coefficients", "Vp", "nsdf", "smooth", "formula", "pred.formula", "terms",
@@ -282,6 +326,11 @@ strip_gam <- function(model) {
     "sig2", "edf", "converged", "df.residual", "var.summary", "lpi"
   )
   out <- model[intersect(names(model), keep)]
+  if (!is.null(model$model)) {
+    mf <- model$model[0, , drop = FALSE]
+    attr(mf, "terms") <- attr(model$model, "terms")
+    out$model <- mf
+  }
   env <- new.env(parent = globalenv())
   reset_env <- function(f) {
     if (is.list(f)) {
@@ -290,6 +339,9 @@ strip_gam <- function(model) {
       environment(f) <- env
     }
     f
+  }
+  if (!is.null(attr(out$model, "terms"))) {
+    attr(out$model, "terms") <- reset_env(attr(out$model, "terms"))
   }
   for (nm in c("formula", "pred.formula", "terms", "pterms")) {
     if (!is.null(out[[nm]])) {

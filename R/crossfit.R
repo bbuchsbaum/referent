@@ -7,8 +7,9 @@
 #' @param spec A [norm_spec].
 #' @param data Reference data.
 #' @param outcomes Outcome selection, as in [norm_fit()].
-#' @param folds Number of folds.
-#' @param strata Optional stratification column.
+#' @param folds Number of folds (at least 2).
+#' @param strata Optional stratification column. Rows with a missing
+#'   stratum form a stratum of their own.
 #' @param cluster Optional cluster / subject column. Entire clusters stay
 #'   in one fold.
 #' @param id Optional identifier stored on scores.
@@ -66,16 +67,30 @@ norm_crossfit <- function(spec,
   )
 }
 
+# Fold of every row. Clusters are assigned whole; within each stratum
+# (an `NA` stratum is a stratum of its own) clusters are spread evenly.
 make_folds <- function(cluster, folds, strata = NULL) {
   folds <- as.integer(folds)
+  if (!is.finite(folds) || folds < 2L) {
+    cli::cli_abort("{.arg folds} must be at least 2 (got {folds}).")
+  }
   cl <- as.character(cluster)
   uniq <- unique(cl)
+  if (length(uniq) < 2L) {
+    cli::cli_abort(
+      "Cross-fitting needs at least two clusters; {.arg cluster} has {length(uniq)}."
+    )
+  }
+  if (length(uniq) < folds) {
+    cli::cli_warn("Only {length(uniq)} cluster{?s} for {folds} folds; some folds are empty.")
+  }
   if (is.null(strata)) {
     fold_of <- sample(rep(seq_len(folds), length.out = length(uniq)))
     names(fold_of) <- uniq
     return(unname(fold_of[cl]))
   }
   st <- as.character(strata)
+  st[is.na(st)] <- ".na"
   fold <- integer(length(cl))
   for (s in unique(st)) {
     u <- unique(cl[st == s])

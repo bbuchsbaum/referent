@@ -315,3 +315,24 @@ test_that("norm_derivative gives finite SEs for smooth SHASH fits", {
   med <- dv[dv$centile == 0.5, ]
   expect_equal(length(unique(round(med$chart_velocity, 8))), 3L)
 })
+
+test_that("an optimum on the logit bound is flagged and carries no standard error", {
+  set.seed(1)
+  n <- 100
+  z <- rep(stats::rnorm(n), each = 2)
+  id <- rep(seq_len(n), each = 2)
+  time <- rep(c(0, 2), n)
+  pr <- fit_process(norm_process("stable"), z, id, time)
+  expect_true(pr$at_boundary)
+  expect_equal(unname(pr$theta), 12)
+  expect_true(is.na(pr$se[["logit_stable"]]))
+  expect_true(is.na(pr$r_median_se))
+  expect_null(pr$vcov)
+  expect_match(pr$reason, "boundary")
+  expect_true(process_components(list(y = pr))$at_boundary)
+  # an interior optimum is not flagged
+  z2 <- z + stats::rnorm(2 * n, sd = 0.5)
+  pr2 <- fit_process(norm_process("stable"), z2, id, time)
+  expect_false(pr2$at_boundary)
+  expect_true(is.finite(pr2$se[["logit_stable"]]))
+})

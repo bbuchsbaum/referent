@@ -66,3 +66,31 @@ test_that("norm_derivative accepts a bare name or a string and rejects unknown c
   expect_equal(a, b)
   expect_error(norm_derivative(fit, grid, with_respect_to = years), "must contain")
 })
+
+test_that("a frozen reference keeps offset terms and factor levels", {
+  dat <- norm_simulate(200, seed = 5)
+  dat$log_icv <- stats::rnorm(200, 0, 0.3)
+  dat$y <- dat$y + dat$log_icv
+  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + offset(log_icv)), dat, "y")
+  ref <- norm_reference(fit)
+  a <- predict(fit, dat[1:8, ], uncertainty = "conditional")
+  b <- predict(ref, dat[1:8, ], uncertainty = "conditional")
+  expect_equal(a$z, b$z, tolerance = 1e-10)
+  expect_gt(stats::sd(a$z - predict(fit, transform(dat[1:8, ], log_icv = 0),
+                                    uncertainty = "conditional")$z), 0)
+
+  fit2 <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + s(site, bs = "re")), dat, "y")
+  ref2 <- norm_reference(fit2)
+  new <- dat[1:8, ]
+  new$site <- as.character(new$site)
+  new$site[1] <- "ZZ"
+  a <- predict(fit2, new, uncertainty = "conditional", allow_extrapolation = TRUE)
+  b <- predict(ref2, new, uncertainty = "conditional", allow_extrapolation = TRUE)
+  expect_equal(sum(is.na(a$z)), 0L)
+  expect_equal(a$z, b$z, tolerance = 1e-10)
+  for (unc in c("conditional", "total")) {
+    a <- predict(fit2, new, uncertainty = unc, type = "distribution")$y
+    b <- predict(ref2, new, uncertainty = unc, type = "distribution")$y
+    expect_equal(mean(a), mean(b), tolerance = 1e-10)
+  }
+})

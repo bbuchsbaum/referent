@@ -500,8 +500,8 @@ scores_from_log_tails <- function(log_lower, log_upper) {
   )
   log_tail <- pmin(log(2) + pmin(log_lower, log_upper), 0)
   list(
-    centile = ifelse(use_lower, exp(log_lower), -expm1(log_upper)),
-    z = z,
+    centile = as.numeric(ifelse(use_lower, exp(log_lower), -expm1(log_upper))),
+    z = as.numeric(z),
     tail_prob = exp(log_tail),
     tail_surprisal = -log_tail
   )

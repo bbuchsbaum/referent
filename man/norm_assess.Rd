@@ -54,7 +54,14 @@ standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
 \code{rmse}, \code{mae}, \code{mean_log_score}, and \code{crps} are the usual proper and
 point scores.
 
-\code{conditional} fits light diagnostic GAMs of \eqn{z} and \eqn{z^2 - 1}
-against every numeric covariate the model uses and reports the
-largest fitted drift with the GAM standard error at that point.
+\code{conditional} checks the scores against every covariate the model
+uses. For a numeric covariate it fits light diagnostic GAMs of
+\eqn{z} and \eqn{z^2 - 1} against it and reports the largest absolute
+fitted value with its pointwise standard error (\code{location_drift},
+\code{location_se}, \code{scale_drift}, \code{scale_se}; descriptive amplitudes, since
+the maximum is selected) and the approximate p-value of the smooth
+term (\code{location_p}, \code{scale_p}), which is the test of no drift. For a
+factor covariate it reports one row per \code{level} with the mean of
+\eqn{z} and the excess of \eqn{\mathrm{var}(z)} over 1, their standard
+errors, and two-sided p-values.
 }

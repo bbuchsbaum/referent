@@ -13,7 +13,8 @@ norm_support(fit, newdata)
 }
 \value{
 A tibble with \code{.row}, \code{support}, and the squared Mahalanobis
-distance \code{d2} (\code{NA} when there are fewer than two numeric covariates).
+distance \code{d2} (\code{NA} when there are fewer than two numeric covariates
+or the row has a missing covariate).
 }
 \description{
 Checks each row of \code{newdata} against the covariate ranges and the

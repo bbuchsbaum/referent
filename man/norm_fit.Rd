@@ -24,7 +24,11 @@ An object of class \code{norm_fit}. \code{fit$covariates} holds the
 covariate names.
 }
 \description{
-Fits one model per outcome. A failed outcome does not abort the panel.
+Fits one model per outcome. A failed outcome does not abort the panel:
+a non-numeric outcome (factor, character, logical) gets the status
+\code{"unsupported_type"}, one with fewer than eight finite values or no
+spread \code{"insufficient_variation"}, and an engine failure
+\code{"nonconverged"}.
 }
 \details{
 Covariates are the variables named in the spec's \code{location}, \code{scale},

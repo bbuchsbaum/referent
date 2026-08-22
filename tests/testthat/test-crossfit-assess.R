@@ -61,6 +61,7 @@ test_that("norm_assess recovers nominal coverage and a positive log-score gain",
 
 msll_longhand <- function(scores, y_ref) {
   sd0 <- sqrt(mean((y_ref - mean(y_ref))^2)) # population sd, denominator n
+  scores <- scores[is.finite(scores$log_density), ] # out-of-support rows are masked
   -mean(scores$log_density) +
     mean(stats::dnorm(scores$observed, mean(y_ref), sd0, log = TRUE))
 }
@@ -107,4 +108,20 @@ test_that("norm_assess() honours the uncertainty argument", {
     total$overall$mean_log_score,
     norm_assess(fit, new)$overall$mean_log_score
   )))
+})
+
+test_that("norm_crossfit rejects one fold or one cluster clearly and scores NA strata", {
+  dat <- norm_simulate(90, seed = 3)
+  spec <- norm_spec(norm_gaussian(), ~ s(age, k = 5))
+  expect_error(norm_crossfit(spec, dat, "y", folds = 1), "at least 2")
+  dat$cl <- "one"
+  expect_error(norm_crossfit(spec, dat, "y", folds = 3, cluster = cl), "two clusters")
+  dat$st <- dat$site
+  dat$st[1:10] <- NA
+  cf <- norm_crossfit(spec, dat, "y", folds = 3, strata = st)
+  expect_equal(nrow(cf), 90L)
+  expect_equal(sort(unique(cf$.row)), 1:90)
+  expect_true(all(attr(cf, "folds") %in% 1:3))
+  # each NA row has a fold, spread across folds like any stratum
+  expect_gt(length(unique(attr(cf, "folds")[1:10])), 1L)
 })

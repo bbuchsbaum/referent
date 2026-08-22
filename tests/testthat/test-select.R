@@ -64,3 +64,22 @@ test_that("acceptable_calibration scales its tolerance with n", {
   # the same deviations are within noise at n = 30
   expect_true(acceptable_calibration(make(30, 0.3, 1.6, 0.90)))
 })
+
+test_that("the comparison table carries the paired standard errors the one-SE rule uses", {
+  dat <- norm_simulate(200, seed = 15)
+  specs <- list(
+    linear = norm_spec(norm_gaussian(), ~ age + sex),
+    smooth = norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex)
+  )
+  set.seed(1)
+  sel <- norm_select(specs, dat, "y", folds = 3)
+  tab <- sel$comparison
+  expect_false("se_log_score" %in% names(tab))
+  expect_true(all(c("se_log_score_paired", "se_crps_paired") %in% names(tab)))
+  best <- tab$model[which.max(tab$mean_log_score)]
+  expect_equal(unname(tab$se_log_score_paired[tab$model == best]), 0)
+  other <- tab[tab$model != best, ]
+  cf_b <- sel$crossfit
+  expect_true(all(is.finite(other$se_log_score_paired)))
+  expect_true(all(other$se_log_score_paired > 0))
+})

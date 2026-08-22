@@ -102,7 +102,7 @@ drawn over it.
 
 For a \code{norm_assessment}, \code{"calibration"} plots observed against nominal
 coverage, \code{"conditional"} the largest fitted drift of \code{z} against each
-covariate, and \code{"qq"} / \code{"worm"} the ordered Z scores against their
+numeric covariate (factor levels are in the table only), and \code{"qq"} / \code{"worm"} the ordered Z scores against their
 expected normal order statistics, raw or detrended (observed minus
 expected), inside the envelope a calibrated model implies. Under a
 correctly specified model the held-out centiles are iid uniform, so

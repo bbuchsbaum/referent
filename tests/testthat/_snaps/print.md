@@ -87,12 +87,12 @@
       subjects: 200; time range [#, #]; lag range [2, 2]
       ! measurement not separated: no short-interval repeats; measurement noise is not separated from rank dynamics
     Output
-      # A tibble: 1 x 11
-       .outcome process identified stable dynamic measurement ell ell_identified
-       <chr> <chr> <lgl> <dbl> <dbl> <dbl> <dbl> <lgl> 
-      1 y stable TRUE # 0 # NA FALSE 
-      # i 3 more variables: median_lag <dbl>, r_median_lag <dbl>,
-      # r_median_lag_se <dbl>
+      # A tibble: 1 x 12
+       .outcome process identified at_boundary stable dynamic measurement ell
+       <chr> <chr> <lgl> <lgl> <dbl> <dbl> <dbl> <dbl>
+      1 y stable TRUE FALSE # 0 # NA
+      # i 4 more variables: ell_identified <lgl>, median_lag <dbl>,
+      # r_median_lag <dbl>, r_median_lag_se <dbl>
 
 ---
 
@@ -103,12 +103,12 @@
       subjects: 200; time range [#, #]; lag range [0, 0]
       ! change not identified: too few repeated observations to identify within-person dependence
     Output
-      # A tibble: 1 x 11
-       .outcome process identified stable dynamic measurement ell ell_identified
-       <chr> <chr> <lgl> <dbl> <dbl> <dbl> <dbl> <lgl> 
-      1 y matern32 FALSE NA NA NA NA FALSE 
-      # i 3 more variables: median_lag <dbl>, r_median_lag <dbl>,
-      # r_median_lag_se <dbl>
+      # A tibble: 1 x 12
+       .outcome process identified at_boundary stable dynamic measurement ell
+       <chr> <chr> <lgl> <lgl> <dbl> <dbl> <dbl> <dbl>
+      1 y matern32 FALSE FALSE NA NA NA NA
+      # i 4 more variables: ell_identified <lgl>, median_lag <dbl>,
+      # r_median_lag <dbl>, r_median_lag_se <dbl>
 
 # remaining print methods use cli and return invisibly
 

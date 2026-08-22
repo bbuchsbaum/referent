@@ -17,7 +17,9 @@ calibration data fall back to the pooled map.}
 \value{
 The fit with a \code{calibration} slot; \code{\link[=predict.norm_fit]{predict.norm_fit()}} applies
 the map to \code{centile}, \code{z}, and the tail columns and sets
-\code{calibrated = TRUE}.
+\code{calibrated = TRUE} on every row that was mapped. An outcome with
+fewer than two finite calibration PITs (overall, or in a group with
+no pooled map) has no map and its rows stay \code{calibrated = FALSE}.
 }
 \description{
 Maps PIT values through a monotone map estimated on a calibration

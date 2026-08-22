@@ -21,7 +21,9 @@
 #'   calibration data fall back to the pooled map.
 #' @return The fit with a `calibration` slot; [predict.norm_fit()] applies
 #'   the map to `centile`, `z`, and the tail columns and sets
-#'   `calibrated = TRUE`.
+#'   `calibrated = TRUE` on every row that was mapped. An outcome with
+#'   fewer than two finite calibration PITs (overall, or in a group with
+#'   no pooled map) has no map and its rows stay `calibrated = FALSE`.
 #' @export
 norm_calibrate <- function(fit, data, by = NULL) {
   data <- tibble::as_tibble(data)
@@ -109,9 +111,12 @@ calibration_groups <- function(cal, newdata) {
 }
 
 # Map the tails of one outcome's score table through its PIT maps, one
-# vectorised pass per group. Groups without a map use the pooled map.
+# vectorised pass per group. Groups without a map (fewer than two
+# calibration PITs) use the pooled map; when that is missing too the
+# rows are left as they are and `calibrated` is FALSE for them.
 calibrate_scores <- function(cal, outcome, grp, sc) {
   maps <- cal$maps[[outcome]]
+  sc$calibrated <- rep(FALSE, nrow(sc))
   if (is.null(maps)) {
     return(sc)
   }
@@ -120,9 +125,14 @@ calibrate_scores <- function(cal, outcome, grp, sc) {
   upper <- tails$upper
   for (g in unique(grp)) {
     idx <- which(grp == g)
-    mapped <- apply_pit_map(maps[[g]] %||% maps$.global, lower[idx], upper[idx])
+    map <- maps[[g]] %||% maps$.global
+    if (is.null(map)) {
+      next
+    }
+    mapped <- apply_pit_map(map, lower[idx], upper[idx])
     lower[idx] <- mapped$lower
     upper[idx] <- mapped$upper
+    sc$calibrated[idx] <- TRUE
   }
   out <- scores_from_log_tails(lower, upper)
   sc$centile <- out$centile

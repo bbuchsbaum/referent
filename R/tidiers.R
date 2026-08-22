@@ -90,7 +90,7 @@ glance.norm_assessment <- function(x, ...) {
   tibble::tibble(
     n = x$n,
     n_outcomes = nrow(x$overall),
-    !!!col_mean(x$overall, c("mean_log_score", "crps", "rmse", "cor")),
+    !!!col_mean(x$overall, c("mean_log_score", "crps", "rmse", "smse", "ev", "cor")),
     !!!col_mean(x$marginal, c("mean_z", "var_z", "cover_95")),
     in_sample = x$in_sample
   )
