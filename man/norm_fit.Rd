@@ -14,18 +14,29 @@ norm_fit(spec, data, outcomes, id = NULL, ...)
 \item{outcomes}{Tidyselect specification or character vector of outcome
 columns. The covariate frame is kept wide.}
 
-\item{id}{Optional subject identifier (column name or vector).}
+\item{id}{Optional subject identifier (column name or vector). It is
+carried on scores but is never a covariate.}
 
 \item{...}{Passed to the engine fitter.}
 }
 \value{
-An object of class \code{norm_fit}.
+An object of class \code{norm_fit}. \code{fit$covariates} holds the
+covariate names.
 }
 \description{
 Fits one model per outcome. A failed outcome does not abort the panel.
 }
+\details{
+Covariates are the variables named in the spec's \code{location}, \code{scale},
+\code{skew}, and \code{tail} formulas; other columns are ignored. Each outcome is
+fitted on the rows that are complete for that outcome and those
+covariates, and a message reports how many rows were dropped.
+
+Outcomes are fitted in parallel when the \code{future.apply} package is
+installed and a non-sequential \code{\link[future:plan]{future::plan()}} is active.
+}
 \examples{
-ref <- norm_simulate(80, kind = "gaussian_location", seed = 1)
+ref <- norm_simulate(80, seed = 1)
 spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
 fit <- norm_fit(spec, data = ref, outcomes = "y")
 predict(fit, newdata = ref[1:3, ], uncertainty = "conditional")

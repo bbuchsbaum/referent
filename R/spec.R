@@ -3,8 +3,7 @@
 #' @param family A [norm_family] such as [norm_gaussian()] or [norm_shash()].
 #' @param location,scale,skew,tail One-sided formulas for the additive
 #'   predictors. Unused shape formulas default to `~ 1`.
-#' @param engine Fitting backend. `"mgcv"` is required; `"gamlss"` and
-#'   `"gamlss2"` are optional adapters.
+#' @param engine Fitting backend. Only `"mgcv"` is supported.
 #' @param method `mgcv` smoothness-selection method.
 #' @param use_bam Use [mgcv::bam()] when the family supports it and
 #'   `n >= bam_min_n`.
@@ -19,7 +18,7 @@ norm_spec <- function(family = norm_gaussian(),
                       scale = ~1,
                       skew = ~1,
                       tail = ~1,
-                      engine = c("mgcv", "gamlss", "gamlss2"),
+                      engine = "mgcv",
                       method = "REML",
                       use_bam = TRUE,
                       bam_min_n = 20000L,
@@ -75,35 +74,4 @@ print.norm_spec <- function(x, ...) {
     cli::cli_text("  tail:     {deparse(x$tail)}")
   }
   invisible(x)
-}
-
-ladder_specs <- function(location, scale = ~1, grouping = NULL) {
-  loc <- as_rhs_formula(location)
-  sc <- as_rhs_formula(scale)
-  list(
-    gaussian_const = norm_spec(
-      family = norm_gaussian(),
-      location = loc,
-      scale = ~1
-    ),
-    gaussian_scale = norm_spec(
-      family = norm_gaussian(),
-      location = loc,
-      scale = sc
-    ),
-    shash_const_shape = norm_spec(
-      family = norm_shash(),
-      location = loc,
-      scale = sc,
-      skew = ~1,
-      tail = ~1
-    ),
-    shash_shape = norm_spec(
-      family = norm_shash(),
-      location = loc,
-      scale = sc,
-      skew = loc,
-      tail = ~1
-    )
-  )
 }

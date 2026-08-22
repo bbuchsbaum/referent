@@ -139,7 +139,7 @@ predict.norm_adaptation <- function(object,
   if (identical(type, "distribution")) {
     return(adapted)
   }
-  support <- classify_support(object$fit$support_ref, newdata)
+  support <- classify_support(object$fit$support_ref, newdata)$support
   rows <- lapply(names(adapted), function(nm) {
     d <- adapted[[nm]]
     y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, nrow(newdata))

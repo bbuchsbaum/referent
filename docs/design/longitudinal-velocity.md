@@ -614,6 +614,8 @@ transition <- norm_transition(
   conditioning = "all"
 )
 
+# norm_velocity() was merged into norm_transition() (2026-08-22); the
+# velocity columns below are produced directly by norm_transition().
 velocity <- norm_velocity(
   transition,
   time_unit = "year",

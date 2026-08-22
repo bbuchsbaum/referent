@@ -31,16 +31,33 @@ support_reference <- function(data, covariate_names) {
   )
 }
 
-#' Classify whether covariates lie in the reference support
+#' Reference-support status of target observations
 #'
-#' Statuses: `in`, `edge`, `out`, `new_group`.
+#' Checks each row of `newdata` against the covariate ranges and the
+#' joint (Mahalanobis) spread of the reference data on the covariates the
+#' model actually uses. Statuses: `"in"`, `"edge"` (outside the central
+#' 96% of a covariate or beyond the 99% Mahalanobis radius), `"out"`
+#' (outside the observed range or beyond twice that radius), and
+#' `"new_group"` (unseen factor level).
 #'
-#' @param ref A support reference from a [norm_fit].
+#' @param fit A [norm_fit].
 #' @param newdata Target data.
+#' @return A tibble with `.row`, `support`, and the squared Mahalanobis
+#'   distance `d2` (`NA` when there are fewer than two numeric covariates).
+#' @examples
+#' ref <- norm_simulate(80, seed = 1)
+#' spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
+#' fit <- norm_fit(spec, data = ref, outcomes = "y")
+#' norm_support(fit, ref[1:3, ])
 #' @export
+norm_support <- function(fit, newdata) {
+  classify_support(fit$support_ref, tibble::as_tibble(newdata))
+}
+
 classify_support <- function(ref, newdata) {
   n <- nrow(newdata)
   status <- rep("in", n)
+  d2 <- rep(NA_real_, n)
   for (nm in ref$numeric_names) {
     if (!nm %in% names(newdata)) {
       next
@@ -57,14 +74,15 @@ classify_support <- function(ref, newdata) {
     unseen <- !as.character(newdata[[nm]]) %in% ref$factor_levels[[nm]]
     status[unseen] <- "new_group"
   }
-  if (!is.null(ref$cov) && length(ref$numeric_names)) {
+  if (!is.null(ref$cov) && length(ref$numeric_names) &&
+      all(ref$numeric_names %in% names(newdata))) {
     X <- scale_with_ref(newdata[, ref$numeric_names, drop = FALSE], ref)
     d2 <- mahalanobis_safe(X, ref$cov)
     q <- stats::qchisq(0.99, df = max(ncol(X), 1))
     status[is.finite(d2) & d2 > q & status == "in"] <- "edge"
     status[is.finite(d2) & d2 > q * 2] <- "out"
   }
-  status
+  tibble::tibble(.row = seq_len(n), support = status, d2 = d2)
 }
 
 scale_with_ref <- function(data, ref) {

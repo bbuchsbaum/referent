@@ -4,8 +4,6 @@
 \alias{norm_family}
 \alias{norm_gaussian}
 \alias{norm_shash}
-\alias{norm_ordinal}
-\alias{norm_discrete}
 \title{Family constructors for reference models}
 \usage{
 norm_gaussian(
@@ -21,10 +19,6 @@ norm_shash(
   link_tail = "identity",
   min_scale = 0.01
 )
-
-norm_ordinal(levels)
-
-norm_discrete()
 }
 \arguments{
 \item{link_location, link_scale, link_skew, link_tail}{Character link
@@ -32,8 +26,6 @@ names. Defaults follow \code{mgcv} (\code{identity} location; \code{logb} /
 \code{logeb} scale; identity skew and tail).}
 
 \item{min_scale}{Minimum scale used by the \code{logb} / \code{logeb} links.}
-
-\item{levels}{Ordered category labels.}
 }
 \value{
 An object of class \code{norm_family}.

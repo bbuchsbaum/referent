@@ -234,7 +234,7 @@ plot_support <- function(fit, newdata, x) {
   }
   x_nm <- x %||% default_x(fit)
   df <- tibble::as_tibble(newdata)
-  df$support <- classify_support(fit$support_ref, df)
+  df$support <- classify_support(fit$support_ref, df)$support
   p <- ggplot2::ggplot(df, ggplot2::aes(.data[[x_nm]], fill = .data$support)) +
     ggplot2::geom_histogram(bins = 30, position = "identity", alpha = 0.7, colour = NA) +
     support_fill_scale() +

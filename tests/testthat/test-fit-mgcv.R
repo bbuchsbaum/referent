@@ -1,7 +1,7 @@
 test_that("Gaussian location-scale fit produces calibrated Z on new data", {
   set.seed(21)
-  train <- norm_simulate(350, kind = "gaussian_location", seed = 21)
-  test <- norm_simulate(200, kind = "gaussian_location", seed = 22)
+  train <- norm_simulate(350, seed = 21)
+  test <- norm_simulate(200, seed = 22)
   fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
   expect_equal(fit$models$y$status, "ok")
   sc <- predict(fit, newdata = test, type = "scores", uncertainty = "conditional")
@@ -13,13 +13,14 @@ test_that("Gaussian location-scale fit produces calibrated Z on new data", {
 
 test_that("failed outcomes do not abort the panel", {
   set.seed(3)
-  dat <- norm_simulate(80, kind = "panel", seed = 3)
+  dat <- norm_simulate(80, seed = 3)
   dat$marker_bad <- 1
   fit <- norm_fit(simple_spec(), data = dat, outcomes = c("marker_01", "marker_bad"))
   expect_equal(fit$models$marker_bad$status, "insufficient_variation")
   expect_equal(fit$models$marker_01$status, "ok")
-  out <- utils::capture.output(print(fit))
-  expect_true(any(grepl("Failed|flagged|insufficient", out)))
+  out <- paste(cli::cli_fmt(print(fit)), collapse = "\n")
+  expect_match(out, "insufficient_variation")
+  expect_match(out, "marker_bad")
 })
 
 test_that("SHASH engine returns a norm_dist", {
@@ -36,7 +37,7 @@ test_that("SHASH engine returns a norm_dist", {
 
 test_that("total uncertainty inflates epistemic sd", {
   set.seed(31)
-  dat <- norm_simulate(120, kind = "gaussian_location", seed = 31)
+  dat <- norm_simulate(120, seed = 31)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   cond <- predict(fit, newdata = dat[1:8, ], type = "distribution",
                   uncertainty = "conditional")$y
@@ -51,7 +52,7 @@ test_that("total uncertainty inflates epistemic sd", {
 
 test_that("save/read round trip reproduces scores", {
   set.seed(8)
-  dat <- norm_simulate(120, kind = "gaussian_location", seed = 8)
+  dat <- norm_simulate(120, seed = 8)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   tmp <- tempfile(fileext = ".rds")
   suppressWarnings(saveRDS(fit, tmp))

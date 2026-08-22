@@ -29,7 +29,7 @@ set.seed(1)
 ## Fit a reference
 
 ```{r fit}
-ref <- norm_simulate(400, kind = "gaussian_scale", seed = 1)
+ref <- norm_simulate(400, kind = "gaussian", scale = "age", seed = 1)
 ref$participant_id <- paste0("R", seq_len(nrow(ref)))
 spec <- norm_spec(
   family = norm_gaussian(),
@@ -45,7 +45,7 @@ training rows. Overlay held-out people only as points. Facet by sex so each
 panel has its own location–scale curve.
 
 ```{r centiles}
-val <- norm_simulate(150, kind = "gaussian_scale", seed = 2)
+val <- norm_simulate(150, kind = "gaussian", scale = "age", seed = 2)
 val$participant_id <- paste0("V", seq_len(nrow(val)))
 autoplot(fit, type = "centiles", by = sex, newdata = val)
 ```
@@ -87,10 +87,11 @@ scores <- predict(fit, newdata = val, type = "scores", uncertainty = "conditiona
 scores[1:5, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
 ```
 
-Filter in the score table the same way you would filter any data frame.
+The score table is an ordinary data frame; subset it the way you would any
+other (`dplyr::filter()` keeps the class).
 
 ```{r filter}
-large <- filter_scores(scores, abs(z) > 2)
+large <- scores[abs(scores$z) > 2 & !is.na(scores$z), ]
 nrow(large)
 large[, c(".id", "observed", "centile", "z", "tail_prob")]
 ```
@@ -110,5 +111,5 @@ A person can sit in the tail because the reference chart is right, because the
 covariates are outside support, or because the model is mis-specified. The
 score table keeps those apart: `z` is a representation of a centile, and
 `support` says whether that centile is even trustworthy. Use
-`filter_scores()` and `flag()` to inspect tails. Do not treat either as a
+`flag()` and ordinary subsetting to inspect tails. Do not treat either as a
 diagnosis.

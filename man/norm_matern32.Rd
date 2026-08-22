@@ -2,7 +2,7 @@
 % Please edit documentation in R/dynamics.R
 \name{norm_matern32}
 \alias{norm_matern32}
-\title{Matérn-3/2 longitudinal process}
+\title{Matern-3/2 longitudinal process}
 \usage{
 norm_matern32(stable_rank = TRUE, measurement = ~1, ell = 5)
 }
@@ -15,5 +15,5 @@ norm_matern32(stable_rank = TRUE, measurement = ~1, ell = 5)
 \item{ell}{Initial length-scale.}
 }
 \description{
-Matérn-3/2 longitudinal process
+Matern-3/2 longitudinal process
 }

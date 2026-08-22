@@ -14,7 +14,7 @@ raw standardized residual.
 ```r
 library(referent)
 
-ref <- norm_simulate(300, kind = "gaussian_scale", seed = 1)
+ref <- norm_simulate(300, kind = "gaussian", scale = "age", seed = 1)
 spec <- norm_spec(
   family = norm_gaussian(),
   location = ~ s(age, k = 8) + sex,
@@ -22,7 +22,7 @@ spec <- norm_spec(
 )
 fit <- norm_fit(spec, data = ref, outcomes = "y")
 
-target <- norm_simulate(20, kind = "gaussian_scale", seed = 2)
+target <- norm_simulate(20, kind = "gaussian", scale = "age", seed = 2)
 scores <- predict(fit, newdata = target, type = "scores")
 norm_assess(fit, newdata = target)$overall
 ```
@@ -30,7 +30,7 @@ norm_assess(fit, newdata = target)$overall
 Longitudinal change is a first-class dynamic extension, not a standalone
 `norm_change()` calculation:
 
-`norm_fit` → `norm_dynamics` → `norm_forecast` / `norm_transition` / `norm_velocity` / `norm_derivative`
+`norm_fit` → `norm_dynamics` → `norm_forecast` / `norm_transition` / `norm_derivative`
 
 Design source of truth:
 

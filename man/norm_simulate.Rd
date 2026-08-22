@@ -2,25 +2,80 @@
 % Please edit documentation in R/simulate.R
 \name{norm_simulate}
 \alias{norm_simulate}
-\title{Simulate reference-model data for law tests}
+\title{Simulate reference-model data}
 \usage{
 norm_simulate(
   n = 400,
-  kind = c("gaussian_location", "gaussian_scale", "shash", "panel", "shift",
-    "longitudinal", "ordinal"),
+  kind = c("gaussian", "shash", "longitudinal"),
+  sites = 4,
+  site_shift = 0,
+  site_log_scale = 0,
+  scale = c("constant", "age"),
+  skew = 0.6,
+  tail = 0.85,
+  visits = 3,
+  tau_b = sqrt(0.5),
+  tau_g = sqrt(0.35),
+  sigma_e = sqrt(0.15),
+  ell = 5,
   seed = NULL
 )
 }
 \arguments{
-\item{n}{Number of rows.}
+\item{n}{Number of rows (for \code{"longitudinal"}, approximate).}
 
 \item{kind}{Generator name.}
 
-\item{seed}{Optional seed.}
+\item{sites}{Number of sites.}
+
+\item{site_shift}{Location shift per site in outcome units, recycled
+to \code{sites}.}
+
+\item{site_log_scale}{Log-scale shift per site, recycled to \code{sites}.}
+
+\item{scale}{\code{"constant"} or \code{"age"}-dependent outcome scale.}
+
+\item{skew, tail}{SHASH skew and tail (\code{"shash"} only).}
+
+\item{visits}{Mean visits per subject (\code{"longitudinal"} only).}
+
+\item{tau_b, tau_g, sigma_e}{Standard deviations of the stable, dynamic,
+and measurement components (\code{"longitudinal"} only). They are
+rescaled to sum to unit variance.}
+
+\item{ell}{Matern-3/2 length-scale in time units (\code{"longitudinal"}
+only).}
+
+\item{seed}{Optional seed; the global RNG state is restored afterwards.}
 }
 \value{
-A data frame with covariates and one or more outcomes.
+A data frame with a \code{truth} attribute listing the generative
+parameters. For \code{"longitudinal"}, \code{truth$correlation(lag)} gives the
+implied correlation of normal scores at a given lag.
 }
 \description{
-Simulate reference-model data for law tests
+Synthetic data with known generative structure for examples and law
+tests. Every kind returns \code{age}, \code{sex}, \code{site}, an outcome \code{y}, and
+three correlated Gaussian markers \code{marker_01}..\code{marker_03}. The true
+generative parameters are stored in \code{attr(x, "truth")}.
+}
+\details{
+\itemize{
+\item \code{"gaussian"}: \code{y} is Gaussian with location
+\eqn{\mu(age, sex)} and either a constant or an age-dependent scale.
+\item \code{"shash"}: \code{y} is sinh-arcsinh with the same location and scale and
+constant skew and tail.
+\item \code{"longitudinal"}: subjects have 2 to \code{visits + 1} visits with
+irregular lags. The normal score of \code{y} follows a stable subject
+component plus a Matern-3/2 process in time plus measurement noise,
+\eqn{z_i(t) = \tau_b b_i + \tau_g g_i(t) + \sigma_e e_{it}}, with
+\eqn{\tau_b^2 + \tau_g^2 + \sigma_e^2 = 1} so that marginal scores are
+standard normal. Adds \code{participant_id} and \code{visit} columns.
+}
+}
+\examples{
+ref <- norm_simulate(200, seed = 1)
+attr(ref, "truth")$sigma
+long <- norm_simulate(300, kind = "longitudinal", seed = 2)
+attr(long, "truth")$correlation(2)
 }

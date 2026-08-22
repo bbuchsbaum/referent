@@ -6,11 +6,21 @@
 #' @param data A data frame of reference observations.
 #' @param outcomes Tidyselect specification or character vector of outcome
 #'   columns. The covariate frame is kept wide.
-#' @param id Optional subject identifier (column name or vector).
+#' @param id Optional subject identifier (column name or vector). It is
+#'   carried on scores but is never a covariate.
 #' @param ... Passed to the engine fitter.
-#' @return An object of class `norm_fit`.
+#' @details
+#' Covariates are the variables named in the spec's `location`, `scale`,
+#' `skew`, and `tail` formulas; other columns are ignored. Each outcome is
+#' fitted on the rows that are complete for that outcome and those
+#' covariates, and a message reports how many rows were dropped.
+#'
+#' Outcomes are fitted in parallel when the `future.apply` package is
+#' installed and a non-sequential [future::plan()] is active.
+#' @return An object of class `norm_fit`. `fit$covariates` holds the
+#'   covariate names.
 #' @examples
-#' ref <- norm_simulate(80, kind = "gaussian_location", seed = 1)
+#' ref <- norm_simulate(80, seed = 1)
 #' spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
 #' fit <- norm_fit(spec, data = ref, outcomes = "y")
 #' predict(fit, newdata = ref[1:3, ], uncertainty = "conditional")
@@ -27,8 +37,12 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
     nm <- rlang::as_name(id_quo)
     if (nm %in% names(data)) nm else NULL
   }, error = function(e) NULL)
-  covariate_names <- setdiff(names(data), c(outcome_names, id_name))
-  models <- lapply(outcome_names, function(nm) {
+  covariate_names <- spec_covariates(spec)
+  missing_cov <- setdiff(covariate_names, names(data))
+  if (length(missing_cov)) {
+    cli::cli_abort("Covariate{?s} {.field {missing_cov}} not found in {.arg data}.")
+  }
+  fit_one <- function(nm) {
     y <- data[[nm]]
     if (stats::sd(y, na.rm = TRUE) < .Machine$double.eps ||
         sum(is.finite(y)) < 8L) {
@@ -43,8 +57,15 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       ))
     }
     cc <- stats::complete.cases(data[, c(nm, covariate_names), drop = FALSE])
+    n_drop <- sum(!cc)
+    if (n_drop > 0L) {
+      cli::cli_inform(
+        "{.field {nm}}: dropped {n_drop} row{?s} with missing outcome or covariate values."
+      )
+    }
     fit_engine(spec, data[cc, , drop = FALSE], nm, ...)
-  })
+  }
+  models <- outcome_lapply(outcome_names, fit_one)
   names(models) <- outcome_names
   support_ref <- support_reference(data, covariate_names)
   structure(
@@ -56,13 +77,35 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       id_name = id_name,
       data_hash = digest_data(data[, c(covariate_names, outcome_names), drop = FALSE]),
       n = nrow(data),
-      covariate_names = covariate_names,
+      covariates = covariate_names,
       support_ref = support_ref,
       in_sample_rows = nrow(data),
       package_version = as.character(utils::packageVersion("referent"))
     ),
     class = "norm_fit"
   )
+}
+
+# Covariates are exactly the variables named in the spec's formulas.
+spec_covariates <- function(spec) {
+  unique(unlist(lapply(
+    spec[c("location", "scale", "skew", "tail")],
+    all.vars
+  ), use.names = FALSE))
+}
+
+# Fit outcomes in parallel when a non-sequential future plan is active.
+outcome_lapply <- function(outcomes, fun) {
+  parallel <- length(outcomes) > 1L &&
+    has_pkg("future.apply") &&
+    !inherits(future::plan(), "sequential")
+  if (parallel) {
+    out <- future.apply::future_lapply(outcomes, fun, future.seed = TRUE)
+  } else {
+    out <- lapply(outcomes, fun)
+  }
+  names(out) <- outcomes
+  out
 }
 
 pull_column <- function(data, quo, default = NULL) {
@@ -98,12 +141,13 @@ print.norm_fit <- function(x, ...) {
   st <- fit_statuses(x)
   tab <- sort(table(st), decreasing = TRUE)
   status_txt <- paste(paste0(names(tab), "=", as.integer(tab)), collapse = ", ")
-  cat(sprintf("norm_fit %s via %s\n", x$spec$family$name, x$spec$engine))
-  cat(sprintf("%d outcomes, n = %d\n", length(x$outcomes), x$n))
-  cat(sprintf("status: %s\n", status_txt))
+  cli::cli_text("{.cls norm_fit} {x$spec$family$name} via {x$spec$engine}")
+  cli::cli_text("{length(x$outcomes)} outcome{?s}, n = {x$n}")
+  cli::cli_text("covariates: {.field {x$covariates}}")
+  cli::cli_text("status: {status_txt}")
   failed <- names(st)[st != "ok"]
   if (length(failed)) {
-    cat(sprintf("Failed or flagged outcomes: %s\n", paste(failed, collapse = ", ")))
+    cli::cli_alert_warning("Failed or flagged outcome{?s}: {.field {failed}}")
   }
   invisible(x)
 }
@@ -159,7 +203,7 @@ predict.norm_fit <- function(object,
   if (identical(type, "distribution")) {
     return(dists)
   }
-  support <- classify_support(object$support_ref, newdata)
+  support <- classify_support(object$support_ref, newdata)$support
   in_sample <- is_in_sample_data(object, newdata)
   rows <- lapply(nms, function(nm) {
     d <- dists[[nm]]
@@ -231,7 +275,7 @@ dplyr_bind <- function(xs) {
 }
 
 is_in_sample_data <- function(fit, newdata) {
-  cols <- intersect(c(fit$covariate_names, fit$outcomes), names(newdata))
+  cols <- intersect(c(fit$covariates, fit$outcomes), names(newdata))
   if (!length(cols) || nrow(newdata) != fit$n) {
     return(FALSE)
   }

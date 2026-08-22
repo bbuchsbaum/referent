@@ -7,18 +7,15 @@ test_that("flag reports exceedances rather than abnormalities", {
   expect_false(any(grepl("abnormal", names(fl), ignore.case = TRUE)))
 })
 
-test_that("as_wide and filter_scores work", {
+test_that("scores_matrix pivots a long table and keeps ids", {
   d <- norm_dist("gaussian", location = c(0, 0), scale = 1)
   sc <- as_scores(d, c(1, -1))
   sc$.row <- 1:2
   sc$.id <- c("A", "B")
   sc$.outcome <- "y"
-  sc$.in_sample <- FALSE
-  w <- as_wide(sc, value = "z")
-  expect_true("y" %in% names(w))
-  f <- filter_scores(sc, abs(z) > 0.5)
-  expect_equal(nrow(f), 2)
-  class(sc) <- unique(c("norm_scores", class(sc)))
-  f2 <- filter_scores(sc, abs(z) > 0.5)
-  expect_s3_class(f2, "norm_scores")
+  w <- scores_matrix(sc, value = "z")
+  expect_equal(colnames(w$matrix), "y")
+  expect_equal(w$.id, c("A", "B"))
+  expect_equal(as.numeric(w$matrix[, "y"]), sc$z)
+  expect_error(scores_matrix(sc, value = "nope"), "Unknown score column")
 })

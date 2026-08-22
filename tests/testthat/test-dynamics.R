@@ -50,12 +50,21 @@ test_that("time-unit law: velocity rescales, innovation does not", {
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age)
   tr <- norm_transition(dyn, data = dat, id = participant_id, time = age)
-  vel_year <- norm_velocity(tr, time_unit = "year")
-  vel_month <- tr
-  vel_month$observed_velocity <- vel_month$observed_velocity / 12
-  expect_equal(tr$innovation_z, vel_year$innovation_z)
-  expect_equal(mean(abs(vel_month$observed_velocity) * 12),
-               mean(abs(vel_year$observed_velocity)), tolerance = 1e-10)
+  expect_equal(tr$observed_velocity * tr$.dt, tr$observed_change, tolerance = 1e-10)
+  expect_equal(tr$expected_velocity * tr$.dt, tr$expected_change, tolerance = 1e-10)
+  # innovation_z is dimensionless: it does not depend on the time unit
+  dat_m <- dat
+  dat_m$age_months <- dat$age * 12
+  dyn_m <- dyn
+  dyn_m$time_name <- "age_months"
+  dyn_m$time_range <- dyn$time_range * 12
+  dyn_m$lag_range <- dyn$lag_range * 12
+  for (nm in names(dyn_m$processes)) {
+    dyn_m$processes[[nm]]$psi$ell <- dyn$processes[[nm]]$psi$ell * 12
+  }
+  tr_m <- norm_transition(dyn_m, data = dat_m, id = participant_id, time = age_months)
+  expect_equal(tr_m$innovation_z, tr$innovation_z, tolerance = 1e-8)
+  expect_equal(tr_m$observed_velocity * 12, tr$observed_velocity, tolerance = 1e-8)
 })
 
 test_that("innovations are roughly standard normal on longitudinal controls", {

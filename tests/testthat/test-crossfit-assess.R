@@ -1,6 +1,6 @@
 test_that("cross-fitted scores are marked out of sample", {
   set.seed(11)
-  dat <- norm_simulate(160, kind = "gaussian_location", seed = 11)
+  dat <- norm_simulate(160, seed = 11)
   dat$participant_id <- rep(1:40, each = 4)
   cf <- norm_crossfit(
     simple_spec(),
@@ -17,8 +17,8 @@ test_that("cross-fitted scores are marked out of sample", {
 
 test_that("norm_assess reports coverage near nominal on a calibrated model", {
   set.seed(13)
-  train <- norm_simulate(300, kind = "gaussian_location", seed = 13)
-  test <- norm_simulate(200, kind = "gaussian_location", seed = 14)
+  train <- norm_simulate(300, seed = 13)
+  test <- norm_simulate(200, seed = 14)
   fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
   a <- norm_assess(fit, newdata = test)
   expect_s3_class(a, "norm_assessment")
@@ -30,7 +30,7 @@ test_that("norm_assess reports coverage near nominal on a calibrated model", {
 test_that("ladder prefers a simple model on Gaussian data", {
   skip_on_cran()
   set.seed(15)
-  dat <- norm_simulate(180, kind = "gaussian_location", seed = 15)
+  dat <- norm_simulate(180, seed = 15)
   specs <- list(
     gaussian_const = simple_spec("gaussian", scale = FALSE),
     gaussian_scale = simple_spec("gaussian", scale = TRUE)

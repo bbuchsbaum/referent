@@ -1,8 +1,8 @@
 test_that("PIT recalibration remains a valid CDF map", {
   set.seed(18)
-  train <- norm_simulate(200, kind = "gaussian_location", seed = 18)
-  cal <- norm_simulate(120, kind = "gaussian_location", seed = 19)
-  test <- norm_simulate(80, kind = "gaussian_location", seed = 20)
+  train <- norm_simulate(200, seed = 18)
+  cal <- norm_simulate(120, seed = 19)
+  test <- norm_simulate(80, seed = 20)
   fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
   cal_fit <- norm_calibrate(fit, data = cal)
   expect_s3_class(cal_fit, "norm_calibrated")
@@ -13,7 +13,8 @@ test_that("PIT recalibration remains a valid CDF map", {
 
 test_that("adaptation recovers a location shift", {
   set.seed(23)
-  dat <- norm_simulate(280, kind = "shift", seed = 23)
+  dat <- norm_simulate(280, site_shift = c(0, 1.2, -0.8, 0.3),
+                       site_log_scale = c(0, 0.15, 0, -0.1), seed = 23)
   train <- dat[dat$site != "B", ]
   local <- dat[dat$site == "B", ]
   local <- local[seq_len(min(40, nrow(local))), ]

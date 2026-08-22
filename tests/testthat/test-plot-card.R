@@ -1,6 +1,6 @@
-test_that("autoplot returns a ggplot and norm_card prints", {
+test_that("autoplot returns a ggplot and norm_reference prints a card", {
   set.seed(30)
-  dat <- norm_simulate(80, kind = "gaussian_location", seed = 30)
+  dat <- norm_simulate(80, seed = 30)
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
@@ -9,14 +9,14 @@ test_that("autoplot returns a ggplot and norm_card prints", {
   p <- ggplot2::autoplot(fit, type = "centiles")
   expect_s3_class(p, "ggplot")
   expect_s3_class(theme_referent(), "theme")
-  card <- norm_card(fit)
-  expect_s3_class(card, "norm_card")
-  out <- paste(utils::capture.output(print(card)), collapse = "\n")
+  card <- norm_reference(fit)
+  expect_s3_class(card, "norm_reference")
+  out <- paste(cli::cli_fmt(print(card)), collapse = "\n")
   expect_match(out, "model card")
 })
 
 test_that("centile fortify has paired ribbons and a median line", {
-  dat <- norm_simulate(90, kind = "gaussian_location", seed = 31)
+  dat <- norm_simulate(90, seed = 31)
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
@@ -76,8 +76,8 @@ test_that("forecast fan uses history and named centiles", {
 })
 
 test_that("assessment and score plots stay ggplot objects", {
-  dat <- norm_simulate(80, kind = "gaussian_location", seed = 34)
-  val <- norm_simulate(40, kind = "gaussian_location", seed = 35)
+  dat <- norm_simulate(80, seed = 34)
+  val <- norm_simulate(40, seed = 35)
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,

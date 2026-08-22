@@ -32,6 +32,6 @@ An object of class \code{norm_dynamics}.
 \description{
 Attaches a Gaussian-copula process on calibrated normal scores
 \eqn{Z=\Phi^{-1}(F(y\mid x))}. The default kernel is stable rank plus
-a Matérn-3/2 process plus a measurement nugget, which is positive
+a Matern-3/2 process plus a measurement nugget, which is positive
 semidefinite for every irregular visit schedule.
 }

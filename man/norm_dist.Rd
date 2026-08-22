@@ -18,7 +18,8 @@ norm_dist(
 \item{family}{Family name or a \link{norm_family} object.}
 
 \item{location, scale, skew, tail}{Numeric parameter vectors. Recycled to
-a common length.}
+a common length. \code{NA} parameters give \code{NA} scores (for example when a
+predictor is missing).}
 
 \item{aleatoric_sd, epistemic_sd}{Optional uncertainty summaries,
 recycled to the same length.}

@@ -156,9 +156,8 @@ tail_prob  aleatoric_sd  epistemic_sd  support  calibrated
 Useful transformations would be explicit:
 
 ```r
-as_wide(scores, value = "z")
-as_wide(scores, value = "centile")
-filter_scores(scores, abs(z) > 2)
+# scores is a long tibble; pivot with tidyr::pivot_wider() and subset with
+# dplyr::filter(). (as_wide()/filter_scores() were removed in Phase 1, 2026-08-22.)
 ```
 
 Model adaptation, cross-fitting, and longitudinal scoring should feel like natural extensions:
@@ -528,7 +527,7 @@ A shareable reference bundle should include:
 This should be generated automatically as a model card:
 
 ```r
-norm_card(fit)
+print(norm_reference(fit))  # norm_card() merged into print.norm_reference (2026-08-22)
 ```
 
 ---

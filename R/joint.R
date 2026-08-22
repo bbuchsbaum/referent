@@ -18,9 +18,8 @@ norm_joint <- function(scores,
   method <- match.arg(method)
   covariance <- match.arg(covariance)
   value <- value %||% if ("innovation_z" %in% names(scores)) "innovation_z" else "z"
-  wide <- as_wide(scores, value = value)
-  mat_names <- setdiff(names(wide), c(".row", ".id"))
-  Z <- as.matrix(wide[, mat_names, drop = FALSE])
+  wide <- scores_matrix(scores, value = value)
+  Z <- wide$matrix
   R <- joint_correlation(Z, covariance)
   d2 <- apply(Z, 1, function(z) {
     ok <- is.finite(z)
@@ -35,7 +34,7 @@ norm_joint <- function(scores,
   emp <- stats::ecdf(d2[is.finite(d2)])
   tibble::tibble(
     .row = wide$.row,
-    .id = if (".id" %in% names(wide)) wide$.id else wide$.row,
+    .id = wide$.id,
     d2 = d2,
     joint_centile = emp(d2),
     joint_z = stats::qnorm(clamp_prob(emp(d2))),
@@ -59,5 +58,24 @@ joint_correlation <- function(Z, covariance) {
   diag(s) <- 1
   n <- nrow(Z)
   lam <- p / (p + n)
-  (1 - lam) * s + lam * as.matrix(Matrix::Diagonal(p))
+  (1 - lam) * s + lam * diag(p)
+}
+
+# Pivot a long score table to a rows x outcomes matrix of `value`.
+scores_matrix <- function(scores, value = "z") {
+  if (!value %in% names(scores)) {
+    cli::cli_abort("Unknown score column {.field {value}}.")
+  }
+  row_col <- if (".row" %in% names(scores)) ".row" else ".id"
+  rows <- unique(scores[[row_col]])
+  outs <- unique(scores$.outcome)
+  mat <- matrix(NA_real_, length(rows), length(outs), dimnames = list(NULL, outs))
+  mat[cbind(match(scores[[row_col]], rows), match(scores$.outcome, outs))] <-
+    as.numeric(scores[[value]])
+  ids <- if (".id" %in% names(scores)) {
+    scores$.id[match(rows, scores[[row_col]])]
+  } else {
+    rows
+  }
+  list(matrix = mat, .row = rows, .id = ids)
 }

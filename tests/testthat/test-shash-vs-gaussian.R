@@ -21,8 +21,8 @@ test_that("SHASH beats Gaussian on strongly skewed held-out data", {
 
 test_that("Gaussian remains competitive when the truth is Gaussian", {
   skip_on_cran()
-  train <- norm_simulate(240, kind = "gaussian_scale", seed = 63)
-  test <- norm_simulate(180, kind = "gaussian_scale", seed = 64)
+  train <- norm_simulate(240, kind = "gaussian", scale = "age", seed = 63)
+  test <- norm_simulate(180, kind = "gaussian", scale = "age", seed = 64)
   fit_g <- norm_fit(simple_spec(scale = TRUE), data = train, outcomes = "y")
   fit_s <- norm_fit(simple_spec("shash", scale = TRUE), data = train, outcomes = "y")
   skip_if(

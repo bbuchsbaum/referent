@@ -17,7 +17,8 @@
 #'
 #' @param family Family name or a [norm_family] object.
 #' @param location,scale,skew,tail Numeric parameter vectors. Recycled to
-#'   a common length.
+#'   a common length. `NA` parameters give `NA` scores (for example when a
+#'   predictor is missing).
 #' @param aleatoric_sd,epistemic_sd Optional uncertainty summaries,
 #'   recycled to the same length.
 #' @return An object of class `norm_dist`.
@@ -41,13 +42,13 @@ norm_dist <- function(family,
   }
   location <- if (n == 0L) numeric() else recycle_to(location, n)
   scale <- if (n == 0L) numeric() else recycle_to(scale, n)
-  if (n > 0L && any(!is.finite(scale) | scale <= 0, na.rm = TRUE)) {
+  if (n > 0L && any(scale <= 0, na.rm = TRUE)) {
     cli::cli_abort("{.arg scale} must be positive.")
   }
   if (fam == "shash") {
     skew <- recycle_to(skew %||% 0, n)
     tail <- recycle_to(tail %||% 1, n)
-    if (any(!is.finite(tail) | tail <= 0, na.rm = TRUE)) {
+    if (any(tail <= 0, na.rm = TRUE)) {
       cli::cli_abort("{.arg tail} must be positive.")
     }
   } else {
@@ -119,8 +120,6 @@ cdf.norm_dist <- function(distribution, y) {
     attr(distribution, "family"),
     gaussian = stats::pnorm(y, mean = p$location, sd = p$scale),
     shash = shash_cdf(y, p$location, p$scale, p$skew, p$tail),
-    discrete = discrete_interval_pit(y, p$location, p$scale)$mid,
-    ordinal = discrete_interval_pit(y, p$location, p$scale)$mid,
     cli::cli_abort("Unknown family {.val {attr(distribution, 'family')}}.")
   )
 }
@@ -136,8 +135,6 @@ quantile.norm_dist <- function(x, probs = seq(0, 1, 0.25), ...) {
     attr(x, "family"),
     gaussian = stats::qnorm(p, mean = par$location, sd = par$scale),
     shash = shash_quantile(p, par$location, par$scale, par$skew, par$tail),
-    discrete =,
-    ordinal = par$location + par$scale * stats::qnorm(p),
     cli::cli_abort("Unknown family {.val {attr(x, 'family')}}.")
   )
 }
@@ -164,8 +161,6 @@ log_density.norm_dist <- function(distribution, y) {
     attr(distribution, "family"),
     gaussian = stats::dnorm(y, mean = p$location, sd = p$scale, log = TRUE),
     shash = shash_log_density(y, p$location, p$scale, p$skew, p$tail),
-    discrete =,
-    ordinal = stats::dnorm(y, mean = p$location, sd = p$scale, log = TRUE),
     cli::cli_abort("Unknown family {.val {attr(distribution, 'family')}}.")
   )
 }
@@ -221,8 +216,7 @@ variance <- function(distribution) {
 variance.norm_dist <- function(distribution) {
   p <- norm_params(distribution)
   fam <- attr(distribution, "family")
-  if (identical(fam, "gaussian") || identical(fam, "discrete") ||
-      identical(fam, "ordinal")) {
+  if (identical(fam, "gaussian")) {
     return(p$scale^2)
   }
   u <- (seq_len(199L) - 0.5) / 199
@@ -285,31 +279,6 @@ shash_log_density <- function(y, mu, sigma, eps, delta) {
   log(c_z) - 0.5 * s^2 - 0.5 * log(2 * pi) - 0.5 * log1p(z^2) - log(sigma)
 }
 
-# --- Discrete / ordinal interval PIT --------------------------------------
-
-#' Randomized or interval PIT for discrete outcomes
-#'
-#' Returns the lower and upper CDF values around an integer observation
-#' and a randomized PIT `u ~ Unif(F(y-1), F(y))`. The midpoint is used
-#' when a single representative residual is required.
-#'
-#' @param y Observations.
-#' @param location,scale Latent Gaussian location and scale.
-#' @param randomize If `TRUE`, draw a randomized PIT.
-#' @export
-discrete_interval_pit <- function(y, location, scale, randomize = FALSE) {
-  y <- as.numeric(y)
-  lo <- stats::pnorm(y - 0.5, mean = location, sd = scale)
-  hi <- stats::pnorm(y + 0.5, mean = location, sd = scale)
-  mid <- pmin(pmax((lo + hi) / 2, 0), 1)
-  u <- if (isTRUE(randomize)) {
-    stats::runif(length(y), min = lo, max = pmax(hi, lo + 1e-12))
-  } else {
-    mid
-  }
-  list(lower = lo, upper = hi, mid = mid, randomized = u)
-}
-
 #' Mix a history-conditioned Gaussian score into a marginal CDF
 #'
 #' Implements \eqn{F_*(y\mid H)=\Phi((z(y)-m_*)/s_*)} from the velocity
@@ -317,14 +286,14 @@ discrete_interval_pit <- function(y, location, scale, randomize = FALSE) {
 #'
 #' @param distribution Marginal [norm_dist] at the forecast time.
 #' @param m,s Conditional mean and SD of the latent normal score.
-#' @export
+#' @keywords internal
+#' @noRd
 condition_norm_dist <- function(distribution, m, s) {
   m <- recycle_to(m, length(distribution))
   s <- recycle_to(s, length(distribution))
   if (any(s <= 0, na.rm = TRUE)) {
     cli::cli_abort("{.arg s} must be positive.")
   }
-  p <- norm_params(distribution)
   structure(
     distribution,
     history_m = m,

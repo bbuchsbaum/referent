@@ -2,7 +2,7 @@
 #'
 #' Attaches a Gaussian-copula process on calibrated normal scores
 #' \eqn{Z=\Phi^{-1}(F(y\mid x))}. The default kernel is stable rank plus
-#' a Matérn-3/2 process plus a measurement nugget, which is positive
+#' a Matern-3/2 process plus a measurement nugget, which is positive
 #' semidefinite for every irregular visit schedule.
 #'
 #' @param reference A [norm_fit].
@@ -53,7 +53,7 @@ norm_dynamics <- function(reference,
   )
 }
 
-#' Matérn-3/2 longitudinal process
+#' Matern-3/2 longitudinal process
 #'
 #' @param stable_rank Include a subject-level intercept.
 #' @param measurement Optional formula for measurement-noise covariates
@@ -71,17 +71,6 @@ norm_matern32 <- function(stable_rank = TRUE,
       ell = ell
     ),
     class = c("norm_process_matern32", "norm_process")
-  )
-}
-
-#' Stable-rank plus nugget process
-#'
-#' @param measurement Optional formula for measurement-noise covariates.
-#' @export
-norm_stable <- function(measurement = ~1) {
-  structure(
-    list(name = "stable", stable_rank = TRUE, measurement = measurement, ell = Inf),
-    class = c("norm_process_stable", "norm_process")
   )
 }
 
@@ -204,18 +193,6 @@ gaussian_loglik <- function(z, r) {
   -0.5 * (length(z) * log(2 * pi) + ldet + drop(t(z) %*% inv %*% z))
 }
 
-lag_range <- function(id, time) {
-  lags <- unlist(lapply(split(time, id), function(t) {
-    if (length(t) < 2) {
-      return(numeric())
-    }
-    as.numeric(dist(t))
-  }))
-  if (!length(lags)) {
-    return(c(0, 0))
-  }
-  range(lags)
-}
 
 condition_z <- function(z_hist, t_hist, t_new, psi, process) {
   t_all <- c(t_hist, t_new)
@@ -249,14 +226,15 @@ classify_temporal_support <- function(dyn, t_from, t_to, history_n) {
 
 #' @export
 print.norm_dynamics <- function(x, ...) {
-  cat(sprintf("norm_dynamics %s for %d outcomes\n", x$process$name, length(x$outcomes)))
-  cat(sprintf("subjects: %s; time range [%s, %s]\n",
-              x$n_subject, signif(x$time_range[1], 4), signif(x$time_range[2], 4)))
+  cli::cli_text("{.cls norm_dynamics} {x$process$name} for {length(x$outcomes)} outcome{?s}")
+  cli::cli_text(
+    "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]"
+  )
   ident <- x$identifiability
   if (!is.null(ident) && !isTRUE(ident$change)) {
-    cat(sprintf("change not identified: %s\n", ident$reason %||% "insufficient repeats"))
+    cli::cli_alert_warning("change not identified: {ident$reason %||% 'insufficient repeats'}")
   } else if (!is.null(ident) && !isTRUE(ident$measurement)) {
-    cat(sprintf("measurement not separated: %s\n", ident$reason %||% ""))
+    cli::cli_alert_warning("measurement not separated: {ident$reason %||% ''}")
   }
   invisible(x)
 }

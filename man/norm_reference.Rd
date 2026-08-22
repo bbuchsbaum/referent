@@ -2,7 +2,6 @@
 % Please edit documentation in R/card.R
 \name{norm_reference}
 \alias{norm_reference}
-\alias{norm_card}
 \title{Frozen reference bundle and model card}
 \usage{
 norm_reference(
@@ -12,8 +11,6 @@ norm_reference(
   units = NULL,
   missing_policy = "complete-case per outcome; predictors are never imputed"
 )
-
-norm_card(fit)
 }
 \arguments{
 \item{fit}{A \link{norm_fit}.}
@@ -23,10 +20,10 @@ norm_card(fit)
 \item{criteria, units, missing_policy}{Optional provenance fields.}
 }
 \value{
-\code{norm_reference} or a printed model card.
+An object of class \code{norm_reference} (also a \code{norm_fit}).
 }
 \description{
 The bundle omits raw training observations by default. It keeps what
 is required for prediction, support checks, calibration, and
-provenance.
+provenance. Printing a \code{norm_reference} shows the model card.
 }

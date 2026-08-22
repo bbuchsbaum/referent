@@ -10,7 +10,7 @@ norm_spec(
   scale = ~1,
   skew = ~1,
   tail = ~1,
-  engine = c("mgcv", "gamlss", "gamlss2"),
+  engine = "mgcv",
   method = "REML",
   use_bam = TRUE,
   bam_min_n = 20000L,
@@ -23,8 +23,7 @@ norm_spec(
 \item{location, scale, skew, tail}{One-sided formulas for the additive
 predictors. Unused shape formulas default to \code{~ 1}.}
 
-\item{engine}{Fitting backend. \code{"mgcv"} is required; \code{"gamlss"} and
-\code{"gamlss2"} are optional adapters.}
+\item{engine}{Fitting backend. Only \code{"mgcv"} is supported.}
 
 \item{method}{\code{mgcv} smoothness-selection method.}
 

@@ -60,28 +60,14 @@ referent_cols <- function() {
   )
 }
 
-#' Discrete Okabe–Ito colour scale
-#'
-#' @param ... Passed to [ggplot2::discrete_scale()].
-#' @export
 scale_colour_referent <- function(...) {
   ggplot2::scale_colour_manual(values = referent_cols()$okabe, ...)
 }
 
-#' @rdname scale_colour_referent
-#' @export
-scale_color_referent <- scale_colour_referent
-
-#' @rdname scale_colour_referent
-#' @export
 scale_fill_referent <- function(...) {
   ggplot2::scale_fill_manual(values = referent_cols()$okabe, ...)
 }
 
-#' Diverging fill for signed scores
-#'
-#' @param ... Passed to [ggplot2::scale_fill_gradient2()].
-#' @export
 scale_fill_referent_diverging <- function(...) {
   ggplot2::scale_fill_gradient2(
     low = "#0072B2",
@@ -99,11 +85,11 @@ finish_plot <- function(p, title = NULL, subtitle = NULL, xlab = NULL, ylab = NU
 }
 
 pretty_x <- function() {
-  ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(6))
+  ggplot2::scale_x_continuous(n.breaks = 6)
 }
 
 pretty_y <- function() {
-  ggplot2::scale_y_continuous(breaks = scales::breaks_pretty(5))
+  ggplot2::scale_y_continuous(n.breaks = 5)
 }
 
 centile_label <- function(p) {

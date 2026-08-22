@@ -22,19 +22,16 @@ Depends:
 Imports:
     cli,
     ggplot2,
-    Matrix,
     mgcv,
     rlang,
-    scales,
     stats,
     tibble,
     tidyselect,
-    vctrs
+    vctrs,
+    withr
 Suggests:
     future,
     future.apply,
-    gamlss,
-    gamlss2,
     ggridges,
     knitr,
     patchwork,

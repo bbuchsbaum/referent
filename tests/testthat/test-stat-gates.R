@@ -1,7 +1,7 @@
 test_that("held-out Gaussian coverage stays near nominal", {
   set.seed(50)
-  train <- norm_simulate(280, kind = "gaussian_location", seed = 50)
-  test <- norm_simulate(220, kind = "gaussian_location", seed = 51)
+  train <- norm_simulate(280, seed = 50)
+  test <- norm_simulate(220, seed = 51)
   fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
   a <- norm_assess(fit, newdata = test)
   expect_lt(abs(a$marginal$cover_50 - 0.50), 0.12)
@@ -13,7 +13,7 @@ test_that("held-out Gaussian coverage stays near nominal", {
 
 test_that("in-sample Z scores are over-shrunk relative to cross-fit", {
   set.seed(52)
-  dat <- norm_simulate(160, kind = "gaussian_location", seed = 52)
+  dat <- norm_simulate(160, seed = 52)
   dat$participant_id <- rep(seq_len(40), each = 4)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   ins <- predict(fit, newdata = dat, uncertainty = "conditional",
@@ -39,7 +39,7 @@ test_that("naive Z subtraction is mis-scaled; change_z is calibrated", {
 
 test_that("dynamics refuse unusual-change labels without repeats", {
   set.seed(54)
-  dat <- norm_simulate(40, kind = "gaussian_location", seed = 54)
+  dat <- norm_simulate(40, seed = 54)
   dat$participant_id <- seq_len(nrow(dat))
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),

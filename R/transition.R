@@ -108,26 +108,6 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
   dplyr_bind(unlist(pieces, recursive = FALSE))
 }
 
-#' Velocity summaries from a transition table
-#'
-#' @param transition A [norm_transition] object.
-#' @param time_unit Label only; values are already in the time variable's unit.
-#' @param scale `"response"` or `"centile"`.
-#' @export
-norm_velocity <- function(transition,
-                          time_unit = "year",
-                          scale = c("response", "centile")) {
-  scale <- match.arg(scale)
-  out <- transition
-  attr(out, "time_unit") <- time_unit
-  attr(out, "scale") <- scale
-  if (identical(scale, "centile")) {
-    out$observed_velocity <- (out$end_centile - out$start_centile) / out$.dt
-  }
-  class(out) <- unique(c("norm_velocity", class(out)))
-  out
-}
-
 #' @export
 print.norm_transition <- function(x, ...) {
   cli::cli_text("{.cls norm_transition} {nrow(x)} transition{?s}")

@@ -76,7 +76,7 @@ test_that("package-level change_z FPR stays near nominal across correlation and 
 })
 
 test_that("predict carries the declared subject id", {
-  dat <- norm_simulate(40, kind = "gaussian_location", seed = 74)
+  dat <- norm_simulate(40, seed = 74)
   dat$participant_id <- paste0("S", seq_len(nrow(dat)))
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
@@ -85,13 +85,13 @@ test_that("predict carries the declared subject id", {
     id = participant_id
   )
   expect_equal(fit$id_name, "participant_id")
-  expect_false("participant_id" %in% fit$covariate_names)
+  expect_false("participant_id" %in% fit$covariates)
   sc <- predict(fit, newdata = dat[1:5, ], uncertainty = "conditional")
   expect_equal(as.character(sc$.id), dat$participant_id[1:5])
 })
 
 test_that("new subject ids are not new_group support", {
-  dat <- norm_simulate(50, kind = "gaussian_location", seed = 75)
+  dat <- norm_simulate(50, seed = 75)
   dat$participant_id <- paste0("S", seq_len(nrow(dat)))
   fit <- norm_fit(
     norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),

@@ -1,6 +1,6 @@
 test_that("out-of-range ages are flagged and z is NA by default", {
   set.seed(9)
-  dat <- norm_simulate(150, kind = "gaussian_location", seed = 9)
+  dat <- norm_simulate(150, seed = 9)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   extra <- dat[1:3, ]
   extra$age <- c(5, 50, 120)
@@ -12,10 +12,13 @@ test_that("out-of-range ages are flagged and z is NA by default", {
 
 test_that("unseen factor levels are new_group", {
   set.seed(10)
-  dat <- norm_simulate(80, kind = "gaussian_location", seed = 10)
+  dat <- norm_simulate(80, seed = 10)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
   extra <- dat[1, ]
+  extra$sex <- factor("X", levels = c(levels(dat$sex), "X"))
+  st <- norm_support(fit, extra)
+  expect_equal(st$support, "new_group")
   extra$site <- factor("Z", levels = c(levels(dat$site), "Z"))
-  st <- classify_support(fit$support_ref, extra)
-  expect_equal(st, "new_group")
+  extra$sex <- dat$sex[[1]]
+  expect_equal(norm_support(fit, extra)$support, "in")
 })

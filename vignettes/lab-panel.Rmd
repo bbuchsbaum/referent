@@ -16,7 +16,7 @@ A multi-site laboratory or sensor panel, not neuroimaging.
 ```{r}
 library(referent)
 set.seed(4)
-ref <- norm_simulate(300, kind = "panel")
+ref <- norm_simulate(300)
 spec <- norm_spec(
   family = norm_gaussian(),
   location = ~ s(age, k = 6) + sex + s(site, bs = "re"),
@@ -25,5 +25,5 @@ spec <- norm_spec(
 fit <- norm_fit(spec, data = ref, outcomes = starts_with("marker_"))
 print(fit)
 scores <- predict(fit, newdata = ref[1:3, ], uncertainty = "conditional")
-as_wide(scores, value = "z")
+scores[, c(".row", ".outcome", "observed", "centile", "z")]
 ```

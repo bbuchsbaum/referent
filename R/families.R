@@ -13,15 +13,14 @@
 NULL
 
 new_norm_family <- function(name, n_parameter, parameter_names, links,
-                            discrete = FALSE, extra = list()) {
+                            extra = list()) {
   structure(
     c(
       list(
         name = name,
         n_parameter = n_parameter,
         parameter_names = parameter_names,
-        links = links,
-        discrete = isTRUE(discrete)
+        links = links
       ),
       extra
     ),
@@ -62,53 +61,6 @@ norm_shash <- function(link_location = "identity",
     ),
     extra = list(min_scale = min_scale)
   )
-}
-
-#' @rdname norm_family
-#' @param levels Ordered category labels.
-#' @export
-norm_ordinal <- function(levels) {
-  levels <- as.character(levels)
-  if (length(levels) < 2L) {
-    cli::cli_abort("{.fn norm_ordinal} needs at least two levels.")
-  }
-  new_norm_family(
-    name = "ordinal",
-    n_parameter = 2L,
-    parameter_names = c("location", "scale"),
-    links = c(location = "identity", scale = "log"),
-    discrete = TRUE,
-    extra = list(levels = levels, n_level = length(levels))
-  )
-}
-
-#' @rdname norm_family
-#' @export
-norm_discrete <- function() {
-  new_norm_family(
-    name = "discrete",
-    n_parameter = 2L,
-    parameter_names = c("location", "scale"),
-    links = c(location = "identity", scale = "log"),
-    discrete = TRUE
-  )
-}
-
-family_name <- function(x) {
-  if (inherits(x, "norm_family")) {
-    return(x$name)
-  }
-  if (inherits(x, "norm_dist")) {
-    return(attr(x, "family"))
-  }
-  if (inherits(x, "norm_spec")) {
-    return(x$family$name)
-  }
-  as.character(x[[1L]])
-}
-
-is_discrete_family <- function(x) {
-  isTRUE(x$discrete)
 }
 
 #' @export

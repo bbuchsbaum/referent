@@ -2,30 +2,24 @@
 #'
 #' The bundle omits raw training observations by default. It keeps what
 #' is required for prediction, support checks, calibration, and
-#' provenance.
+#' provenance. Printing a `norm_reference` shows the model card.
 #'
 #' @param fit A [norm_fit].
 #' @param include_data If `TRUE`, store the training frame (not default).
 #' @param criteria,units,missing_policy Optional provenance fields.
-#' @return `norm_reference` or a printed model card.
+#' @return An object of class `norm_reference` (also a `norm_fit`).
 #' @export
 norm_reference <- function(fit,
                            include_data = FALSE,
                            criteria = NULL,
                            units = NULL,
                            missing_policy = "complete-case per outcome; predictors are never imputed") {
-  models <- lapply(fit$models, function(m) {
-    if (is.null(m$model)) {
-      return(m)
-    }
-    m
-  })
   structure(
     list(
       spec = fit$spec,
       outcomes = fit$outcomes,
-      models = models,
-      covariate_names = fit$covariate_names,
+      models = fit$models,
+      covariates = fit$covariates,
       support_ref = fit$support_ref,
       calibration = fit$calibration,
       statuses = fit_statuses(fit),
@@ -53,30 +47,25 @@ norm_reference <- function(fit,
   )
 }
 
-#' @rdname norm_reference
 #' @export
-norm_card <- function(fit) {
-  ref <- if (inherits(fit, "norm_reference")) fit else norm_reference(fit)
-  structure(ref, class = c("norm_card", class(ref)))
-}
-
-#' @export
-print.norm_card <- function(x, ...) {
-  cat("referent model card\n")
-  cat(sprintf("family: %s\n", x$family))
-  cat(sprintf("engine: %s\n", x$spec$engine))
-  cat(sprintf("outcomes: %s\n", paste(x$outcomes, collapse = ", ")))
-  cat(sprintf("n: %s\n", x$n))
-  cat(sprintf("missing-data policy: %s\n", x$missing_policy))
-  cat(sprintf("package %s, mgcv %s, R %s\n",
-              x$versions$referent, x$versions$mgcv, x$versions$r))
+print.norm_reference <- function(x, ...) {
+  cli::cli_h1("referent model card")
+  cli::cli_text("family: {x$family}")
+  cli::cli_text("engine: {x$spec$engine}")
+  cli::cli_text("outcomes: {.field {x$outcomes}}")
+  cli::cli_text("covariates: {.field {x$covariates}}")
+  cli::cli_text("n: {x$n}")
+  cli::cli_text("missing-data policy: {x$missing_policy}")
+  cli::cli_text(
+    "package {x$versions$referent}, mgcv {x$versions$mgcv}, R {x$versions$r}"
+  )
   st <- x$statuses
-  cat(sprintf("statuses: %s\n", paste(paste0(names(st), "=", st), collapse = ", ")))
+  cli::cli_text("statuses: {paste(paste0(names(st), '=', st), collapse = ', ')}")
   if (length(x$ranges)) {
-    cat("Covariate ranges\n")
+    cli::cli_text("Covariate ranges")
     for (nm in names(x$ranges)) {
       r <- x$ranges[[nm]]
-      cat(sprintf("  %s: [%s, %s]\n", nm, signif(r$min, 4), signif(r$max, 4)))
+      cli::cli_text("  {nm}: [{signif(r$min, 4)}, {signif(r$max, 4)}]")
     }
   }
   invisible(x)
@@ -85,7 +74,7 @@ print.norm_card <- function(x, ...) {
 #' @export
 predict.norm_reference <- function(object, newdata, ...) {
   fit <- object
-  class(fit) <- setdiff(class(fit), c("norm_reference", "norm_card"))
+  class(fit) <- setdiff(class(fit), "norm_reference")
   if (!inherits(fit, "norm_fit")) {
     class(fit) <- c("norm_fit", class(fit))
   }

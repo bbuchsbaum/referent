@@ -49,23 +49,8 @@ recycle_pair <- function(distribution, y) {
   )
 }
 
-is_blank <- function(x) {
-  is.null(x) || (is.character(x) && !nzchar(x[[1L]]))
-}
 
-as_bare_character <- function(x) {
-  if (is.null(x)) {
-    return(character())
-  }
-  as.character(x)
-}
 
-norm_check_finite <- function(x, arg = "x") {
-  if (any(!is.finite(x) & !is.na(x))) {
-    cli::cli_abort("{.arg {arg}} must be finite.")
-  }
-  invisible(x)
-}
 
 select_outcomes <- function(quo, data) {
   expr <- rlang::quo_get_expr(quo)
@@ -89,27 +74,11 @@ select_outcomes <- function(quo, data) {
   nms
 }
 
-capture_id <- function(id, data) {
-  if (rlang::quo_is_null(rlang::enquo(id)) || missing(id)) {
-    return(seq_len(nrow(data)))
-  }
-  if (is.character(id) && length(id) == 1L && id %in% names(data)) {
-    return(data[[id]])
-  }
-  id
-}
 
 safe_log <- function(x) {
   log(pmax(as.numeric(x), .Machine$double.xmin))
 }
 
-mean_or_na <- function(x) {
-  x <- x[is.finite(x)]
-  if (!length(x)) {
-    return(NA_real_)
-  }
-  mean(x)
-}
 
 se_mean <- function(x) {
   x <- x[is.finite(x)]
@@ -119,9 +88,6 @@ se_mean <- function(x) {
   stats::sd(x) / sqrt(length(x))
 }
 
-as_tibble_scores <- function(x) {
-  tibble::as_tibble(x)
-}
 
 warn_in_sample <- function(scores, used_for = "comparison") {
   if (isTRUE(attr(scores, "in_sample")) ||

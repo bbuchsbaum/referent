@@ -11,7 +11,7 @@
 #'   per level; other covariates stay at their reference value.
 #' @param centiles Probability levels to evaluate.
 #' @param n Grid length along `x`.
-#' @return A list with `lines` and `ribbons`, or a single tibble.
+#' @return A list of class `norm_centile_data` with `lines` and `ribbons` tibbles.
 NULL
 
 #' @rdname fortify_centiles
@@ -74,7 +74,7 @@ centile_grid <- function(fit, x_nm, n = 120, extras = NULL) {
     cli::cli_abort("No numeric covariate {.field {x_nm}} for a centile plot.")
   }
   grid <- tibble::tibble(!!x_nm := seq(r$min, r$max, length.out = n))
-  for (nm in setdiff(fit$covariate_names, x_nm)) {
+  for (nm in setdiff(fit$covariates, x_nm)) {
     if (!is.null(extras) && nm %in% names(extras)) {
       grid[[nm]] <- extras[[nm]]
     } else if (nm %in% names(fit$support_ref$numeric)) {
@@ -107,7 +107,7 @@ ribbon_from_lines <- function(lines) {
         x = lo$x,
         ymin = lo$y,
         ymax = hi$y,
-        band = paste(centile_label(p[[i]]), centile_label(p[[j]]), sep = "–"),
+        band = paste(centile_label(p[[i]]), centile_label(p[[j]]), sep = "-"),
         .group = g,
         .rank = band_i
       )
@@ -126,10 +126,6 @@ eq_group <- function(x, g) {
   x == g
 }
 
-#' @rdname fortify_centiles
-#' @param data A data frame of visits.
-#' @param id Subject identifier.
-#' @export
 fortify_visits <- function(data, id) {
   data <- tibble::as_tibble(data)
   visit_table(pull_column(data, rlang::enquo(id)))
@@ -143,9 +139,6 @@ visit_table <- function(id_vec) {
   tibble::as_tibble(tab)
 }
 
-#' @rdname fortify_centiles
-#' @param time Time variable, typically age.
-#' @export
 fortify_coverage <- function(data, time, by = NULL) {
   coverage_frame(tibble::as_tibble(data), rlang::enquo(time), rlang::enquo(by))
 }
@@ -166,9 +159,6 @@ coverage_frame <- function(data, time_quo, by_quo) {
   )
 }
 
-#' @rdname fortify_centiles
-#' @param lags Lag grid for the fitted process.
-#' @export
 fortify_kernel <- function(fit, lags = NULL) {
   if (!inherits(fit, "norm_dynamics")) {
     cli::cli_abort("{.fn fortify_kernel} expects a {.cls norm_dynamics} object.")
@@ -185,10 +175,10 @@ fortify_kernel <- function(fit, lags = NULL) {
 }
 
 default_x <- function(fit) {
-  if ("age" %in% fit$covariate_names) {
+  if ("age" %in% fit$covariates) {
     return("age")
   }
-  fit$support_ref$numeric_names[[1]] %||% fit$covariate_names[[1]]
+  fit$support_ref$numeric_names[[1]] %||% fit$covariates[[1]]
 }
 
 as_col_name <- function(quo, default = NULL) {

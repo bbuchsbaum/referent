@@ -2,9 +2,6 @@
 % Please edit documentation in R/plot-data.R
 \name{fortify_centiles}
 \alias{fortify_centiles}
-\alias{fortify_visits}
-\alias{fortify_coverage}
-\alias{fortify_kernel}
 \title{Tidy plot data for reference charts}
 \usage{
 fortify_centiles(
@@ -15,12 +12,6 @@ fortify_centiles(
   centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
   n = 120
 )
-
-fortify_visits(data, id)
-
-fortify_coverage(data, time, by = NULL)
-
-fortify_kernel(fit, lags = NULL)
 }
 \arguments{
 \item{fit}{A \link{norm_fit}.}
@@ -35,17 +26,9 @@ per level; other covariates stay at their reference value.}
 \item{centiles}{Probability levels to evaluate.}
 
 \item{n}{Grid length along \code{x}.}
-
-\item{data}{A data frame of visits.}
-
-\item{id}{Subject identifier.}
-
-\item{time}{Time variable, typically age.}
-
-\item{lags}{Lag grid for the fitted process.}
 }
 \value{
-A list with \code{lines} and \code{ribbons}, or a single tibble.
+A list of class \code{norm_centile_data} with \code{lines} and \code{ribbons} tibbles.
 }
 \description{
 These helpers return tibbles. \code{autoplot()} consumes them; users can

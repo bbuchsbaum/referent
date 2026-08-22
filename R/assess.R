@@ -145,7 +145,7 @@ excess_kurtosis <- function(x) {
 }
 
 assess_conditional <- function(scores, newdata, fit) {
-  covs <- intersect(fit$covariate_names, names(newdata))
+  covs <- intersect(fit$covariates, names(newdata))
   numeric_covs <- covs[vapply(newdata[covs], is.numeric, logical(1))]
   if (!length(numeric_covs) || !requireNamespace("mgcv", quietly = TRUE)) {
     return(tibble::tibble(

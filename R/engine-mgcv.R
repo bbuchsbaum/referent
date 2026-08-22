@@ -1,13 +1,7 @@
-engine_supported <- function(spec) {
-  spec$engine %in% c("mgcv", "gamlss", "gamlss2")
-}
-
 fit_engine <- function(spec, data, outcome, ...) {
   switch(
     spec$engine,
     mgcv = fit_engine_mgcv(spec, data, outcome, ...),
-    gamlss = fit_engine_gamlss(spec, data, outcome, ...),
-    gamlss2 = fit_engine_gamlss2(spec, data, outcome, ...),
     cli::cli_abort("Unknown engine {.val {spec$engine}}.")
   )
 }
@@ -17,8 +11,6 @@ predict_engine_dist <- function(fit_one, newdata, uncertainty = "conditional",
   switch(
     fit_one$engine,
     mgcv = predict_mgcv_dist(fit_one, newdata, uncertainty, n_draw),
-    gamlss = predict_gamlss_dist(fit_one, newdata, uncertainty, n_draw),
-    gamlss2 = predict_gamlss_dist(fit_one, newdata, uncertainty, n_draw),
     cli::cli_abort("Unknown engine {.val {fit_one$engine}}.")
   )
 }
@@ -31,7 +23,6 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
   fitter <- if (use_bam) mgcv::bam else mgcv::gam
   rhs_loc <- spec$location[[length(spec$location)]]
   loc_f <- stats::as.formula(eval(bquote(.(as.name(outcome)) ~ .(rhs_loc))))
-  data[[outcome]] <- data[[outcome]]
   model <- tryCatch(
     {
       if (fam_name == "gaussian" && formula_is_intercept_only(spec$scale)) {
@@ -52,8 +43,6 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
           method = spec$method,
           ...
         )
-      } else if (fam_name %in% c("ordinal", "discrete")) {
-        fitter(loc_f, data = data, method = spec$method, ...)
       } else {
         stop("unsupported_family", call. = FALSE)
       }
@@ -129,10 +118,23 @@ predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "
   )
 }
 
+# predict.gam warns about unseen factor levels; `support == "new_group"`
+# already carries that information, so the warning is muffled here.
+predict_gam_quiet <- function(model, newdata, ...) {
+  withCallingHandlers(
+    stats::predict(model, newdata = newdata, ...),
+    warning = function(w) {
+      if (grepl("not in original fit", conditionMessage(w), fixed = TRUE)) {
+        invokeRestart("muffleWarning")
+      }
+    }
+  )
+}
+
 mgcv_parameters <- function(model, newdata, fam, fit_one) {
   n <- nrow(newdata)
   pr <- tryCatch(
-    stats::predict(model, newdata = newdata, type = "response"),
+    predict_gam_quiet(model, newdata, type = "response"),
     error = function(e) NULL
   )
   if (is.null(pr)) {
@@ -145,7 +147,7 @@ mgcv_parameters <- function(model, newdata, fam, fit_one) {
     ))
   }
   se <- tryCatch(
-    stats::predict(model, newdata = newdata, type = "link", se.fit = TRUE),
+    predict_gam_quiet(model, newdata, type = "link", se.fit = TRUE),
     error = function(e) NULL
   )
   epistemic <- 0
@@ -169,7 +171,7 @@ mgcv_parameters <- function(model, newdata, fam, fit_one) {
   }
   if (fam == "shash") {
     eta <- tryCatch(
-      as.matrix(stats::predict(model, newdata = newdata, type = "link")),
+      as.matrix(predict_gam_quiet(model, newdata, type = "link")),
       error = function(e) as.matrix(pr)
     )
     mu <- eta[, 1]
@@ -224,7 +226,7 @@ mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw) {
   cond <- mgcv_parameters(model, newdata, fam, fit_one)
   n <- length(cond$location)
   lp <- tryCatch(
-    stats::predict(model, newdata = newdata, type = "lpmatrix"),
+    predict_gam_quiet(model, newdata, type = "lpmatrix"),
     error = function(e) NULL
   )
   if (is.null(lp) || is.null(model$Vp)) {
