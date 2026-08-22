@@ -18,4 +18,7 @@ test_that("as_wide and filter_scores work", {
   expect_true("y" %in% names(w))
   f <- filter_scores(sc, abs(z) > 0.5)
   expect_equal(nrow(f), 2)
+  class(sc) <- unique(c("norm_scores", class(sc)))
+  f2 <- filter_scores(sc, abs(z) > 0.5)
+  expect_s3_class(f2, "norm_scores")
 })

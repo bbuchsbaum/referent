@@ -6,15 +6,22 @@
 \usage{
 \method{autoplot}{norm_fit}(
   object,
-  type = c("centiles", "support", "adaptation"),
+  type = c("centiles", "visits", "coverage", "composition", "support", "trajectories",
+    "adaptation"),
   outcome = NULL,
   x = NULL,
   newdata = NULL,
+  by = NULL,
+  data = NULL,
+  id = NULL,
+  time = NULL,
+  centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
   ...
 )
 }
 \arguments{
-\item{object}{A fit, assessment, score table, forecast, or transition.}
+\item{object}{A fit, assessment, score table, forecast, transition,
+or dynamics object.}
 
 \item{type}{Plot kind.}
 
@@ -24,12 +31,24 @@
 
 \item{newdata}{Grid or observations to overlay.}
 
+\item{by}{Optional grouping factor for faceted charts.}
+
+\item{data}{Visit-level data for composition plots.}
+
+\item{id}{Subject identifier for visits and trajectories.}
+
+\item{time}{Time variable for coverage and trajectories.}
+
+\item{centiles}{Probability levels for centile and fan charts.}
+
 \item{...}{Unused.}
 }
 \value{
-A ggplot.
+A ggplot, or a patchwork object when \code{type = "composition"}
+and patchwork is installed.
 }
 \description{
-Every plotting function returns a \code{ggplot} object. Individual
-observations are overlays, not part of the fitted geometry.
+Every \code{autoplot()} method returns a \code{ggplot} object styled with
+\code{\link[=theme_referent]{theme_referent()}}. Individual observations are overlays, not part of
+the fitted geometry.
 }

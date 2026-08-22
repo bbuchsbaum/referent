@@ -40,7 +40,12 @@ filter_scores <- function(.data, ...) {
   warn_in_sample(.data, used_for = "a downstream comparison")
   dots <- rlang::enquos(...)
   keep <- Reduce(`&`, lapply(dots, function(q) as.logical(rlang::eval_tidy(q, data = .data))))
-  tibble::as_tibble(.data)[keep, , drop = FALSE]
+  out <- tibble::as_tibble(.data)[keep, , drop = FALSE]
+  if (inherits(.data, "norm_scores")) {
+    class(out) <- unique(c("norm_scores", class(out)))
+    attr(out, "in_sample") <- attr(.data, "in_sample")
+  }
+  out
 }
 
 #' Flag threshold exceedances

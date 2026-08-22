@@ -8,22 +8,107 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 3.8
+)
 ```
 
-A synthetic height-like growth measure. No brain data.
+A height-like growth measure with age and sex. No brain data. The walkthrough
+is the usual referent path: fit a reference, check that the predictive
+distribution is calibrated, place new people in it, and treat large deviations
+as threshold exceedances rather than abnormalities.
 
-```{r}
+```{r setup}
 library(referent)
 set.seed(1)
-ref <- norm_simulate(400, kind = "gaussian_scale")
+```
+
+## Fit a reference
+
+```{r fit}
+ref <- norm_simulate(400, kind = "gaussian_scale", seed = 1)
+ref$participant_id <- paste0("R", seq_len(nrow(ref)))
 spec <- norm_spec(
   family = norm_gaussian(),
   location = ~ s(age, k = 8) + sex,
   scale = ~ s(age, k = 5)
 )
-fit <- norm_fit(spec, data = ref, outcomes = "y")
+fit <- norm_fit(spec, data = ref, outcomes = "y", id = participant_id)
+fit
+```
+
+The chart is the fitted conditional distribution, not the scatter of the
+training rows. Overlay held-out people only as points. Facet by sex so each
+panel has its own location–scale curve.
+
+```{r centiles}
 val <- norm_simulate(150, kind = "gaussian_scale", seed = 2)
+val$participant_id <- paste0("V", seq_len(nrow(val)))
+autoplot(fit, type = "centiles", by = sex, newdata = val)
+```
+
+Visit counts and the age mix by site are composition diagnostics, not part of
+the fitted geometry.
+
+```{r composition}
+autoplot(fit, type = "visits", data = ref, id = participant_id)
+autoplot(fit, type = "coverage", data = ref, time = age, by = site)
+```
+
+## Check calibration on held-out people
+
+```{r assess}
 assessment <- norm_assess(fit, newdata = val)
 assessment$overall
+assessment$marginal[, c(".outcome", "mean_z", "var_z", "cover_50", "cover_80", "cover_95")]
 ```
+
+Coverage should sit near the nominal bands. A worm plot that hugs zero means
+the PIT is close to uniform after mapping to normal scores.
+
+```{r calibration}
+autoplot(assessment, type = "calibration")
+```
+
+```{r worm}
+autoplot(assessment, type = "worm")
+```
+
+## Place new observations
+
+`predict()` returns one row per person–outcome. The subject id declared at
+fit time is copied onto `.id` when that column is present in `newdata`.
+
+```{r scores}
+scores <- predict(fit, newdata = val, type = "scores", uncertainty = "conditional")
+scores[1:5, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
+```
+
+Filter in the score table the same way you would filter any data frame.
+
+```{r filter}
+large <- filter_scores(scores, abs(z) > 2)
+nrow(large)
+large[, c(".id", "observed", "centile", "z", "tail_prob")]
+```
+
+`flag()` marks threshold exceedances and reports how many you should expect
+from a well-calibrated Gaussian tail. It does not label anyone abnormal.
+
+```{r flag}
+flagged <- flag(scores, threshold = 2)
+attr(flagged, "observed_exceedances")
+attr(flagged, "expected_exceedances")
+```
+
+## What a large deviation is not
+
+A person can sit in the tail because the reference chart is right, because the
+covariates are outside support, or because the model is mis-specified. The
+score table keeps those apart: `z` is a representation of a centile, and
+`support` says whether that centile is even trustworthy. Use
+`filter_scores()` and `flag()` to inspect tails. Do not treat either as a
+diagnosis.

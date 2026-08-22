@@ -21,8 +21,13 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
   }
   data <- tibble::as_tibble(data)
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
-  ids <- pull_column(data, rlang::enquo(id), default = seq_len(nrow(data)))
-  covariate_names <- setdiff(names(data), outcome_names)
+  id_quo <- rlang::enquo(id)
+  ids <- pull_column(data, id_quo, default = seq_len(nrow(data)))
+  id_name <- tryCatch({
+    nm <- rlang::as_name(id_quo)
+    if (nm %in% names(data)) nm else NULL
+  }, error = function(e) NULL)
+  covariate_names <- setdiff(names(data), c(outcome_names, id_name))
   models <- lapply(outcome_names, function(nm) {
     y <- data[[nm]]
     if (stats::sd(y, na.rm = TRUE) < .Machine$double.eps ||
@@ -48,6 +53,7 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       outcomes = outcome_names,
       models = models,
       id = ids,
+      id_name = id_name,
       data_hash = digest_data(data[, c(covariate_names, outcome_names), drop = FALSE]),
       n = nrow(data),
       covariate_names = covariate_names,
@@ -161,7 +167,7 @@ predict.norm_fit <- function(object,
     if (is.null(d)) {
       return(tibble::tibble(
         .row = seq_len(nrow(newdata)),
-        .id = if (".id" %in% names(newdata)) newdata[[".id"]] else seq_len(nrow(newdata)),
+        .id = score_ids(object, newdata),
         .outcome = nm,
         observed = y,
         median = NA_real_,
@@ -187,7 +193,7 @@ predict.norm_fit <- function(object,
       sc$tail_surprisal <- -safe_log(sc$tail_prob)
     }
     sc$.row <- seq_len(nrow(newdata))
-    sc$.id <- if (".id" %in% names(newdata)) newdata[[".id"]] else seq_len(nrow(newdata))
+    sc$.id <- score_ids(object, newdata)
     sc$.outcome <- nm
     sc$support <- support
     sc$calibrated <- FALSE
@@ -209,6 +215,17 @@ predict.norm_fit <- function(object,
   structure(out, class = c("norm_scores", class(out)), in_sample = in_sample)
 }
 
+score_ids <- function(object, newdata) {
+  if (".id" %in% names(newdata)) {
+    return(newdata[[".id"]])
+  }
+  id_name <- object$id_name
+  if (!is.null(id_name) && id_name %in% names(newdata)) {
+    return(newdata[[id_name]])
+  }
+  seq_len(nrow(newdata))
+}
+
 dplyr_bind <- function(xs) {
   tibble::as_tibble(do.call(rbind, lapply(xs, as.data.frame)))
 }
@@ -222,8 +239,24 @@ is_in_sample_data <- function(fit, newdata) {
 }
 
 #' @export
+`[.norm_scores` <- function(x, i, j, drop = FALSE) {
+  cl <- class(x)
+  out <- NextMethod("[")
+  keep <- is.data.frame(out) && all(c("z", ".in_sample") %in% names(out))
+  if (keep) {
+    class(out) <- cl
+    attr(out, "in_sample") <- attr(x, "in_sample")
+  }
+  out
+}
+
+#' @export
 print.norm_scores <- function(x, ...) {
-  n_in <- sum(x$.in_sample, na.rm = TRUE)
+  n_in <- if (".in_sample" %in% names(x)) {
+    sum(x$.in_sample, na.rm = TRUE)
+  } else {
+    0L
+  }
   cli::cli_text("{.cls norm_scores} {nrow(x)} row{?s}")
   if (n_in > 0) {
     cli::cli_alert_warning("{n_in} in-sample score{?s} (.in_sample = TRUE)")

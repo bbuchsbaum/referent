@@ -50,6 +50,8 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
       times = times,
       dist = dists,
       summary = summary,
+      history = history,
+      time_name = time_nm,
       history_n = length(z_hist)
     ),
     class = "norm_forecast"
