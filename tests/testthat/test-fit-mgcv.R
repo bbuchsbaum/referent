@@ -23,19 +23,20 @@ test_that("failed outcomes do not abort the panel", {
   expect_match(out, "marker_bad")
 })
 
-test_that("SHASH engine returns a norm_dist", {
+test_that("SHASH engine returns a dist_shash vector", {
   skip_on_cran()
   set.seed(5)
   dat <- norm_simulate(250, kind = "shash", seed = 5)
   fit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
   expect_equal(fit$models$y$status, "ok")
-  d <- predict(fit, newdata = dat[1:5, ], type = "distribution")$y
-  expect_s3_class(d, "norm_dist")
-  expect_equal(attr(d, "family"), "shash")
-  expect_true(all(field_or(d, "scale") > 0))
+  d <- predict(fit, newdata = dat[1:5, ], type = "distribution",
+               uncertainty = "conditional")$y
+  expect_s3_class(d, "distribution")
+  expect_s3_class(vctrs::vec_data(d)[[1]], "dist_shash")
+  expect_true(all(dist_unpack(d)$sigma > 0))
 })
 
-test_that("total uncertainty inflates epistemic sd", {
+test_that("total uncertainty widens the Gaussian predictive analytically", {
   set.seed(31)
   dat <- norm_simulate(120, seed = 31)
   fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
@@ -43,17 +44,17 @@ test_that("total uncertainty inflates epistemic sd", {
                   uncertainty = "conditional")$y
   tot <- predict(fit, newdata = dat[1:8, ], type = "distribution",
                  uncertainty = "total")$y
-  expect_gt(mean(field_or(tot, "epistemic_sd")), 0)
   # identity-location, constant-scale Gaussian: analytic total N(mu, s^2 + se^2)
-  expect_true(is.null(attr(tot, "location_draws")))
-  expect_equal(attr(tot, "uncertainty"), "total")
-  expect_equal(
-    field_or(tot, "scale"),
-    sqrt(field_or(cond, "scale")^2 + field_or(tot, "epistemic_sd")^2)
-  )
+  expect_s3_class(vctrs::vec_data(tot)[[1]], "dist_normal")
+  se <- stats::predict(fit$models$y$model, newdata = dat[1:8, ], se.fit = TRUE)$se.fit
+  expect_true(all(se > 0))
+  expect_equal(mean(tot), mean(cond))
+  expect_equal(variance(tot), variance(cond) + as.numeric(se)^2)
   y <- dat$y[1:8]
-  expect_true(all(cdf(tot, y) >= 0 & cdf(tot, y) <= 1))
-  expect_true(all(abs(cdf(tot, y) - 0.5) <= abs(cdf(cond, y) - 0.5) + 1e-12))
+  pt <- dist_cdf(tot, y)
+  pc <- dist_cdf(cond, y)
+  expect_true(all(pt >= 0 & pt <= 1))
+  expect_true(all(abs(pt - 0.5) <= abs(pc - 0.5) + 1e-12))
 })
 
 test_that("save/read round trip reproduces scores", {

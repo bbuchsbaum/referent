@@ -24,3 +24,22 @@ test_that("predictor missingness is not imputed", {
   sc <- predict(fit, newdata = extra, uncertainty = "conditional")
   expect_true(is.na(sc$z[[1]]) || is.na(sc$centile[[1]]) || is.na(sc$median[[1]]))
 })
+
+test_that("SHASH assessment, crossfit, and printing tolerate NA outcomes and predictors", {
+  skip_on_cran()
+  dat <- norm_simulate(300, kind = "shash", seed = 11)
+  sfit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
+  test <- norm_simulate(40, kind = "shash", seed = 12)
+  test$y[5] <- NA
+  test$age[3] <- NA
+  a <- norm_assess(sfit, newdata = test)
+  expect_true(is.finite(a$overall$crps))
+  dt <- predict(sfit, newdata = test[1:6, ], type = "distribution", uncertainty = "total")
+  expect_no_error(out <- format(dt$y))
+  expect_equal(length(out), 6L)
+  cf_dat <- dat[1:150, ]
+  cf_dat$y[4] <- NA
+  cf <- norm_crossfit(simple_spec("shash"), data = cf_dat, outcomes = "y", folds = 3)
+  expect_true(is.na(cf$crps[cf$.row == 4]))
+  expect_true(mean(is.finite(cf$crps)) > 0.9)
+})

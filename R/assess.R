@@ -33,7 +33,7 @@ norm_assess <- function(fit, newdata, by = NULL) {
   newdata <- tibble::as_tibble(newdata)
   by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
   scores <- predict(fit, newdata = newdata, type = "scores", uncertainty = "conditional")
-  dists <- predict(fit, newdata = newdata, type = "distribution", uncertainty = "conditional")
+  dists <- predict_dists(fit, newdata, uncertainty = "conditional")
   overall <- assess_overall(scores, dists, newdata)
   marginal <- if (is.null(by_vec)) {
     assess_marginal(scores)
@@ -98,23 +98,28 @@ mean_crps <- function(dist, y) {
   if (is.null(dist)) {
     return(NA_real_)
   }
-  y <- recycle_to(y, length(dist))
-  if (has_pkg("scoringRules") && identical(attr(dist, "family"), "gaussian")) {
-    p <- norm_params(dist)
-    return(mean(scoringRules::crps_norm(y, mean = p$location, sd = p$scale), na.rm = TRUE))
-  }
   mean(crps_from_dist(dist, y), na.rm = TRUE)
 }
 
-crps_from_dist <- function(dist, y) {
-  if (identical(attr(dist, "family"), "gaussian")) {
-    p <- norm_params(dist)
-    return(crps_norm(y, p$location, p$scale))
+# Per-observation CRPS: closed form for a Gaussian predictive, otherwise
+# the sample CRPS of scoringRules on seeded draws, or a quantile-grid
+# approximation when scoringRules is not installed.
+crps_from_dist <- function(dist, y, times = 500L, seed = 1L) {
+  y <- rep_len(as.numeric(y), length(dist))
+  u <- dist_unpack(dist)
+  if (inherits(u, "dist_normal")) {
+    return(crps_norm(y, u$mu, u$sigma))
   }
-  u <- (seq_len(99L) - 0.5) / 99
-  q <- quantile_matrix(dist, u)
+  if (has_pkg("scoringRules")) {
+    draws <- withr::with_seed(seed, dist_generate(dist, times))
+    ok <- is.finite(y) & rowSums(!is.finite(draws)) == 0L
+    out <- rep(NA_real_, length(y))
+    out[ok] <- scoringRules::crps_sample(y[ok], draws[ok, , drop = FALSE])
+    return(out)
+  }
+  p <- (seq_len(99L) - 0.5) / 99
   vapply(seq_along(y), function(i) {
-    qs <- q[i, ]
+    qs <- dist_quantile(dist[i], p)
     mean(abs(qs - y[[i]])) - 0.5 * mean(abs(outer(qs, qs, `-`)))
   }, numeric(1))
 }

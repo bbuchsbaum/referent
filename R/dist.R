@@ -1,389 +1,531 @@
-#' Predictive distribution objects
+#' Predictive distributions
 #'
-#' A vectorized conditional predictive distribution. Every engine must
-#' return an object that supports this contract: `cdf()`, `quantile()`,
-#' `log_density()`, `draw()`, `center()`, and `variance()`.
+#' Reference models return predictive distributions as
+#' [distributional](https://pkg.mitchelloharawild.com/distributional/)
+#' vectors, so `cdf()`, `quantile()`, `density()`, `generate()`, `mean()`,
+#' `variance()`, `hilo()`, tibble columns, and `ggdist` layers all work.
+#' Gaussian fits use [distributional::dist_normal()]; SHASH fits use
+#' `dist_shash()`; `uncertainty = "total"` predictions from location-scale
+#' and SHASH fits are equal-weight mixtures over coefficient draws
+#' (`dist_shash_mc()`); history-conditioned forecasts are
+#' `dist_conditioned()`.
 #'
-#' Parameters follow the `mgcv` SHASH / Gaussian location-scale
-#' conventions:
+#' @details
+#' `dist_shash()` follows the `mgcv::shash()` parameterisation. With
+#' \eqn{z = (y-\mu)/(\sigma\delta)},
+#' \eqn{F(y) = \Phi(\sinh(\delta\,\mathrm{asinh}(z)-\epsilon))}; `eps = 0`,
+#' `delta = 1` is the Gaussian \eqn{N(\mu, \sigma^2)}.
 #'
-#' * `location` (\eqn{\mu})
-#' * `scale` (\eqn{\sigma > 0})
-#' * `skew` (\eqn{\epsilon}; SHASH only)
-#' * `tail` (\eqn{\delta > 0}; SHASH only)
+#' `dist_shash_mc()` holds, for every observation, one SHASH parameter set
+#' per coefficient draw (a matrix column per draw). Its CDF and density are
+#' averages over the draws computed in log space, its quantile is found by
+#' safeguarded Newton iteration on the mixture CDF, and `generate()` samples a draw and then
+#' the component. A Gaussian draw mixture is the special case
+#' `eps = 0`, `delta = 1`.
 #'
-#' For SHASH, \eqn{z = (y-\mu)/(\sigma\delta)} and
-#' \eqn{F(y) = \Phi(\sinh(\delta\,\mathrm{asinh}(z)-\epsilon))}.
+#' `dist_conditioned()` maps a marginal predictive distribution through a
+#' conditional normal score: \eqn{F_*(y) = \Phi((z(y)-m)/s)} with
+#' \eqn{z(y) = \Phi^{-1}(F(y))}, so `m = 0`, `s = 1` recovers the marginal.
 #'
-#' @param family Family name or a [norm_family] object.
-#' @param location,scale,skew,tail Numeric parameter vectors. Recycled to
-#'   a common length. `NA` parameters give `NA` scores (for example when a
-#'   predictor is missing).
-#' @param aleatoric_sd,epistemic_sd Optional uncertainty summaries,
-#'   recycled to the same length.
-#' @return An object of class `norm_dist`.
+#' Tail probabilities of all three classes are evaluated in log space, so
+#' scores for observations 40 standard deviations out remain finite and
+#' distinct (see [as_scores()]).
+#'
+#' @param mu,sigma,eps,delta Location, scale (> 0), skewness, and tail
+#'   weight (> 0). For `dist_shash()` numeric vectors recycled to a common
+#'   length; for `dist_shash_mc()` matrices with one row per observation
+#'   and one column per draw (a vector is treated as draw-invariant).
+#' @param marginal A `distribution` vector of marginal predictive
+#'   distributions.
+#' @param m,s Conditional mean and standard deviation (> 0) of the latent
+#'   normal score, recycled to `length(marginal)`.
+#' @return A [distributional][distributional::distributional-package]
+#'   `distribution` vector.
 #' @examples
-#' d <- norm_dist("gaussian", location = 0, scale = 1)
-#' cdf(d, 1.96)
+#' d <- dist_shash(mu = 0.2, sigma = 1.1, eps = 0.3, delta = 0.9)
+#' d
+#' cdf(d, 1.5)
+#' quantile(d, c(0.05, 0.5, 0.95))
+#' mean(d)
 #' as_scores(d, c(-2, 0, 2))
+#' dist_conditioned(d, m = 0.4, s = 0.7)
+#' @name dist_shash
+NULL
+
+#' @rdname dist_shash
 #' @export
-norm_dist <- function(family,
-                      location,
-                      scale,
-                      skew = NULL,
-                      tail = NULL,
-                      aleatoric_sd = NULL,
-                      epistemic_sd = NULL) {
-  fam <- if (inherits(family, "norm_family")) family$name else as.character(family)
-  fam <- fam[[1L]]
-  n <- max(length(location), length(scale), length(skew %||% 1), length(tail %||% 1))
-  if (!length(location) && !length(scale)) {
-    n <- 0L
-  }
-  location <- if (n == 0L) numeric() else recycle_to(location, n)
-  scale <- if (n == 0L) numeric() else recycle_to(scale, n)
-  if (n > 0L && any(scale <= 0, na.rm = TRUE)) {
-    cli::cli_abort("{.arg scale} must be positive.")
-  }
-  if (fam == "shash") {
-    skew <- recycle_to(skew %||% 0, n)
-    tail <- recycle_to(tail %||% 1, n)
-    if (any(tail <= 0, na.rm = TRUE)) {
-      cli::cli_abort("{.arg tail} must be positive.")
+dist_shash <- function(mu, sigma, eps = 0, delta = 1) {
+  check_shash_params(sigma, delta)
+  distributional::new_dist(
+    mu = vctrs::vec_cast(mu, double()),
+    sigma = vctrs::vec_cast(sigma, double()),
+    eps = vctrs::vec_cast(eps, double()),
+    delta = vctrs::vec_cast(delta, double()),
+    class = "dist_shash"
+  )
+}
+
+#' @rdname dist_shash
+#' @export
+dist_shash_mc <- function(mu, sigma, eps = 0, delta = 1) {
+  check_shash_params(sigma, delta)
+  n <- max(NROW(mu), NROW(sigma), NROW(eps), NROW(delta))
+  k <- max(NCOL(mu), NCOL(sigma), NCOL(eps), NCOL(delta))
+  rows <- function(x) {
+    x <- as.matrix(x)
+    if (nrow(x) == 1L && n > 1L) {
+      x <- x[rep(1L, n), , drop = FALSE]
     }
+    if (ncol(x) == 1L && k > 1L) {
+      x <- x[, rep(1L, k), drop = FALSE]
+    }
+    lapply(seq_len(nrow(x)), function(i) as.numeric(x[i, ]))
+  }
+  distributional::new_dist(
+    mu = rows(mu), sigma = rows(sigma), eps = rows(eps), delta = rows(delta),
+    class = "dist_shash_mc"
+  )
+}
+
+#' @rdname dist_shash
+#' @export
+dist_conditioned <- function(marginal, m, s) {
+  if (!distributional::is_distribution(marginal)) {
+    cli::cli_abort("{.arg marginal} must be a {.cls distribution} vector.")
+  }
+  if (any(s <= 0, na.rm = TRUE)) {
+    cli::cli_abort("{.arg s} must be positive.")
+  }
+  distributional::new_dist(
+    dist = vctrs::vec_data(marginal),
+    m = vctrs::vec_cast(m, double()),
+    s = vctrs::vec_cast(s, double()),
+    class = "dist_conditioned"
+  )
+}
+
+check_shash_params <- function(sigma, delta) {
+  if (any(sigma <= 0, na.rm = TRUE)) {
+    cli::cli_abort("{.arg sigma} must be positive.")
+  }
+  if (any(delta <= 0, na.rm = TRUE)) {
+    cli::cli_abort("{.arg delta} must be positive.")
+  }
+}
+
+#' @importFrom distributional cdf generate hilo variance
+#' @export
+distributional::cdf
+
+#' @export
+distributional::generate
+
+#' @export
+distributional::hilo
+
+#' @export
+distributional::variance
+
+# --- SHASH kernels (mgcv / Jones-Pewsey parameterisation) -----------------
+
+shash_log_cdf <- function(y, mu, sigma, eps, delta, lower.tail = TRUE) {
+  if (all(eps == 0, na.rm = TRUE) && all(delta == 1, na.rm = TRUE)) {
+    # sinh(asinh(z)) = z: the Gaussian case skips the hyperbolic functions.
+    return(stats::pnorm((y - mu) / sigma, lower.tail = lower.tail, log.p = TRUE))
+  }
+  z <- (y - mu) / (sigma * delta)
+  stats::pnorm(sinh(delta * asinh(z) - eps), lower.tail = lower.tail, log.p = TRUE)
+}
+
+shash_quantile <- function(p, mu, sigma, eps, delta) {
+  mu + sigma * delta * sinh((asinh(stats::qnorm(p)) + eps) / delta)
+}
+
+shash_log_density <- function(y, mu, sigma, eps, delta) {
+  z <- (y - mu) / (sigma * delta)
+  s <- sinh(delta * asinh(z) - eps)
+  0.5 * log1p(s^2) - 0.5 * s^2 - 0.5 * log(2 * pi) - 0.5 * log1p(z^2) - log(sigma)
+}
+
+# Jones & Pewsey (2009) moments of S = sinh((asinh(W) + eps) / delta).
+shash_pq <- function(q) {
+  exp(0.25) / sqrt(8 * pi) * (besselK(0.25, (q + 1) / 2) + besselK(0.25, (q - 1) / 2))
+}
+
+shash_mean <- function(mu, sigma, eps, delta) {
+  mu + sigma * delta * sinh(eps / delta) * shash_pq(1 / delta)
+}
+
+shash_variance <- function(mu, sigma, eps, delta) {
+  e_s <- sinh(eps / delta) * shash_pq(1 / delta)
+  e_s2 <- 0.5 * (cosh(2 * eps / delta) * shash_pq(2 / delta) - 1)
+  (sigma * delta)^2 * (e_s2 - e_s^2)
+}
+
+# --- Log tails and log densities -------------------------------------------
+# distributional's cdf() has no log.p argument and its own density methods
+# ignore `log`, so tails and log densities come from these internal
+# generics, which dispatch on an element (or an unpacked pseudo-element,
+# see below). Every method is vectorised in its fields.
+
+log_tail <- function(x, q, lower.tail = TRUE) {
+  UseMethod("log_tail")
+}
+
+#' @export
+log_tail.default <- function(x, q, lower.tail = TRUE) {
+  p <- cdf(x, q)
+  if (lower.tail) log(p) else log1p(-p)
+}
+
+#' @export
+log_tail.dist_normal <- function(x, q, lower.tail = TRUE) {
+  stats::pnorm(q, x[["mu"]], x[["sigma"]], lower.tail = lower.tail, log.p = TRUE)
+}
+
+#' @export
+log_tail.dist_shash <- function(x, q, lower.tail = TRUE) {
+  shash_log_cdf(q, x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]], lower.tail)
+}
+
+#' @export
+log_tail.dist_shash_mc <- function(x, q, lower.tail = TRUE) {
+  mc_log_cdf(mc_fields(x, q), lower.tail)
+}
+
+#' @export
+log_tail.dist_conditioned <- function(x, q, lower.tail = TRUE) {
+  z <- scores_from_log_tails(log_tail(x[["dist"]], q, TRUE), log_tail(x[["dist"]], q, FALSE))$z
+  stats::pnorm((z - x[["m"]]) / x[["s"]], lower.tail = lower.tail, log.p = TRUE)
+}
+
+log_dens <- function(x, at) {
+  UseMethod("log_dens")
+}
+
+#' @export
+log_dens.default <- function(x, at) {
+  log(density(x, at))
+}
+
+#' @export
+log_dens.dist_normal <- function(x, at) {
+  stats::dnorm(at, x[["mu"]], x[["sigma"]], log = TRUE)
+}
+
+#' @export
+log_dens.dist_shash <- function(x, at) {
+  shash_log_density(at, x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]])
+}
+
+#' @export
+log_dens.dist_shash_mc <- function(x, at) {
+  mc_log_density(mc_fields(x, at))
+}
+
+#' @export
+log_dens.dist_conditioned <- function(x, at) {
+  z <- scores_from_log_tails(log_tail(x[["dist"]], at, TRUE), log_tail(x[["dist"]], at, FALSE))$z
+  log_dens(x[["dist"]], at) +
+    stats::dnorm((z - x[["m"]]) / x[["s"]], log = TRUE) - log(x[["s"]]) -
+    stats::dnorm(z, log = TRUE)
+}
+
+# --- dist_shash element methods (vectorised in every argument) ------------
+
+#' @export
+format.dist_shash <- function(x, digits = 2, ...) {
+  sprintf(
+    "SHASH(%s, %s, %s, %s)",
+    format(x[["mu"]], digits = digits, ...), format(x[["sigma"]], digits = digits, ...),
+    format(x[["eps"]], digits = digits, ...), format(x[["delta"]], digits = digits, ...)
+  )
+}
+
+#' @export
+cdf.dist_shash <- function(x, q, ...) {
+  exp(log_tail(x, q))
+}
+
+#' @export
+density.dist_shash <- function(x, at, ..., log = FALSE) {
+  out <- log_dens(x, at)
+  if (log) out else exp(out)
+}
+
+#' @export
+quantile.dist_shash <- function(x, p, ...) {
+  shash_quantile(p, x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]])
+}
+
+#' @export
+generate.dist_shash <- function(x, times, ...) {
+  quantile(x, stats::runif(times))
+}
+
+#' @export
+mean.dist_shash <- function(x, ...) {
+  shash_mean(x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]])
+}
+
+#' @export
+variance.dist_shash <- function(x, ...) {
+  shash_variance(x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]])
+}
+
+# --- dist_shash_mc: equal-weight mixture over coefficient draws -----------
+# On an element every field is a draw vector of length K; on an unpacked
+# vector every field is an n x K matrix. `mc_fields()` returns the fields
+# as matrices with one row per evaluation point so the kernels apply to
+# both cases: rows x draws, with `q` recycled down the rows.
+
+mc_fields <- function(x, q) {
+  f <- unclass(x)[c("mu", "sigma", "eps", "delta")]
+  if (is.matrix(f$mu)) {
+    q <- rep_len(q, nrow(f$mu))
   } else {
-    skew <- recycle_to(0, n)
-    tail <- recycle_to(1, n)
+    k <- length(f$mu)
+    f <- lapply(f, function(v) matrix(v, length(q), k, byrow = TRUE))
   }
-  aleatoric_sd <- recycle_to(aleatoric_sd %||% scale, n)
-  epistemic_sd <- recycle_to(epistemic_sd %||% 0, n)
-  vctrs::new_rcrd(
-    list(
-      location = location,
-      scale = scale,
-      skew = skew,
-      tail = tail,
-      aleatoric_sd = aleatoric_sd,
-      epistemic_sd = epistemic_sd
-    ),
-    family = fam,
-    class = "norm_dist"
-  )
+  c(list(q = q), f)
 }
 
-#' @exportS3Method vctrs::vec_ptype_abbr
-vec_ptype_abbr.norm_dist <- function(x, ...) {
-  paste0("ndist<", attr(x, "family"), ">")
+mc_draws <- function(x) {
+  if (is.matrix(x[["mu"]])) ncol(x[["mu"]]) else length(x[["mu"]])
 }
 
 #' @export
-format.norm_dist <- function(x, ...) {
-  paste0(
-    attr(x, "family"),
-    "(mu=", signif(field_or(x, "location"), 4),
-    ", sd=", signif(field_or(x, "scale"), 4), ")"
+format.dist_shash_mc <- function(x, digits = 2, ...) {
+  gaussian <- isTRUE(all(x[["eps"]] == 0) && all(x[["delta"]] == 1))
+  sprintf(
+    "%s[%d](%s, %s)", if (gaussian) "N" else "SHASH", mc_draws(x),
+    format(mean(x[["mu"]]), digits = digits, ...),
+    format(mean(x[["sigma"]]), digits = digits, ...)
   )
 }
 
-field_or <- function(x, name) {
-  vctrs::field(x, name)
-}
-
-norm_params <- function(x) {
-  list(
-    location = field_or(x, "location"),
-    scale = field_or(x, "scale"),
-    skew = field_or(x, "skew"),
-    tail = field_or(x, "tail")
-  )
-}
-
-#' Cumulative distribution function
-#'
-#' @param distribution A [norm_dist].
-#' @param y Numeric observations, recycled to the distribution length.
-#' @param x A [norm_dist] (for [stats::quantile()]).
-#' @param probs Probabilities in \eqn{(0,1)}.
-#' @param ... Unused.
-#' @export
-cdf <- function(distribution, y) {
-  UseMethod("cdf")
-}
-
-#' @export
-cdf.norm_dist <- function(distribution, y) {
-  exp(log_cdf(distribution, y, lower.tail = TRUE))
-}
-
-# Log CDF (or log survival function) computed without passing through the
-# probability scale, so that tails of 1e-40 remain distinguishable.
-# A distribution carrying coefficient draws (uncertainty = "total") is a
-# mixture over the draws; its tails are log-mean-exp over the components.
-log_cdf <- function(distribution, y, lower.tail = TRUE) {
-  UseMethod("log_cdf")
-}
-
-#' @export
-#' @noRd
-log_cdf.norm_dist <- function(distribution, y, lower.tail = TRUE) {
-  rec <- recycle_pair(distribution, y)
-  distribution <- rec$distribution
-  y <- rec$y
-  draws <- dist_draws(distribution)
-  if (is.null(draws)) {
-    p <- norm_params(distribution)
-    return(family_log_cdf(attr(distribution, "family"), y, p, lower.tail))
-  }
-  fam <- attr(distribution, "family")
-  k <- ncol(draws$location)
-  acc <- matrix(NA_real_, length(y), k)
-  for (j in seq_len(k)) {
-    acc[, j] <- family_log_cdf(fam, y, draw_params(draws, j), lower.tail)
-  }
-  log_mean_exp_rows(acc)
-}
-
-family_log_cdf <- function(fam, y, p, lower.tail = TRUE) {
-  switch(
-    fam,
-    gaussian = stats::pnorm(y, mean = p$location, sd = p$scale,
-                            lower.tail = lower.tail, log.p = TRUE),
-    shash = shash_log_cdf(y, p$location, p$scale, p$skew, p$tail, lower.tail),
-    cli::cli_abort("Unknown family {.val {fam}}.")
-  )
-}
-
-log_mean_exp_rows <- function(m) {
-  mx <- apply(m, 1, max)
+# Row-wise log-mean-exp of a matrix.
+log_mean_exp <- function(m) {
+  mx <- m[cbind(seq_len(nrow(m)), max.col(m, ties.method = "first"))]
   ok <- is.finite(mx)
-  out <- rep(NA_real_, nrow(m))
+  out <- mx
   out[ok] <- mx[ok] + log(rowMeans(exp(m[ok, , drop = FALSE] - mx[ok])))
-  out[!ok & !is.na(mx) & mx == -Inf] <- -Inf
   out
 }
 
-# Coefficient-draw parameter matrices attached by the engine for
-# uncertainty = "total". Rows are observations, columns are draws.
-dist_draws <- function(distribution) {
-  loc <- attr(distribution, "location_draws")
-  if (is.null(loc)) {
-    return(NULL)
-  }
-  p <- norm_params(distribution)
-  k <- ncol(loc)
-  fill <- function(nm, default) {
-    m <- attr(distribution, nm)
-    if (is.null(m)) matrix(default, nrow(loc), k) else m
-  }
-  list(
-    location = loc,
-    scale = fill("scale_draws", p$scale),
-    skew = fill("skew_draws", p$skew),
-    tail = fill("tail_draws", p$tail)
-  )
+mc_log_cdf <- function(a, lower.tail = TRUE) {
+  log_mean_exp(shash_log_cdf(a$q, a$mu, a$sigma, a$eps, a$delta, lower.tail))
 }
 
-draw_params <- function(draws, j) {
-  list(
-    location = draws$location[, j],
-    scale = draws$scale[, j],
-    skew = draws$skew[, j],
-    tail = draws$tail[, j]
-  )
-}
-
-# Subset the draw matrices along with the distribution.
-dist_slice <- function(distribution, i) {
-  out <- vctrs::vec_slice(distribution, i)
-  for (nm in c("location_draws", "scale_draws", "skew_draws", "tail_draws")) {
-    m <- attr(distribution, nm)
-    if (!is.null(m)) {
-      attr(out, nm) <- m[i, , drop = FALSE]
-    }
-  }
-  for (nm in setdiff(names(attributes(distribution)), names(attributes(out)))) {
-    attr(out, nm) <- attr(distribution, nm)
-  }
-  out
+mc_log_density <- function(a) {
+  log_mean_exp(shash_log_density(a$q, a$mu, a$sigma, a$eps, a$delta))
 }
 
 #' @export
-#' @rdname cdf
-quantile.norm_dist <- function(x, probs = seq(0, 1, 0.25), ...) {
-  rec <- recycle_pair(x, probs)
-  x <- rec$distribution
-  p <- clamp_prob(rec$y)
-  par <- norm_params(x)
-  draws <- dist_draws(x)
-  if (is.null(draws)) {
-    return(family_quantile(attr(x, "family"), p, par))
-  }
-  mixture_quantile(x, p, draws)
+cdf.dist_shash_mc <- function(x, q, ...) {
+  exp(log_tail(x, q))
 }
 
-family_quantile <- function(fam, p, par) {
-  switch(
-    fam,
-    gaussian = stats::qnorm(p, mean = par$location, sd = par$scale),
-    shash = shash_quantile(p, par$location, par$scale, par$skew, par$tail),
-    cli::cli_abort("Unknown family {.val {fam}}.")
-  )
+#' @export
+density.dist_shash_mc <- function(x, at, ..., log = FALSE) {
+  out <- log_dens(x, at)
+  if (log) out else exp(out)
 }
 
-# Quantile of the draw mixture by vectorised bisection on the mixture CDF,
-# bracketed by the extreme component quantiles.
-mixture_quantile <- function(x, p, draws, iter = 60L) {
-  fam <- attr(x, "family")
-  k <- ncol(draws$location)
-  lo <- rep(Inf, length(p))
-  hi <- rep(-Inf, length(p))
-  for (j in seq_len(k)) {
-    qj <- family_quantile(fam, p, draw_params(draws, j))
-    lo <- pmin(lo, qj)
-    hi <- pmax(hi, qj)
-  }
-  ok <- is.finite(lo) & is.finite(hi)
-  out <- rep(NA_real_, length(p))
-  if (!any(ok)) {
-    return(out)
-  }
+# Quantile by safeguarded Newton iteration on the mixture CDF, started
+# from the mean component quantile and bracketed by the extreme component
+# quantiles; only unconverged rows are re-evaluated.
+#' @export
+quantile.dist_shash_mc <- function(x, p, ..., iter = 30L) {
+  a <- mc_fields(x, p)
+  p <- a$q
+  q_comp <- shash_quantile(p, a$mu, a$sigma, a$eps, a$delta)
+  i <- seq_len(nrow(q_comp))
+  lo <- q_comp[cbind(i, max.col(-q_comp, ties.method = "first"))]
+  hi <- q_comp[cbind(i, max.col(q_comp, ties.method = "first"))]
+  cur <- rowMeans(q_comp)
+  out <- ifelse(p <= 0, lo, ifelse(p >= 1, hi, NA_real_))
+  active <- is.finite(lo) & is.finite(hi) & is.na(out)
   for (it in seq_len(iter)) {
-    mid <- (lo + hi) / 2
-    u <- exp(log_cdf(x, mid, lower.tail = TRUE))
-    below <- u < p
-    lo <- ifelse(below, mid, lo)
-    hi <- ifelse(below, hi, mid)
-    if (all(abs(hi - lo)[ok] < 1e-9 * pmax(1, abs(mid[ok])))) {
+    idx <- which(active)
+    if (!length(idx)) {
       break
     }
+    sub <- lapply(a[c("mu", "sigma", "eps", "delta")], function(f) f[idx, , drop = FALSE])
+    sub$q <- cur[idx]
+    err <- exp(mc_log_cdf(sub)) - p[idx]
+    below <- err < 0
+    lo[idx] <- ifelse(below, cur[idx], lo[idx])
+    hi[idx] <- ifelse(below, hi[idx], cur[idx])
+    nxt <- cur[idx] - err / exp(mc_log_density(sub))
+    bad <- !is.finite(nxt) | nxt < lo[idx] | nxt > hi[idx]
+    nxt[bad] <- ((lo[idx] + hi[idx]) / 2)[bad]
+    tol <- 1e-9 * pmax(1, abs(nxt))
+    done <- err == 0 | abs(nxt - cur[idx]) < tol | (hi[idx] - lo[idx]) < tol
+    cur[idx] <- nxt
+    active[idx[done]] <- FALSE
   }
-  out[ok] <- ((lo + hi) / 2)[ok]
+  out[is.na(out)] <- cur[is.na(out)]
   out
 }
 
-# n x length(probs) matrix of quantiles, one column per probability.
-quantile_matrix <- function(distribution, probs) {
-  n <- length(distribution)
-  out <- matrix(NA_real_, n, length(probs))
-  for (k in seq_along(probs)) {
-    out[, k] <- quantile(distribution, probs = rep(probs[[k]], n))
-  }
-  out
-}
-
-dist_quantile <- function(distribution, p) {
-  quantile(distribution, probs = p)
-}
-
-#' Log density
-#'
-#' @inheritParams cdf
 #' @export
-log_density <- function(distribution, y) {
-  UseMethod("log_density")
+generate.dist_shash_mc <- function(x, times, ...) {
+  a <- mc_fields(x, numeric(1))
+  n <- if (is.matrix(x[["mu"]])) nrow(x[["mu"]]) else 1L
+  k <- ncol(a$mu)
+  j <- sample.int(k, n * times, replace = TRUE)
+  pick <- function(f) f[cbind(rep_len(seq_len(n), n * times), j)]
+  out <- shash_quantile(stats::runif(n * times), pick(a$mu), pick(a$sigma),
+                        pick(a$eps), pick(a$delta))
+  if (n == 1L) out else matrix(out, n, times)
 }
 
 #' @export
-log_density.norm_dist <- function(distribution, y) {
-  rec <- recycle_pair(distribution, y)
-  distribution <- rec$distribution
-  y <- rec$y
-  draws <- dist_draws(distribution)
-  if (is.null(draws)) {
-    return(family_log_density(attr(distribution, "family"), y, norm_params(distribution)))
-  }
-  fam <- attr(distribution, "family")
-  k <- ncol(draws$location)
-  acc <- matrix(NA_real_, length(y), k)
-  for (j in seq_len(k)) {
-    acc[, j] <- family_log_density(fam, y, draw_params(draws, j))
-  }
-  log_mean_exp_rows(acc)
+mean.dist_shash_mc <- function(x, ...) {
+  a <- mc_fields(x, numeric(1))
+  rowMeans(shash_mean(a$mu, a$sigma, a$eps, a$delta))
 }
 
-family_log_density <- function(fam, y, p) {
-  switch(
-    fam,
-    gaussian = stats::dnorm(y, mean = p$location, sd = p$scale, log = TRUE),
-    shash = shash_log_density(y, p$location, p$scale, p$skew, p$tail),
-    cli::cli_abort("Unknown family {.val {fam}}.")
+#' @export
+variance.dist_shash_mc <- function(x, ...) {
+  a <- mc_fields(x, numeric(1))
+  m <- shash_mean(a$mu, a$sigma, a$eps, a$delta)
+  v <- shash_variance(a$mu, a$sigma, a$eps, a$delta)
+  rowMeans(v + m^2) - rowMeans(m)^2
+}
+
+# --- dist_conditioned: marginal mapped through a conditional normal score --
+
+#' @export
+format.dist_conditioned <- function(x, digits = 2, ...) {
+  sprintf(
+    "%s | N(%s, %s)", format(x[["dist"]], digits = digits, ...),
+    format(x[["m"]], digits = digits, ...), format(x[["s"]], digits = digits, ...)
   )
 }
 
-#' Simulate from a predictive distribution
-#'
-#' @inheritParams cdf
-#' @param n Number of draws *per* observation. Returns a matrix with
-#'   `length(distribution)` rows when `n > 1`.
 #' @export
-draw <- function(distribution, n = 1L) {
-  UseMethod("draw")
+cdf.dist_conditioned <- function(x, q, ...) {
+  exp(log_tail(x, q))
 }
 
 #' @export
-draw.norm_dist <- function(distribution, n = 1L) {
-  n <- as.integer(n)
-  m <- length(distribution)
-  u <- matrix(stats::runif(m * n), nrow = m, ncol = n)
-  out <- matrix(NA_real_, nrow = m, ncol = n)
-  for (j in seq_len(n)) {
-    out[, j] <- dist_quantile(distribution, u[, j])
+quantile.dist_conditioned <- function(x, p, ...) {
+  quantile(x[["dist"]], stats::pnorm(x[["m"]] + x[["s"]] * stats::qnorm(p)))
+}
+
+#' @export
+density.dist_conditioned <- function(x, at, ..., log = FALSE) {
+  out <- log_dens(x, at)
+  if (log) out else exp(out)
+}
+
+#' @export
+generate.dist_conditioned <- function(x, times, ...) {
+  quantile(x, stats::runif(times))
+}
+
+# --- Vectorised evaluation of a whole distribution vector -----------------
+# A homogeneous distribution vector is unpacked into one pseudo-element
+# whose fields are vectors (or n x K matrices, for draw mixtures). The element
+# methods above are vectorised, so calling them on the pseudo-element
+# scores every observation at once instead of dispatching per element.
+# Missing elements (dist_missing) and heterogeneous vectors fall back to
+# per-element dispatch.
+
+dist_unpack <- function(d) {
+  el <- vctrs::vec_data(d)
+  if (!length(el) || any(vapply(el, is.null, logical(1)))) {
+    return(NULL)
   }
-  if (n == 1L) {
-    drop(out)
-  } else {
-    out
+  cls <- unique(vapply(el, function(e) class(e)[[1L]], ""))
+  if (length(cls) != 1L) {
+    return(NULL)
   }
-}
-
-#' Predictive center (median)
-#'
-#' @inheritParams cdf
-#' @export
-center <- function(distribution) {
-  UseMethod("center")
-}
-
-#' @export
-center.norm_dist <- function(distribution) {
-  dist_quantile(distribution, rep(0.5, length(distribution)))
-}
-
-#' Predictive variance
-#'
-#' @inheritParams cdf
-#' @export
-variance <- function(distribution) {
-  UseMethod("variance")
-}
-
-#' @export
-variance.norm_dist <- function(distribution) {
-  p <- norm_params(distribution)
-  fam <- attr(distribution, "family")
-  if (identical(fam, "gaussian") && is.null(dist_draws(distribution))) {
-    return(p$scale^2)
+  fields <- list()
+  for (f in names(el[[1L]])) {
+    v <- lapply(el, `[[`, f)
+    fields[[f]] <- if (is.list(v[[1L]])) {
+      inner <- dist_unpack(vctrs::new_vctr(v, vars = NULL, class = "distribution"))
+      if (is.null(inner)) {
+        return(NULL)
+      }
+      inner
+    } else if (length(v[[1L]]) == 1L && !inherits(el[[1L]], "dist_shash_mc")) {
+      unlist(v, use.names = FALSE)
+    } else {
+      do.call(rbind, v)
+    }
   }
-  u <- (seq_len(199L) - 0.5) / 199
-  q <- quantile_matrix(distribution, u)
-  apply(q, 1, stats::var)
+  structure(fields, class = class(el[[1L]]))
 }
+
+# Apply an element function pairwise to a distribution vector and a vector
+# `arg` (recycled to a common length).
+dist_eval <- function(d, fun, arg, ...) {
+  n <- max(length(d), length(arg))
+  if (!n) {
+    return(numeric())
+  }
+  d <- vctrs::vec_recycle(d, n)
+  arg <- rep_len(as.numeric(arg), n)
+  u <- dist_unpack(d)
+  if (!is.null(u)) {
+    return(as.numeric(fun(u, arg, ...)))
+  }
+  el <- vctrs::vec_data(d)
+  mapply(function(e, a) if (is.null(e)) NA_real_ else fun(e, a, ...), el, arg)
+}
+
+dist_log_tail <- function(d, q, lower.tail = TRUE) {
+  dist_eval(d, log_tail, q, lower.tail = lower.tail)
+}
+
+dist_cdf <- function(d, q) {
+  exp(dist_log_tail(d, q))
+}
+
+dist_log_density <- function(d, y) {
+  dist_eval(d, log_dens, y)
+}
+
+dist_quantile <- function(d, p) {
+  dist_eval(d, quantile, p)
+}
+
+# n x times matrix of simulated values.
+dist_generate <- function(d, times) {
+  u <- dist_unpack(d)
+  if (is.null(u) || length(d) <= 1L) {
+    return(do.call(rbind, lapply(generate(d, times), function(g) g %||% rep(NA_real_, times))))
+  }
+  if (inherits(u, "dist_shash_mc")) {
+    return(generate(u, times))
+  }
+  matrix(quantile(u, stats::runif(length(d) * times)), length(d), times)
+}
+
+# --- Scores ---------------------------------------------------------------
 
 #' Scores derived from a predictive CDF
 #'
-#' @inheritParams cdf
-#' @param y Observed values.
-#' @return A data frame of centiles, Z-scores, tails, residuals, and
-#'   log densities. There is no abnormality column.
+#' @param distribution A `distribution` vector (see [dist_shash]).
+#' @param y Observed values, recycled against `distribution`.
+#' @return A tibble of centiles, Z-scores, tails, residuals, and log
+#'   densities. Tails are evaluated in log space so that `z = 8, 10, 40`
+#'   remain distinct. There is no abnormality column.
+#' @examples
+#' as_scores(distributional::dist_normal(0, 1), c(-2, 0, 2))
 #' @export
 as_scores <- function(distribution, y) {
-  rec <- recycle_pair(distribution, y)
-  distribution <- rec$distribution
-  y <- rec$y
-  log_lower <- log_cdf(distribution, y, lower.tail = TRUE)
-  log_upper <- log_cdf(distribution, y, lower.tail = FALSE)
-  tails <- scores_from_log_tails(log_lower, log_upper)
-  med <- center(distribution)
+  n <- max(length(distribution), length(y))
+  y <- rep_len(as.numeric(y), n)
+  tails <- scores_from_log_tails(
+    dist_log_tail(distribution, y, lower.tail = TRUE),
+    dist_log_tail(distribution, y, lower.tail = FALSE)
+  )
+  med <- dist_quantile(distribution, rep(0.5, n))
   tibble::tibble(
     observed = y,
     median = med,
@@ -392,9 +534,7 @@ as_scores <- function(distribution, y) {
     tail_prob = tails$tail_prob,
     tail_surprisal = tails$tail_surprisal,
     residual = y - med,
-    log_density = log_density(distribution, y),
-    aleatoric_sd = field_or(distribution, "aleatoric_sd"),
-    epistemic_sd = field_or(distribution, "epistemic_sd")
+    log_density = dist_log_density(distribution, y)
   )
 }
 
@@ -407,8 +547,7 @@ scores_from_log_tails <- function(log_lower, log_upper) {
     stats::qnorm(log_lower, log.p = TRUE, lower.tail = TRUE),
     stats::qnorm(log_upper, log.p = TRUE, lower.tail = FALSE)
   )
-  log_tail <- log(2) + pmin(log_lower, log_upper)
-  log_tail <- pmin(log_tail, 0)
+  log_tail <- pmin(log(2) + pmin(log_lower, log_upper), 0)
   list(
     centile = ifelse(use_lower, exp(log_lower), -expm1(log_upper)),
     z = z,
@@ -417,128 +556,15 @@ scores_from_log_tails <- function(log_lower, log_upper) {
   )
 }
 
+# Normal score of y under d, taken from the smaller tail.
+dist_z <- function(d, y) {
+  scores_from_log_tails(dist_log_tail(d, y, TRUE), dist_log_tail(d, y, FALSE))$z
+}
+
 # Log tails recovered from a z-score (exact inverse of scores_from_log_tails).
 log_tails_from_z <- function(z) {
   list(
     lower = stats::pnorm(z, log.p = TRUE, lower.tail = TRUE),
     upper = stats::pnorm(z, log.p = TRUE, lower.tail = FALSE)
   )
-}
-
-# --- SHASH (mgcv / Jones-Pewsey parameterization) -------------------------
-
-shash_z <- function(y, mu, sigma, delta) {
-  (y - mu) / (sigma * delta)
-}
-
-shash_cdf <- function(y, mu, sigma, eps, delta) {
-  z <- shash_z(y, mu, sigma, delta)
-  s <- sinh(delta * asinh(z) - eps)
-  stats::pnorm(s)
-}
-
-shash_log_cdf <- function(y, mu, sigma, eps, delta, lower.tail = TRUE) {
-  z <- shash_z(y, mu, sigma, delta)
-  s <- sinh(delta * asinh(z) - eps)
-  stats::pnorm(s, lower.tail = lower.tail, log.p = TRUE)
-}
-
-shash_quantile <- function(p, mu, sigma, eps, delta) {
-  z <- sinh((asinh(stats::qnorm(p)) + eps) / delta)
-  mu + sigma * delta * z
-}
-
-shash_log_density <- function(y, mu, sigma, eps, delta) {
-  z <- shash_z(y, mu, sigma, delta)
-  s <- sinh(delta * asinh(z) - eps)
-  c_z <- sqrt(1 + s^2)
-  log(c_z) - 0.5 * s^2 - 0.5 * log(2 * pi) - 0.5 * log1p(z^2) - log(sigma)
-}
-
-#' Mix a history-conditioned Gaussian score into a marginal CDF
-#'
-#' Implements \eqn{F_*(y\mid H)=\Phi((z(y)-m_*)/s_*)} from the velocity
-#' design memo.
-#'
-#' @param distribution Marginal [norm_dist] at the forecast time.
-#' @param m,s Conditional mean and SD of the latent normal score.
-#' @keywords internal
-#' @noRd
-condition_norm_dist <- function(distribution, m, s) {
-  m <- recycle_to(m, length(distribution))
-  s <- recycle_to(s, length(distribution))
-  if (any(s <= 0, na.rm = TRUE)) {
-    cli::cli_abort("{.arg s} must be positive.")
-  }
-  structure(
-    distribution,
-    history_m = m,
-    history_s = s,
-    class = c("norm_dist_conditional", class(distribution))
-  )
-}
-
-#' @export
-cdf.norm_dist_conditional <- function(distribution, y) {
-  exp(log_cdf(distribution, y, lower.tail = TRUE))
-}
-
-#' @export
-#' @noRd
-log_cdf.norm_dist_conditional <- function(distribution, y, lower.tail = TRUE) {
-  rec <- recycle_pair(distribution, y)
-  distribution <- rec$distribution
-  y <- rec$y
-  bare <- distribution
-  class(bare) <- setdiff(class(bare), "norm_dist_conditional")
-  z <- scores_from_log_tails(
-    log_cdf(bare, y, lower.tail = TRUE),
-    log_cdf(bare, y, lower.tail = FALSE)
-  )$z
-  m <- recycle_to(attr(distribution, "history_m") %||% 0, length(y))
-  s <- recycle_to(attr(distribution, "history_s") %||% 1, length(y))
-  stats::pnorm((z - m) / s, lower.tail = lower.tail, log.p = TRUE)
-}
-
-#' @export
-quantile.norm_dist_conditional <- function(x, probs = seq(0, 1, 0.25), ...) {
-  rec <- recycle_pair(x, probs)
-  x <- rec$distribution
-  p <- rec$y
-  m <- recycle_to(attr(x, "history_m") %||% 0, length(p))
-  s <- recycle_to(attr(x, "history_s") %||% 1, length(p))
-  p_marg <- stats::pnorm(m + s * stats::qnorm(clamp_prob(p)))
-  class(x) <- setdiff(class(x), "norm_dist_conditional")
-  quantile(x, probs = p_marg)
-}
-
-#' @export
-log_density.norm_dist_conditional <- function(distribution, y) {
-  y <- recycle_to(y, length(distribution))
-  class_bare <- distribution
-  class(class_bare) <- setdiff(class(class_bare), "norm_dist_conditional")
-  z <- scores_from_log_tails(
-    log_cdf(class_bare, y, lower.tail = TRUE),
-    log_cdf(class_bare, y, lower.tail = FALSE)
-  )$z
-  m <- attr(distribution, "history_m")
-  s <- attr(distribution, "history_s")
-  log_f <- log_density(class_bare, y)
-  log_f + stats::dnorm((z - m) / s, log = TRUE) - log(s) - stats::dnorm(z, log = TRUE)
-}
-
-#' @export
-center.norm_dist_conditional <- function(distribution) {
-  quantile(distribution, probs = 0.5)
-}
-
-#' @export
-draw.norm_dist_conditional <- function(distribution, n = 1L) {
-  n <- as.integer(n)
-  m_len <- length(distribution)
-  out <- matrix(NA_real_, m_len, n)
-  for (j in seq_len(n)) {
-    out[, j] <- quantile(distribution, probs = stats::runif(m_len))
-  }
-  if (n == 1L) drop(out) else out
 }

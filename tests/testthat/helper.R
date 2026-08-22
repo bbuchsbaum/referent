@@ -27,8 +27,7 @@ simulate_skewed <- function(n, seed = NULL, skew = 1.4, tail = 0.7) {
   site <- factor(sample(LETTERS[1:4], n, replace = TRUE))
   mu <- 10 + 0.08 * (age - 50) - 0.001 * (age - 50)^2 + 0.4 * (sex == "M")
   sigma <- 1.2 + 0.02 * pmax(age - 40, 0)
-  d <- norm_dist("shash", location = mu, scale = sigma, skew = skew, tail = tail)
-  y <- as.numeric(quantile(d, stats::runif(n)))
+  y <- shash_quantile(stats::runif(n), mu, sigma, skew, tail)
   data.frame(age, sex, site, y)
 }
 

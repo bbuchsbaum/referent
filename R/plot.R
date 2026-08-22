@@ -372,7 +372,7 @@ plot_fan <- function(forecast, centiles, thrive = FALSE) {
     tibble::tibble(
       time = times,
       x = times,
-      y = vapply(dists, function(d) as.numeric(quantile(d, p)), numeric(1)),
+      y = dist_quantile(dists, p),
       centile = p,
       .label = centile_label(p),
       .group = NA_character_

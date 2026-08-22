@@ -15,7 +15,8 @@
 #'    the joint centile is calibrated even when the copula is imperfect.
 #'
 #' @param scores A `norm_scores` or `norm_transition` table of reference
-#'   scores (out-of-fold for honest calibration).
+#'   scores (out-of-fold for honest calibration), or the wide output of
+#'   [augment()] (its `.z_<outcome>` columns).
 #' @param method Must be `"gaussian_copula"`.
 #' @param covariance `"shrinkage"` or `"identity"`.
 #' @param value Score column (`"z"` or `"innovation_z"`).
@@ -145,6 +146,13 @@ print.norm_joint <- function(x, ...) {
 
 # Pivot a long score table to a rows x outcomes matrix of `value`.
 scores_matrix <- function(scores, value = "z") {
+  wide <- grep(paste0("^\\.", value, "_"), names(scores), value = TRUE)
+  if (!".outcome" %in% names(scores) && length(wide)) {
+    mat <- as.matrix(scores[, wide, drop = FALSE])
+    colnames(mat) <- sub(paste0("^\\.", value, "_"), "", wide)
+    rows <- seq_len(nrow(mat))
+    return(list(matrix = mat, .row = rows, .id = scores[[".id"]] %||% rows))
+  }
   if (!value %in% names(scores)) {
     cli::cli_abort("Unknown score column {.field {value}}.")
   }

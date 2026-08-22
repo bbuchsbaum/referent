@@ -53,7 +53,9 @@ the penalised Hessian.
 
 Adaptation is applied inside \code{\link[=predict.norm_fit]{predict.norm_fit()}}: the location of
 every predictive distribution (including coefficient draws under
-\code{uncertainty = "total"}) is shifted, the scale multiplied by
-\eqn{e^{\delta_\sigma}}, and the standard error of the location offset
-is added to the epistemic SD.
+\code{uncertainty = "total"}) is shifted and the scale multiplied by
+\eqn{e^{\delta_\sigma}}. Under \code{uncertainty = "total"} the standard
+error of the location offset is propagated as well: analytically for a
+Gaussian predictive and as an extra seeded location perturbation per
+coefficient draw for a draw mixture.
 }

@@ -2,7 +2,7 @@
 #'
 #' These objects describe a conditional distribution family. They are not
 #' fitted models. Engines use them to choose a likelihood and to construct
-#' [norm_dist()] objects.
+#' [distributional][dist_shash] vectors.
 #'
 #' @param link_location,link_scale,link_skew,link_tail Character link
 #'   names. Defaults follow `mgcv` (`identity` location; `logb` /

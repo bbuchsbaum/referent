@@ -43,6 +43,9 @@ rows have \code{z = NA}.}
 For \code{"scores"}, a \code{norm_scores} tibble with one row per
 observation and outcome. \code{status} is \code{"ok"}, \code{"missing_predictor"}
 (a covariate is \code{NA}), or the fit status of a failed outcome.
+For \code{"distribution"}, a tibble with \code{.id} and one
+\link[=dist_shash]{distribution} column per outcome (missing distributions
+for failed outcomes).
 }
 \description{
 One method serves plain, adapted, calibrated, and frozen fits. The

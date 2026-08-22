@@ -115,35 +115,28 @@ predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "
     cli::cli_abort("Cannot predict from a failed fit.")
   }
   if (is.null(newdata) || !nrow(newdata)) {
-    return(norm_dist(family = fam, location = numeric(), scale = numeric()))
+    return(distributional::dist_normal(numeric(), numeric()))
   }
   pars <- mgcv_parameters(model, newdata, fam, fit_one)
   if (identical(uncertainty, "total") && !is.null(model$Vp)) {
     if (is_plain_gaussian(model, fam)) {
       # identity location, constant scale: the total predictive is exactly
       # N(mu, sigma^2 + se^2), so no draws are needed.
-      total_scale <- sqrt(pars$scale^2 + (pars$epistemic_sd %||% 0)^2)
-      dist <- norm_dist(
-        family = fam,
-        location = pars$location,
-        scale = total_scale,
-        aleatoric_sd = pars$scale,
-        epistemic_sd = pars$epistemic_sd %||% 0
-      )
-      attr(dist, "uncertainty") <- "total"
-      return(dist)
+      return(distributional::dist_normal(
+        pars$location, sqrt(pars$scale^2 + pars$epistemic_sd^2)
+      ))
     }
-    return(mgcv_parameters_total(model, newdata, fam, fit_one, n_draw, seed)$dist)
+    return(mgcv_dist_total(model, newdata, fam, fit_one, n_draw, seed))
   }
-  norm_dist(
-    family = fam,
-    location = pars$location,
-    scale = pars$scale,
-    skew = pars$skew,
-    tail = pars$tail,
-    aleatoric_sd = pars$scale,
-    epistemic_sd = pars$epistemic_sd %||% 0
-  )
+  make_dist(fam, pars)
+}
+
+# Distribution vector from a list of parameter vectors.
+make_dist <- function(fam, p) {
+  if (identical(fam, "gaussian")) {
+    return(distributional::dist_normal(p$location, p$scale))
+  }
+  dist_shash(p$location, p$scale, p$skew, p$tail)
 }
 
 # predict.gam warns about unseen factor levels; `support == "new_group"`
@@ -255,7 +248,8 @@ residual_scale <- function(model) {
   sqrt(max(s, .Machine$double.eps))
 }
 
-mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1L) {
+# Equal-weight mixture over coefficient draws from N(beta_hat, Vp).
+mgcv_dist_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1L) {
   cond <- mgcv_parameters(model, newdata, fam, fit_one)
   n <- length(cond$location)
   lp <- tryCatch(
@@ -263,16 +257,7 @@ mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1
     error = function(e) NULL
   )
   if (is.null(lp) || is.null(model$Vp)) {
-    dist <- norm_dist(
-      family = fam,
-      location = cond$location,
-      scale = cond$scale,
-      skew = cond$skew,
-      tail = cond$tail,
-      aleatoric_sd = cond$scale,
-      epistemic_sd = cond$epistemic_sd %||% 0
-    )
-    return(list(dist = dist, draws = NULL))
+    return(make_dist(fam, cond))
   }
   beta_hat <- stats::coef(model)
   vp <- as.matrix(model$Vp)
@@ -300,8 +285,8 @@ mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1
   )
   loc_mat <- matrix(cond$location, n, n_draw)
   scale_mat <- matrix(cond$scale, n, n_draw)
-  skew_mat <- matrix(recycle_to(cond$skew, n), n, n_draw)
-  tail_mat <- matrix(recycle_to(cond$tail, n), n, n_draw)
+  skew_mat <- matrix(cond$skew, n, n_draw)
+  tail_mat <- matrix(cond$tail, n, n_draw)
   for (j in seq_len(n_draw)) {
     etas <- eta_from_lp(lp, draws[j, ])
     par_j <- params_from_eta(etas, model, fam, fit_one, cond)
@@ -310,22 +295,7 @@ mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1
     skew_mat[, j] <- par_j$skew
     tail_mat[, j] <- par_j$tail
   }
-  loc_se <- apply(loc_mat, 1, stats::sd)
-  dist <- norm_dist(
-    family = fam,
-    location = cond$location,
-    scale = cond$scale,
-    skew = cond$skew,
-    tail = cond$tail,
-    aleatoric_sd = cond$scale,
-    epistemic_sd = loc_se
-  )
-  attr(dist, "location_draws") <- loc_mat
-  attr(dist, "scale_draws") <- scale_mat
-  attr(dist, "skew_draws") <- skew_mat
-  attr(dist, "tail_draws") <- tail_mat
-  attr(dist, "uncertainty") <- "total"
-  list(dist = dist, draws = loc_mat)
+  dist_shash_mc(loc_mat, scale_mat, skew_mat, tail_mat)
 }
 
 eta_from_lp <- function(lp, beta) {
@@ -344,13 +314,13 @@ eta_from_lp <- function(lp, beta) {
 
 params_from_eta <- function(etas, model, fam, fit_one, fallback) {
   n <- length(fallback$location)
-  loc <- recycle_to(etas[[1]] %||% fallback$location, n)
+  loc <- rep_len(etas[[1]] %||% fallback$location, n)
   if (fam == "gaussian" && length(etas) == 1L) {
     return(list(
       location = loc,
-      scale = recycle_to(fallback$scale, n),
-      skew = recycle_to(0, n),
-      tail = recycle_to(1, n)
+      scale = rep_len(fallback$scale, n),
+      skew = rep(0, n),
+      tail = rep(1, n)
     ))
   }
   if (fam == "gaussian" && length(etas) >= 2L) {
@@ -359,8 +329,8 @@ params_from_eta <- function(etas, model, fam, fit_one, fallback) {
     return(list(
       location = loc,
       scale = pmax(sigma, 1e-6),
-      skew = recycle_to(0, n),
-      tail = recycle_to(1, n)
+      skew = rep(0, n),
+      tail = rep(1, n)
     ))
   }
   if (fam == "shash") {
@@ -376,8 +346,8 @@ params_from_eta <- function(etas, model, fam, fit_one, fallback) {
     return(list(
       location = loc,
       scale = pmax(as.numeric(sigma), 1e-6),
-      skew = recycle_to(eps, n),
-      tail = pmax(recycle_to(exp(phi), n), 1e-3)
+      skew = rep_len(eps, n),
+      tail = pmax(rep_len(exp(phi), n), 1e-3)
     ))
   }
   fallback

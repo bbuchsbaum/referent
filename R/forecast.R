@@ -1,6 +1,6 @@
 #' History-conditioned forecast
 #'
-#' Returns predictive [norm_dist] objects at each requested time. The
+#' Returns a [dist_conditioned] predictive distribution at each requested time. The
 #' dynamic process only changes the predictive distribution; scores and
 #' graphics then follow from the existing contract.
 #'
@@ -17,7 +17,7 @@
 #'   used in [norm_dynamics()] and the outcome.
 #' @param times Future times.
 #' @param outcome Outcome name.
-#' @return A `norm_forecast` with `$dist` (one [norm_dist] per time),
+#' @return A `norm_forecast` with `$dist` (a `distribution` vector, one element per time),
 #'   `$summary` (median and 90% interval), `$history_n`, and
 #'   `$lag_support` (`"in"` or `"extrapolated_lag"` per forecast time,
 #'   judged from the last history visit against the reference lag range).
@@ -58,22 +58,22 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
   new_grid <- history[rep(nrow(history), length(times)), , drop = FALSE]
   new_grid[[time_nm]] <- times
   new_grid[[outcome]] <- NA_real_
-  marg <- predict(dynamic$reference, newdata = new_grid, type = "distribution",
-                  uncertainty = "conditional")[[outcome]]
-  hist_marg <- predict(dynamic$reference, newdata = history, type = "distribution",
-                       uncertainty = "conditional")[[outcome]]
-  z_hist <- stats::qnorm(clamp_prob(cdf(hist_marg, y_hist)))
-  dists <- lapply(seq_along(times), function(i) {
-    cond <- condition_z(z_hist, t_hist, times[[i]], pr$psi, pr$process)
-    condition_norm_dist(vctrs::vec_slice(marg, i), cond$m, cond$s)
-  })
+  marg <- predict_dists(dynamic$reference, new_grid, uncertainty = "conditional")[[outcome]]
+  hist_marg <- predict_dists(dynamic$reference, history, uncertainty = "conditional")[[outcome]]
+  z_hist <- dist_z(hist_marg, y_hist)
+  cond <- lapply(times, function(t) condition_z(z_hist, t_hist, t, pr$psi, pr$process))
+  dists <- dist_conditioned(
+    marg,
+    m = vapply(cond, `[[`, numeric(1), "m"),
+    s = vapply(cond, `[[`, numeric(1), "s")
+  )
   lag_support <- classify_temporal_support(dynamic, rep(max(t_hist), length(times)),
                                            times, rep(length(t_hist), length(times)))
   summary <- tibble::tibble(
     time = times,
-    median = vapply(dists, function(d) center(d), numeric(1)),
-    lower = vapply(dists, function(d) quantile(d, 0.05), numeric(1)),
-    upper = vapply(dists, function(d) quantile(d, 0.95), numeric(1)),
+    median = dist_quantile(dists, 0.5),
+    lower = dist_quantile(dists, 0.05),
+    upper = dist_quantile(dists, 0.95),
     support = lag_support
   )
   structure(
@@ -185,8 +185,7 @@ derivative_se <- function(fit_one, plus, minus, centiles, h) {
   cond_m <- mgcv_parameters(model, minus, fam, fit_one)
   q_at <- function(lp, b, cond) {
     par <- params_from_eta(eta_from_lp(lp, b), model, fam, fit_one, cond)
-    d <- norm_dist(family = fam, location = par$location, scale = par$scale,
-                   skew = par$skew, tail = par$tail)
+    d <- make_dist(fam, par)
     vapply(centiles, function(p) dist_quantile(d, p), numeric(n))
   }
   vel_at <- function(b) (q_at(lp_p, b, cond_p) - q_at(lp_m, b, cond_m)) / (2 * h)

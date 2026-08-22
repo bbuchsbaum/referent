@@ -38,7 +38,7 @@ norm_crossfit <- function(spec,
       return(NULL)
     }
     fit <- norm_fit(spec, data = train, outcomes = outcome_names, ...)
-    dists <- predict(fit, newdata = test, type = "distribution", uncertainty = "conditional")
+    dists <- predict_dists(fit, test, uncertainty = "conditional")
     sc <- predict(fit, newdata = test, type = "scores", uncertainty = "conditional")
     sc$crps <- NA_real_
     for (nm in names(dists)) {

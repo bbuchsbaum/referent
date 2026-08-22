@@ -268,9 +268,10 @@ test_that("forecast density law holds after conditioning", {
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
   fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + 1)
-  d <- fc$dist[[1]]
+  d <- fc$dist[1]
+  expect_s3_class(vctrs::vec_data(d)[[1]], "dist_conditioned")
   p <- c(0.2, 0.5, 0.8)
-  expect_equal(as.numeric(cdf(d, quantile(d, p))), p, tolerance = 1e-6)
+  expect_equal(dist_cdf(d, dist_quantile(d, p)), p, tolerance = 1e-6)
 })
 
 test_that("norm_derivative reproduces a linear slope and its standard error", {

@@ -158,17 +158,6 @@ print.norm_fit <- function(x, ...) {
   invisible(x)
 }
 
-#' @export
-summary.norm_fit <- function(object, ...) {
-  st <- fit_statuses(object)
-  tibble::tibble(
-    outcome = object$outcomes,
-    status = unname(st[object$outcomes]),
-    family = object$spec$family$name,
-    engine = object$spec$engine
-  )
-}
-
 fit_ok <- function(fit_one) {
   identical(fit_one$status, "ok") && !is.null(fit_one$model)
 }
@@ -198,6 +187,9 @@ fit_ok <- function(fit_one) {
 #' @return For `"scores"`, a `norm_scores` tibble with one row per
 #'   observation and outcome. `status` is `"ok"`, `"missing_predictor"`
 #'   (a covariate is `NA`), or the fit status of a failed outcome.
+#'   For `"distribution"`, a tibble with `.id` and one
+#'   [distribution][dist_shash] column per outcome (missing distributions
+#'   for failed outcomes).
 #' @export
 predict.norm_fit <- function(object,
                              newdata,
@@ -210,6 +202,26 @@ predict.norm_fit <- function(object,
   type <- match.arg(type)
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
+  dists <- predict_dists(object, newdata, uncertainty, outcomes, n_draw)
+  if (identical(type, "distribution")) {
+    n <- nrow(newdata)
+    cols <- lapply(dists, function(d) d %||% distributional::dist_missing(n))
+    return(tibble::tibble(.id = score_ids(object, newdata), !!!cols))
+  }
+  scores <- scores_from_dists(object, dists, newdata)
+  if (!is.null(object$calibration)) {
+    scores <- apply_calibration(object, scores, newdata)
+  }
+  if (!isTRUE(allow_extrapolation)) {
+    scores$z[scores$support %in% "out"] <- NA_real_
+  }
+  scores
+}
+
+# Named list of per-outcome distribution vectors (NULL for failed fits),
+# after site adaptation.
+predict_dists <- function(object, newdata, uncertainty = "conditional",
+                          outcomes = NULL, n_draw = NULL) {
   nms <- object$outcomes
   if (!is.null(outcomes)) {
     nms <- intersect(as.character(outcomes), nms)
@@ -227,19 +239,10 @@ predict.norm_fit <- function(object,
   })
   names(dists) <- nms
   if (!is.null(object$adaptation)) {
-    dists <- apply_adaptation(object$adaptation, dists, newdata)
+    dists <- apply_adaptation(object$adaptation, dists, newdata,
+                              total = identical(uncertainty, "total"), seed = seed)
   }
-  if (identical(type, "distribution")) {
-    return(dists)
-  }
-  scores <- scores_from_dists(object, dists, newdata)
-  if (!is.null(object$calibration)) {
-    scores <- apply_calibration(object, scores, newdata)
-  }
-  if (!isTRUE(allow_extrapolation)) {
-    scores$z[scores$support %in% "out"] <- NA_real_
-  }
-  scores
+  dists
 }
 
 # Assemble the long score table from per-outcome distributions.
@@ -258,12 +261,7 @@ scores_from_dists <- function(object, dists, newdata) {
     d <- dists[[nm]]
     y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
     if (is.null(d)) {
-      sc <- tibble::tibble(
-        observed = as.numeric(y), median = NA_real_, centile = NA_real_,
-        z = NA_real_, tail_prob = NA_real_, tail_surprisal = NA_real_,
-        residual = NA_real_, log_density = NA_real_,
-        aleatoric_sd = NA_real_, epistemic_sd = NA_real_
-      )
+      sc <- as_scores(distributional::dist_missing(n), y)
       status <- rep(object$models[[nm]]$status %||% "nonconverged", n)
     } else {
       sc <- as_scores(d, y)
@@ -284,10 +282,7 @@ scores_from_dists <- function(object, dists, newdata) {
   if (!nrow(out)) {
     out <- tibble::tibble(
       .row = integer(), .id = ids[0], .outcome = character(),
-      observed = numeric(), median = numeric(), centile = numeric(),
-      z = numeric(), tail_prob = numeric(), tail_surprisal = numeric(),
-      residual = numeric(), log_density = numeric(),
-      aleatoric_sd = numeric(), epistemic_sd = numeric(),
+      as_scores(distributional::dist_missing(0), numeric()),
       support = character(), calibrated = logical(),
       .in_sample = logical(), status = character()
     )

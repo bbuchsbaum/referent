@@ -27,6 +27,28 @@ scores <- predict(fit, newdata = target, type = "scores")
 norm_assess(fit, newdata = target)$overall
 ```
 
+Predictive distributions are
+[distributional](https://pkg.mitchelloharawild.com/distributional/) vectors,
+so the usual generics apply (`cdf()`, `quantile()`, `density()`,
+`generate()`, `mean()`, `variance()`, `hilo()`), they sit in tibble columns,
+and `ggdist` can draw them. `predict(type = "distribution")` returns one
+`<distribution>` column per outcome; `tidy()`, `glance()`, and `augment()`
+give per-outcome, per-fit, and wide per-observation summaries.
+
+```r
+dists <- predict(fit, newdata = target, type = "distribution")
+dists$y
+hilo(dists$y, 90)
+as_scores(dists$y, target$y)
+
+tidy(fit)
+augment(fit, target)   # target + .z_y, .centile_y, .support
+```
+
+Gaussian fits return `dist_normal()`; SHASH fits return `dist_shash()`;
+`uncertainty = "total"` returns an equal-weight mixture over coefficient
+draws (`dist_shash_mc()`); forecasts return `dist_conditioned()`.
+
 Longitudinal change is a first-class dynamic extension, not a standalone
 `norm_change()` calculation:
 

@@ -33,5 +33,5 @@ An object of class \code{norm_family}.
 \description{
 These objects describe a conditional distribution family. They are not
 fitted models. Engines use them to choose a likelihood and to construct
-\code{\link[=norm_dist]{norm_dist()}} objects.
+\link[=dist_shash]{distributional} vectors.
 }

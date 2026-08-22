@@ -20,9 +20,11 @@
 #'
 #' Adaptation is applied inside [predict.norm_fit()]: the location of
 #' every predictive distribution (including coefficient draws under
-#' `uncertainty = "total"`) is shifted, the scale multiplied by
-#' \eqn{e^{\delta_\sigma}}, and the standard error of the location offset
-#' is added to the epistemic SD.
+#' `uncertainty = "total"`) is shifted and the scale multiplied by
+#' \eqn{e^{\delta_\sigma}}. Under `uncertainty = "total"` the standard
+#' error of the location offset is propagated as well: analytically for a
+#' Gaussian predictive and as an extra seeded location perturbation per
+#' coefficient draw for a draw mixture.
 #'
 #' @param fit A [norm_fit] or [norm_dynamics] object.
 #' @param data Local reference observations.
@@ -59,8 +61,7 @@ norm_adapt <- function(fit,
   }
   base <- fit
   base$adaptation <- NULL
-  dists <- predict(base, newdata = data, type = "distribution",
-                   uncertainty = "conditional")
+  dists <- predict_dists(base, data, uncertainty = "conditional")
   by_chr <- as.character(by_vec)
   offsets <- lapply(names(dists), function(nm) {
     d <- dists[[nm]]
@@ -71,7 +72,7 @@ norm_adapt <- function(fit,
     groups <- split(seq_along(y), by_chr)
     groups$.all <- seq_along(y)
     lapply(groups, function(idx) {
-      estimate_offsets(dist_slice(d, idx), y[idx], parameters,
+      estimate_offsets(d[idx], y[idx], parameters,
                        location_prior_n, scale_prior_n)
     })
   })
@@ -93,7 +94,7 @@ norm_adapt <- function(fit,
 }
 
 # Penalised maximum-likelihood offsets on the family's own density. The
-# location offset is parameterised in units of the mean aleatoric SD and
+# location offset is parameterised in units of the mean predictive SD and
 # the scale offset on the log scale, with ridge penalties equal to
 # `prior_n` pseudo-observations of Fisher information, so the shrinkage
 # factor is about n / (n + prior_n) for both. For a Gaussian family the
@@ -101,19 +102,19 @@ norm_adapt <- function(fit,
 estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) {
   ok <- is.finite(y)
   n <- sum(ok)
-  s_bar <- mean(field_or(d, "aleatoric_sd")[ok])
+  s_bar <- sqrt(mean(variance(d[ok])))
   empty <- list(location = 0, scale = 0, n = n, location_se = NA_real_,
                 scale_se = NA_real_, parameters = parameters)
   if (n < 2L || !is.finite(s_bar) || s_bar <= 0) {
     return(empty)
   }
-  d <- dist_slice(d, which(ok))
+  d <- d[ok]
   y <- y[ok]
   fit_scale <- "scale" %in% parameters
   objective <- function(theta) {
     loc <- theta[[1L]] * s_bar
     log_s <- if (fit_scale) theta[[2L]] else 0
-    ll <- sum(log_density(shift_dist(d, loc, log_s), y))
+    ll <- sum(dist_log_density(shift_params(d, loc, log_s), y))
     if (!is.finite(ll)) {
       return(1e100)
     }
@@ -139,45 +140,42 @@ estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) 
   )
 }
 
-# Shift location by `loc` and multiply scale by exp(`log_s`), keeping any
-# coefficient draws and the total-uncertainty bookkeeping consistent.
-shift_dist <- function(d, loc, log_s, loc_se = 0) {
+# Shift the location of every element of a distribution vector by `loc`
+# and multiply its scale by exp(`log_s`). A location-offset standard error
+# `loc_se` is folded into a Gaussian predictive analytically and into a
+# draw mixture as a standardised N(0, loc_se^2) perturbation per draw,
+# seeded independently of the coefficient draws.
+shift_params <- function(d, loc, log_s, loc_se = 0, seed = 1L) {
   n <- length(d)
-  loc <- recycle_to(loc, n)
-  log_s <- recycle_to(log_s, n)
-  loc_se <- recycle_to(loc_se, n)
-  p <- norm_params(d)
-  alea <- field_or(d, "aleatoric_sd") * exp(log_s)
-  ep <- sqrt(field_or(d, "epistemic_sd")^2 + loc_se^2)
-  total <- identical(attr(d, "uncertainty"), "total")
-  draws <- dist_draws(d)
-  scale <- if (total && is.null(draws)) {
-    sqrt(alea^2 + ep^2)
-  } else {
-    p$scale * exp(log_s)
+  if (!n || all(vapply(vctrs::vec_data(d), is.null, logical(1)))) {
+    return(d)
   }
-  out <- norm_dist(
-    family = attr(d, "family"),
-    location = p$location + loc,
-    scale = scale,
-    skew = p$skew,
-    tail = p$tail,
-    aleatoric_sd = alea,
-    epistemic_sd = ep
-  )
-  if (!is.null(draws)) {
-    attr(out, "location_draws") <- draws$location + loc
-    attr(out, "scale_draws") <- draws$scale * exp(log_s)
-    attr(out, "skew_draws") <- draws$skew
-    attr(out, "tail_draws") <- draws$tail
+  loc <- rep_len(loc, n)
+  log_s <- rep_len(log_s, n)
+  loc_se <- rep_len(loc_se, n)
+  u <- dist_unpack(d)
+  if (is.null(u)) {
+    cli::cli_abort("Cannot adapt a distribution vector with missing or mixed elements.")
   }
-  if (total) {
-    attr(out, "uncertainty") <- "total"
+  if (inherits(u, "dist_normal")) {
+    return(distributional::dist_normal(
+      u$mu + loc, sqrt((u$sigma * exp(log_s))^2 + loc_se^2)
+    ))
   }
-  out
+  if (inherits(u, "dist_shash")) {
+    return(dist_shash(u$mu + loc, u$sigma * exp(log_s), u$eps, u$delta))
+  }
+  if (inherits(u, "dist_shash_mc")) {
+    k <- ncol(u$mu)
+    jitter <- withr::with_seed(seed + 1L, stats::rnorm(k))
+    jitter <- if (k > 1L) as.numeric(scale(jitter)) else 0
+    mu <- u$mu + loc + outer(loc_se, jitter)
+    return(dist_shash_mc(mu, u$sigma * exp(log_s), u$eps, u$delta))
+  }
+  cli::cli_abort("Cannot adapt a {.cls {class(u)[[1L]]}} distribution.")
 }
 
-apply_adaptation <- function(adaptation, dists, newdata) {
+apply_adaptation <- function(adaptation, dists, newdata, total = FALSE, seed = 1L) {
   by_nm <- adaptation$by
   grp <- if (!is.null(by_nm) && by_nm %in% names(newdata)) {
     as.character(newdata[[by_nm]])
@@ -198,8 +196,8 @@ apply_adaptation <- function(adaptation, dists, newdata) {
     loc <- vapply(grp, pick, numeric(1), what = "location")
     log_s <- vapply(grp, pick, numeric(1), what = "scale")
     loc_se <- vapply(grp, pick, numeric(1), what = "location_se")
-    loc_se[!is.finite(loc_se)] <- 0
-    shift_dist(d, loc, log_s, loc_se)
+    loc_se[!is.finite(loc_se) | !total] <- 0
+    shift_params(d, loc, log_s, loc_se, seed = seed)
   })
   names(out) <- names(dists)
   out

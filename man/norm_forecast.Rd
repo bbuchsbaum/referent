@@ -17,13 +17,13 @@ used in \code{\link[=norm_dynamics]{norm_dynamics()}} and the outcome.}
 \item{outcome}{Outcome name.}
 }
 \value{
-A \code{norm_forecast} with \verb{$dist} (one \link{norm_dist} per time),
+A \code{norm_forecast} with \verb{$dist} (a \code{distribution} vector, one element per time),
 \verb{$summary} (median and 90\% interval), \verb{$history_n}, and
 \verb{$lag_support} (\code{"in"} or \code{"extrapolated_lag"} per forecast time,
 judged from the last history visit against the reference lag range).
 }
 \description{
-Returns predictive \link{norm_dist} objects at each requested time. The
+Returns a \link{dist_conditioned} predictive distribution at each requested time. The
 dynamic process only changes the predictive distribution; scores and
 graphics then follow from the existing contract.
 }

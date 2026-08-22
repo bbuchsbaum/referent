@@ -1,5 +1,5 @@
 test_that("flag reports exceedances rather than abnormalities", {
-  d <- norm_dist("gaussian", location = 0, scale = 1)
+  d <- distributional::dist_normal(0, 1)
   sc <- as_scores(d, c(0, 3, -2.5))
   sc$.in_sample <- FALSE
   fl <- flag(sc, threshold = 2)
@@ -8,7 +8,7 @@ test_that("flag reports exceedances rather than abnormalities", {
 })
 
 test_that("scores_matrix pivots a long table and keeps ids", {
-  d <- norm_dist("gaussian", location = c(0, 0), scale = 1)
+  d <- distributional::dist_normal(c(0, 0), 1)
   sc <- as_scores(d, c(1, -1))
   sc$.row <- 1:2
   sc$.id <- c("A", "B")

@@ -55,8 +55,7 @@ transition_columns <- c(
   "start_centile", "end_centile", "observed_change", "expected_change",
   "change_centile", "change_z", "observed_velocity", "expected_velocity",
   "velocity_lower", "velocity_upper", "velocity_centile", "innovation_z",
-  "history_n", "aleatoric_sd", "measurement_sd", "epistemic_sd", "support",
-  "calibrated"
+  "history_n", "predictive_sd", "measurement_sd", "support", "calibrated"
 )
 
 transition_template <- function() {
@@ -69,8 +68,8 @@ transition_template <- function() {
     observed_velocity = numeric(), expected_velocity = numeric(),
     velocity_lower = numeric(), velocity_upper = numeric(),
     velocity_centile = numeric(), innovation_z = numeric(),
-    history_n = integer(), aleatoric_sd = numeric(), measurement_sd = numeric(),
-    epistemic_sd = numeric(), support = character(), calibrated = logical()
+    history_n = integer(), predictive_sd = numeric(), measurement_sd = numeric(),
+    support = character(), calibrated = logical()
   )
   out[, transition_columns]
 }
@@ -81,9 +80,9 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
   }
   pr <- dynamic$processes[[outcome]]
   identified <- isTRUE(pr$identified)
-  marg <- predict(dynamic$reference, newdata = data, type = "distribution",
-                  uncertainty = "conditional")[[outcome]]
-  z <- stats::qnorm(clamp_prob(cdf(marg, data[[outcome]])))
+  marg <- predict_dists(dynamic$reference, data, uncertainty = "conditional")[[outcome]]
+  z <- dist_z(marg, data[[outcome]])
+  sd_marg <- sqrt(variance(marg))
   meas_sd <- if (identified) pr$psi$sigma_e else NA_real_
   pieces <- lapply(unique(id_vec), function(s) {
     idx <- which(id_vec == s)
@@ -98,7 +97,7 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
       y1 <- data[[outcome]][i1]
       y2 <- data[[outcome]][i2]
       dt <- time_vec[i2] - time_vec[i1]
-      d_end <- vctrs::vec_slice(marg, i2)
+      d_end <- marg[i2]
       exp_end <- NA_real_
       v_lo <- v_hi <- NA_real_
       change_z <- innov <- vel_u <- NA_real_
@@ -108,12 +107,12 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
         cond <- condition_z(z[hist], time_vec[hist], time_vec[i2], pr$psi, pr$process)
         r12 <- correlation_at_lag(abs(dt), pr$psi, pr$process)
         if (is.finite(cond$s)) {
-          d_cond <- condition_norm_dist(d_end, cond$m, cond$s)
+          d_cond <- dist_conditioned(d_end, cond$m, cond$s)
           innov <- (z[i2] - cond$m) / cond$s
           vel_u <- stats::pnorm(innov)
-          exp_end <- center(d_cond)
-          v_lo <- quantile(d_cond, 0.05)
-          v_hi <- quantile(d_cond, 0.95)
+          exp_end <- dist_quantile(d_cond, 0.5)
+          v_lo <- dist_quantile(d_cond, 0.05)
+          v_hi <- dist_quantile(d_cond, 0.95)
         }
         change_z <- (z[i2] - z[i1]) / sqrt(pmax(2 * (1 - r12), 1e-8))
       }
@@ -130,8 +129,8 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
         .dt = dt,
         start_value = y1,
         end_value = y2,
-        start_centile = cdf(vctrs::vec_slice(marg, i1), y1),
-        end_centile = cdf(d_end, y2),
+        start_centile = dist_cdf(marg[i1], y1),
+        end_centile = dist_cdf(d_end, y2),
         observed_change = y2 - y1,
         expected_change = exp_end - y1,
         change_centile = stats::pnorm(change_z),
@@ -143,9 +142,8 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
         velocity_centile = vel_u,
         innovation_z = innov,
         history_n = length(hist),
-        aleatoric_sd = field_or(d_end, "aleatoric_sd"),
+        predictive_sd = sd_marg[[i2]],
         measurement_sd = meas_sd,
-        epistemic_sd = field_or(d_end, "epistemic_sd"),
         support = support,
         calibrated = identified && isTRUE(dynamic$identifiability$measurement)
       )

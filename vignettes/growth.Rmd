@@ -87,6 +87,31 @@ scores <- predict(fit, newdata = val, type = "scores", uncertainty = "conditiona
 scores[1:5, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
 ```
 
+The scores are derived from a full predictive distribution, which you can
+ask for directly. `predict(type = "distribution")` returns a tibble with
+`.id` and one `<distribution>` column per outcome; these are
+[distributional](https://pkg.mitchelloharawild.com/distributional/) vectors,
+so `cdf()`, `quantile()`, `hilo()`, `mean()`, `variance()`, and
+`generate()` all apply, and `as_scores()` turns a distribution and an
+observation into the score columns above.
+
+```{r distributions}
+dists <- predict(fit, newdata = val[1:3, ], type = "distribution",
+                 uncertainty = "conditional")
+dists
+hilo(dists$y, 90)
+as_scores(dists$y, val$y[1:3])
+```
+
+`augment()` returns the same information in wide form, one row per person
+with `.z_<outcome>` and `.centile_<outcome>` columns, and `tidy()` gives a
+one-row-per-outcome summary of the fit.
+
+```{r augment}
+augment(fit, val[1:3, ], uncertainty = "conditional")
+tidy(fit)
+```
+
 The score table is an ordinary data frame; subset it the way you would any
 other (`dplyr::filter()` keeps the class).
 

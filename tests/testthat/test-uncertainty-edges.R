@@ -6,8 +6,9 @@ test_that("empty newdata returns an empty distribution", {
     data = dat,
     outcomes = "y"
   )
-  d <- predict(fit, newdata = dat[0, ], type = "distribution")$y
-  expect_equal(length(d), 0L)
+  d <- predict(fit, newdata = dat[0, ], type = "distribution")
+  expect_equal(nrow(d), 0L)
+  expect_equal(length(d$y), 0L)
   sc <- predict(fit, newdata = dat[0, ], uncertainty = "conditional")
   expect_equal(nrow(sc), 0L)
 })
@@ -26,9 +27,10 @@ test_that("total uncertainty works for one row and gaulss", {
   )
   d <- predict(fit, newdata = dat[1, ], type = "distribution", uncertainty = "total")$y
   expect_equal(length(d), 1L)
-  expect_false(is.null(attr(d, "location_draws")))
-  expect_equal(ncol(attr(d, "scale_draws")), ncol(attr(d, "location_draws")))
-  expect_gt(field_or(d, "epistemic_sd"), 0)
+  u <- dist_unpack(d)
+  expect_s3_class(u, "dist_shash_mc")
+  expect_equal(dim(u$sigma), dim(u$mu))
+  expect_gt(stats::sd(u$mu), 0)
 })
 
 test_that("unseen groups do not abort prediction", {

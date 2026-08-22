@@ -1,12 +1,12 @@
 test_that("tails are computed in log space: z = 8, 10, 40 are distinct and monotone", {
-  d <- norm_dist("gaussian", location = 0, scale = 1)
+  d <- distributional::dist_normal(0, 1)
   sc <- as_scores(d, c(-40, -10, -8, 0, 8, 10, 40))
   expect_true(all(is.finite(sc$z)))
   expect_equal(sc$z, c(-40, -10, -8, 0, 8, 10, 40), tolerance = 1e-8)
   expect_true(all(diff(sc$z) > 0))
   expect_true(all(diff(sc$tail_surprisal[5:7]) > 0))
   expect_equal(sc$tail_surprisal[[7]], -(log(2) + stats::pnorm(-40, log.p = TRUE)))
-  s <- norm_dist("shash", location = 0, scale = 1, skew = 0.6, tail = 0.85)
+  s <- dist_shash(0, 1, 0.6, 0.85)
   scs <- as_scores(s, c(-60, -20, 0, 20, 60, 200))
   expect_true(all(is.finite(scs$z)))
   expect_true(all(diff(scs$z) > 0))
@@ -44,13 +44,17 @@ test_that("total uncertainty is deterministic and the returned distribution is t
   a <- predict(fit, newdata = new, uncertainty = "total")
   b <- predict(fit, newdata = new, uncertainty = "total")
   expect_identical(a, b)
-  d <- predict(fit, newdata = new, type = "distribution", uncertainty = "total")$y
-  expect_equal(ncol(attr(d, "location_draws")), 200L)
-  expect_equal(cdf(d, new$y), a$centile)
-  expect_equal(quantile(d, rep(0.5, 12)), a$median)
-  expect_equal(log_density(d, new$y), a$log_density)
+  dt <- predict(fit, newdata = new, type = "distribution", uncertainty = "total")
+  expect_s3_class(dt, "tbl_df")
+  expect_named(dt, c(".id", "y"))
+  d <- dt$y
+  expect_s3_class(d, "distribution")
+  expect_equal(mc_draws(vctrs::vec_data(d)[[1]]), 200L)
+  expect_equal(dist_cdf(d, new$y), a$centile)
+  expect_equal(dist_quantile(d, 0.5), a$median)
+  expect_equal(dist_log_density(d, new$y), a$log_density)
   # the mixture median is the median of the mixture cdf
-  expect_equal(cdf(d, a$median), rep(0.5, 12), tolerance = 1e-6)
+  expect_equal(dist_cdf(d, a$median), rep(0.5, 12), tolerance = 1e-6)
   # mixture log density is the log-mean over draws, not the plug-in density
   cond <- predict(fit, newdata = new, uncertainty = "conditional")
   expect_false(isTRUE(all.equal(cond$log_density, a$log_density)))
@@ -60,10 +64,10 @@ test_that("total uncertainty is deterministic and the returned distribution is t
   fit2 <- fit
   fit2$spec <- spec2
   d2 <- predict(fit2, newdata = new, type = "distribution", uncertainty = "total")$y
-  expect_equal(ncol(attr(d2, "location_draws")), 50L)
-  expect_false(isTRUE(all.equal(attr(d2, "location_draws")[, 1], attr(d, "location_draws")[, 1])))
+  expect_equal(mc_draws(vctrs::vec_data(d2)[[1]]), 50L)
+  expect_false(isTRUE(all.equal(dist_unpack(d2)$mu[, 1], dist_unpack(d)$mu[, 1])))
   d3 <- predict(fit, newdata = new, type = "distribution", uncertainty = "total", n_draw = 20)$y
-  expect_equal(ncol(attr(d3, "location_draws")), 20L)
+  expect_equal(mc_draws(vctrs::vec_data(d3)[[1]]), 20L)
 })
 
 test_that("non-syntactic outcome names fit and predict", {

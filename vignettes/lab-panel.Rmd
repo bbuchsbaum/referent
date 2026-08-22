@@ -27,3 +27,13 @@ print(fit)
 scores <- predict(fit, newdata = ref[1:3, ], uncertainty = "conditional")
 scores[, c(".row", ".outcome", "observed", "centile", "z")]
 ```
+
+With many outcomes the wide view is often more convenient: `tidy()` gives
+one row per marker with its fit status and effective degrees of freedom,
+and `augment()` returns the target rows with a `.z_<marker>` column per
+outcome, ready for [norm_joint()].
+
+```{r}
+tidy(fit)[, c("outcome", "status", "n", "edf")]
+augment(fit, ref[1:3, ], uncertainty = "conditional")[, c("age", "sex", ".z_marker_01", ".z_marker_02", ".support")]
+```

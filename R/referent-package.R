@@ -12,7 +12,7 @@
 #' @keywords internal
 #' @importFrom rlang .data :=
 #' @importFrom ggplot2 autoplot
-#' @importFrom stats pnorm qnorm dnorm rnorm ppoints median sd var
+#' @importFrom stats pnorm qnorm dnorm rnorm ppoints median sd var density
 #'   quantile predict coef vcov model.matrix complete.cases setNames
 #'   as.formula terms delete.response na.omit pchisq p.adjust
 #'   ave dist

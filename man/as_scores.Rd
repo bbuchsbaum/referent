@@ -7,14 +7,18 @@
 as_scores(distribution, y)
 }
 \arguments{
-\item{distribution}{A \link{norm_dist}.}
+\item{distribution}{A \code{distribution} vector (see \link{dist_shash}).}
 
-\item{y}{Observed values.}
+\item{y}{Observed values, recycled against \code{distribution}.}
 }
 \value{
-A data frame of centiles, Z-scores, tails, residuals, and
-log densities. There is no abnormality column.
+A tibble of centiles, Z-scores, tails, residuals, and log
+densities. Tails are evaluated in log space so that \verb{z = 8, 10, 40}
+remain distinct. There is no abnormality column.
 }
 \description{
 Scores derived from a predictive CDF
+}
+\examples{
+as_scores(distributional::dist_normal(0, 1), c(-2, 0, 2))
 }

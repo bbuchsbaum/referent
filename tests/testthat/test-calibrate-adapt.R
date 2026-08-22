@@ -102,15 +102,15 @@ test_that("adapted predict honours extrapolation, ids, and total uncertainty", {
   expect_true(is.na(sc$z[[1]]))
   expect_equal(sc$support[[1]], "out")
   expect_true(all(is.finite(sc$z[-1])))
-  expect_true(all(sc$epistemic_sd > 0))
   sc2 <- predict(ad, newdata = new, uncertainty = "total", allow_extrapolation = TRUE)
   expect_true(is.finite(sc2$z[[1]]))
   # the adaptation offset shifts the total-uncertainty distribution too
   d_base <- predict(fit, newdata = new[-1, ], type = "distribution", uncertainty = "total")$y
   d_ad <- predict(ad, newdata = new[-1, ], type = "distribution", uncertainty = "total")$y
   off <- ad$adaptation$offsets$y$.all$location
-  expect_equal(field_or(d_ad, "location"), field_or(d_base, "location") + off)
-  expect_true(all(field_or(d_ad, "epistemic_sd") >= field_or(d_base, "epistemic_sd")))
+  expect_equal(mean(d_ad), mean(d_base) + off)
+  expect_gt(ad$adaptation$offsets$y$.all$location_se, 0)
+  expect_true(all(variance(d_ad) > variance(d_base)))
 })
 
 test_that("reference bundles keep calibration and adaptation", {
@@ -125,4 +125,25 @@ test_that("reference bundles keep calibration and adaptation", {
   b <- predict(ref, newdata = dat[251:300, ], uncertainty = "conditional")
   expect_true(all(b$calibrated))
   expect_equal(a$z, b$z)
+})
+
+test_that("total-uncertainty adaptation propagates the offset SE exactly for a draw mixture", {
+  dat <- norm_simulate(260, kind = "gaussian", scale = "age", seed = 71)
+  spec <- norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex,
+                    scale = ~ s(age, k = 4))
+  fit <- norm_fit(spec, data = dat[1:200, ], outcomes = "y")
+  ad <- norm_adapt(fit, data = dat[201:240, ], parameters = "location")
+  off <- ad$adaptation$offsets$y$.all
+  new <- dat[241:260, ]
+  d_base <- predict(fit, newdata = new, type = "distribution", uncertainty = "total")$y
+  d_ad <- predict(ad, newdata = new, type = "distribution", uncertainty = "total")$y
+  expect_s3_class(vctrs::vec_data(d_ad)[[1]], "dist_shash_mc")
+  expect_equal(mean(d_ad), mean(d_base) + off$location, tolerance = 1e-10)
+  # additive up to the chance covariance of the jitter with each row's draws
+  expect_equal(variance(d_ad), variance(d_base) + off$location_se^2, tolerance = 0.02)
+  expect_gt(off$location_se, 0)
+  # conditional predictions carry the offset but not its uncertainty
+  c_base <- predict(fit, newdata = new, type = "distribution", uncertainty = "conditional")$y
+  c_ad <- predict(ad, newdata = new, type = "distribution", uncertainty = "conditional")$y
+  expect_equal(variance(c_ad), variance(c_base))
 })

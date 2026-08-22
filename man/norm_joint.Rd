@@ -16,7 +16,8 @@ norm_joint(
 }
 \arguments{
 \item{scores}{A \code{norm_scores} or \code{norm_transition} table of reference
-scores (out-of-fold for honest calibration).}
+scores (out-of-fold for honest calibration), or the wide output of
+\code{\link[=augment]{augment()}} (its \verb{.z_<outcome>} columns).}
 
 \item{method}{Must be \code{"gaussian_copula"}.}
 

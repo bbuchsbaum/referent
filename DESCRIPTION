@@ -21,6 +21,8 @@ Depends:
     R (>= 4.2.0)
 Imports:
     cli,
+    distributional (>= 0.5.0),
+    generics,
     ggplot2,
     mgcv,
     rlang,
@@ -31,6 +33,7 @@ Imports:
     withr
 Suggests:
     future,
+    ggdist,
     future.apply,
     ggridges,
     knitr,

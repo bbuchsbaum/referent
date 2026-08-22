@@ -22,3 +22,4 @@
 ^tests/testthat/testthat-problems\.rds$
 ^tests/testthat/_problems$
 ^\.DS_Store$
+^issues\.jsonl$

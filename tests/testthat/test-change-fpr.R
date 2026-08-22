@@ -1,3 +1,5 @@
+clamp_prob <- function(p, eps = 1e-12) pmin(pmax(as.numeric(p), eps), 1 - eps)
+
 naive_change_z <- function(transition) {
   z1 <- stats::qnorm(clamp_prob(transition$start_centile))
   z2 <- stats::qnorm(clamp_prob(transition$end_centile))
