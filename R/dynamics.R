@@ -75,14 +75,12 @@ norm_dynamics <- function(reference,
   )
 }
 
-# Subject-level out-of-fold Z via norm_crossfit(cluster = id); rows are
-# mapped back to the original data order through the fold assignment.
+# Subject-level out-of-fold Z via norm_crossfit(cluster = id).
 dynamics_oof_scores <- function(reference, data, id_vec, folds) {
   data$.dyn_id <- as.character(id_vec)
   cf <- norm_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
                       folds = folds, cluster = !!rlang::sym(".dyn_id"))
-  rows_by_fold <- split(seq_len(nrow(data)), attr(cf, "folds"))
-  cf$.row <- mapply(function(k, i) rows_by_fold[[as.character(k)]][[i]], cf$.fold, cf$.row)
+  # norm_crossfit() already returns `.row` indexing rows of `data`.
   cf
 }
 
