@@ -87,3 +87,19 @@ perf_specs <- function() {
   )
 }
 
+
+# ggplot helpers shared by the plot tests.
+expect_builds <- function(p) {
+  expect_s3_class(p, "ggplot")
+  built <- ggplot2::ggplot_build(p)
+  expect_s3_class(built, "ggplot_built")
+  invisible(built)
+}
+
+layer_classes <- function(p) {
+  vapply(p$layers, function(ly) class(ly$geom)[[1]], character(1))
+}
+
+plot_label <- function(p, aes) {
+  ggplot2::get_labs(p)[[aes]]
+}

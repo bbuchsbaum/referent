@@ -127,7 +127,7 @@ reference_baseline <- function(data, outcomes) {
     if (!is.finite(s) || s <= 0) {
       return(NULL)
     }
-    list(mean = mean(y), sd = s)
+    list(mean = mean(y), sd = s, range = range(y))
   })
   names(out) <- outcomes
   out

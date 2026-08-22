@@ -96,6 +96,13 @@ ref_forecast <- function(dynamic, history, times, outcome = NULL) {
 #' finite-difference of the linear-predictor matrix. This is a
 #' population-chart derivative, not an individual longitudinal estimate.
 #'
+#' `chart_velocity_se` is the sampling error of the fitted coefficients.
+#' It does not cover the bias of the spline itself, which is the larger
+#' error whenever the basis of the `with_respect_to` smooth is too small
+#' to represent the trajectory. That case is detectable -- the smooth's
+#' effective degrees of freedom saturate its basis -- so it is warned
+#' about; refit with a larger `k` and compare.
+#'
 #' @param reference A [ref_fit].
 #' @param newdata Grid of covariate values.
 #' @param with_respect_to The time covariate, as a bare column name or a
@@ -128,6 +135,7 @@ ref_derivative <- function(reference,
   }
   nms <- outcomes %||% reference$outcomes
   nms <- intersect(as.character(nms), reference$outcomes)
+  warn_saturated_basis(reference, nms, t_nm)
   plus <- newdata
   minus <- newdata
   plus[[t_nm]] <- plus[[t_nm]] + h
@@ -202,4 +210,43 @@ derivative_se <- function(fit_one, plus, minus, centiles, h) {
     out[, k] <- sqrt(pmax(rowSums((g %*% vp) * g), 0))
   }
   out
+}
+
+# Fraction of its basis that a smooth of `t_nm` has actually spent.
+# NA when the engine does not expose per-coefficient effective df.
+derivative_basis_ratio <- function(fit_one, t_nm) {
+  model <- fit_one$model
+  if (is.null(model$smooth) || is.null(model$edf)) {
+    return(NA_real_)
+  }
+  r <- vapply(model$smooth, function(sm) {
+    if (!t_nm %in% sm$term || is.null(sm$df) || sm$df < 1) {
+      return(NA_real_)
+    }
+    idx <- sm$first.para:sm$last.para
+    if (max(idx) > length(model$edf)) {
+      return(NA_real_)
+    }
+    sum(model$edf[idx]) / sm$df
+  }, numeric(1))
+  if (all(is.na(r))) NA_real_ else max(r, na.rm = TRUE)
+}
+
+# A saturated basis biases the derivative and `derivative_se()` cannot see
+# that bias, so the interval would be confidently wrong. Warn instead.
+warn_saturated_basis <- function(reference, nms, t_nm, threshold = 0.9) {
+  ratios <- vapply(nms, function(nm) {
+    f <- reference$models[[nm]]
+    if (!fit_ok(f)) NA_real_ else derivative_basis_ratio(f, t_nm)
+  }, numeric(1))
+  bad <- names(ratios)[is.finite(ratios) & ratios > threshold]
+  if (!length(bad)) {
+    return(invisible(NULL))
+  }
+  cli::cli_warn(c(
+    "The smooth of {.field {t_nm}} has spent {round(100 * max(ratios[bad]))}% of its basis for {.field {bad}}.",
+    i = "The derivative of a saturated spline is biased, and {.field chart_velocity_se} does not cover that bias.",
+    i = "Refit with a larger {.arg k} in the {.field {t_nm}} smooth and compare."
+  ))
+  invisible(NULL)
 }
