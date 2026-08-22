@@ -4,7 +4,7 @@ test_that("frozen bundle is small and reproduces the fit after a round trip", {
     fit <- ref_fit(perf_specs()[[nm]], d$ref, c("y", "marker_01"))
     fit <- ref_adapt(fit, d$new, by = site, parameters = c("location", "scale"))
     fit <- ref_calibrate(fit, d$new, by = site)
-    bundle <- ref_reference(fit)
+    bundle <- ref_freeze(fit)
     path <- withr::local_tempfile(fileext = ".rds")
     # spec formulas made in the test helper env serialise with a package-env
     # warning under load_all; that is the harness, not the bundle.

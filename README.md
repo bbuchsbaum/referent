@@ -76,7 +76,7 @@ draws (an internal `dist_shash_draws` class); forecasts return
 | Transport to a new site | `ref_adapt()`, `ref_calibrate()`, `ref_support()` |
 | Joint deviation across outcomes | `ref_joint()` |
 | Threshold exceedances with FDR | `ref_flag()` |
-| Freeze and document a reference | `ref_reference()` |
+| Freeze and document a reference | `ref_freeze()` |
 | Longitudinal change | `ref_dynamics()`, `ref_transition()`, `ref_forecast()`, `ref_derivative()` |
 | Graphics | `autoplot()` methods, `fortify_centiles()`, `theme_referent()` |
 

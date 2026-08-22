@@ -2,11 +2,11 @@ test_that("a frozen reference predicts identically after a saveRDS/readRDS round
   dat <- ref_simulate(200, seed = 100)
   fit <- ref_fit(simple_spec(), data = dat[1:140, ], outcomes = c("y", "marker_01"))
   fit <- ref_calibrate(fit, data = dat[141:170, ])
-  ref <- ref_reference(fit, criteria = "healthy volunteers", units = "mm")
+  ref <- ref_freeze(fit, criteria = "healthy volunteers", units = "mm")
   tmp <- withr::local_tempfile(fileext = ".rds")
   suppressWarnings(saveRDS(ref, tmp))
   ref2 <- readRDS(tmp)
-  expect_s3_class(ref2, "ref_reference")
+  expect_s3_class(ref2, "ref_freeze")
   expect_s3_class(ref2, "ref_fit")
   new <- dat[171:200, ]
   a <- predict(fit, newdata = new, uncertainty = "conditional")
@@ -72,7 +72,7 @@ test_that("a frozen reference keeps offset terms and factor levels", {
   dat$log_icv <- stats::rnorm(200, 0, 0.3)
   dat$y <- dat$y + dat$log_icv
   fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + offset(log_icv)), dat, "y")
-  ref <- ref_reference(fit)
+  ref <- ref_freeze(fit)
   a <- predict(fit, dat[1:8, ], uncertainty = "conditional")
   b <- predict(ref, dat[1:8, ], uncertainty = "conditional")
   expect_equal(a$z, b$z, tolerance = 1e-10)
@@ -80,7 +80,7 @@ test_that("a frozen reference keeps offset terms and factor levels", {
                                     uncertainty = "conditional")$z), 0)
 
   fit2 <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + s(site, bs = "re")), dat, "y")
-  ref2 <- ref_reference(fit2)
+  ref2 <- ref_freeze(fit2)
   new <- dat[1:8, ]
   new$site <- as.character(new$site)
   new$site[1] <- "ZZ"

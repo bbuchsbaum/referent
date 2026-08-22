@@ -86,7 +86,7 @@ test_that("the reference baseline survives freezing to a bundle", {
   ref <- ref_simulate(200, seed = 23)
   new <- ref_simulate(80, seed = 24)
   fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
-  thawed <- ref_reference(fit)
+  thawed <- ref_freeze(fit)
   expect_equal(ref_assess(thawed, new)$overall, ref_assess(fit, new)$overall,
     tolerance = 1e-12
   )

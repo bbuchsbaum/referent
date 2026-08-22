@@ -34,10 +34,10 @@ test_that("print.ref_scores counts rows and warns about in-sample scores", {
   expect_snapshot(print(sc[, c(".row", ".outcome", "z", "support", "status")]))
 })
 
-test_that("print.ref_reference prints the model card", {
+test_that("print.ref_freeze prints the model card", {
   withr::local_options(cli.num_colors = 1L, width = 80)
   fit <- snap_fit()
-  ref <- ref_reference(fit, units = "mm")
+  ref <- ref_freeze(fit, units = "mm")
   ref$versions <- list(referent = "x.y.z", mgcv = "x.y", r = "x.y.z")
   expect_snapshot(print(ref))
 })

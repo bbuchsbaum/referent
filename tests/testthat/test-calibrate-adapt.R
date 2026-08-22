@@ -118,7 +118,7 @@ test_that("reference bundles keep calibration and adaptation", {
   fit <- ref_fit(simple_spec(), data = dat[1:150, ], outcomes = "y")
   fit <- ref_adapt(fit, data = dat[151:200, ], parameters = "location")
   fit <- ref_calibrate(fit, data = dat[201:250, ])
-  ref <- ref_reference(fit)
+  ref <- ref_freeze(fit)
   expect_s3_class(ref$calibration, "ref_calibration")
   expect_s3_class(ref$adaptation, "ref_adaptation")
   a <- predict(fit, newdata = dat[251:300, ], uncertainty = "conditional")

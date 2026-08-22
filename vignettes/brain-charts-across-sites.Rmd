@@ -233,7 +233,7 @@ autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
 
 ## What to report
 
-* The reference: `ref_reference(fit)` prints a model card with the
+* The reference: `ref_freeze(fit)` prints a model card with the
   family, formulas, covariate ranges, site levels, and software
   versions. Ship the frozen bundle, not the training data.
 * Out-of-fold calibration of the reference (the `oof_calibration` table),
@@ -246,5 +246,5 @@ autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
   rather than a list of flagged people.
 
 ```{r card}
-ref_reference(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
+ref_freeze(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
 ```

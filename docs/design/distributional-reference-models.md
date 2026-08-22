@@ -202,7 +202,7 @@ S3 is preferable to R6 here. The objects should be inspectable, serializable, an
 | `ref_scores` | Subject-by-outcome centiles, deviations, tails, uncertainty |
 | `ref_assessment` | Proper scores, calibration, support and convergence results |
 | `ref_adaptation` | Documented target-domain adjustment |
-| `ref_reference` | Frozen, shareable model bundle with provenance |
+| `ref_freeze` | Frozen, shareable model bundle with provenance |
 
 The crucial internal contract is not “return coefficients.” Every engine must be able to return a distribution object supporting:
 
@@ -527,7 +527,7 @@ A shareable reference bundle should include:
 This should be generated automatically as a model card:
 
 ```r
-print(ref_reference(fit))  # ref_card() merged into print.ref_reference (2026-08-22)
+print(ref_freeze(fit))  # ref_card() merged into print.ref_freeze (2026-08-22)
 ```
 
 ---

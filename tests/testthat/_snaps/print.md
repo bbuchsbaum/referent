@@ -45,7 +45,7 @@
       8     2 marker_bad NA      in      insufficient_variation
       9     3 marker_bad NA      in      insufficient_variation
 
-# print.ref_reference prints the model card
+# print.ref_freeze prints the model card
 
     Code
       print(ref)

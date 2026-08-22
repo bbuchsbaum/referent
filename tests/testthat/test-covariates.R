@@ -77,7 +77,7 @@ test_that("the model card lists only formula covariates", {
   dat <- ref_simulate(100, seed = 85)
   spec <- ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1)
   fit <- ref_fit(spec, data = dat, outcomes = "y")
-  ref <- ref_reference(fit)
+  ref <- ref_freeze(fit)
   expect_equal(ref$covariates, c("age", "sex"))
   expect_equal(names(ref$support_ref$numeric), "age")
   out <- paste(cli::cli_fmt(print(ref)), collapse = "\n")
