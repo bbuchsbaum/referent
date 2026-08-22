@@ -5,9 +5,23 @@
 #'
 #' @details
 #' `overall` maps onto the PCNtoolkit evaluation metrics as follows:
-#' `standardized_log_score` is the negative MSLL (mean log score minus
-#' the log score of an unconditional Gaussian); `cor` is Rho (Pearson
-#' correlation of observed and predicted median); `smse` is the
+#' `standardized_log_score` is the negative MSLL: the mean log score
+#' minus the log score of a Gaussian with the *reference* sample's mean
+#' and population standard deviation (`fit$reference_baseline`, recorded
+#' by [norm_fit()]). The baseline never uses the held-out sample's own
+#' moments; it falls back to them only for fits made before this field
+#' existed.
+#'
+#' Note that this is *not* the same baseline PCNtoolkit uses. PCNtoolkit
+#' fits its baseline Gaussian to the sample being scored, so its MSLL is
+#' computed against a held-out oracle and the two numbers differ by the
+#' log-score gap between the two baselines (beyond the sign convention).
+#' Compare against PCNtoolkit only after rescoring both sides on one
+#' explicitly chosen baseline.
+#'
+#' `cor` is the Pearson correlation of observed and predicted median;
+#' PCNtoolkit's `Rho` column is a Spearman correlation, so the two are
+#' related but not interchangeable. `smse` is the
 #' standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
 #' `ev` is explained variance \eqn{1 - \mathrm{var}(y - \hat y)/\mathrm{var}(y)}.
 #' `rmse`, `mae`, `mean_log_score`, and `crps` are the usual proper and
@@ -23,22 +37,30 @@
 #'   [norm_crossfit()].
 #' @param by Optional grouping column; the marginal calibration table is
 #'   then reported per group (column `.group`).
+#' @param uncertainty Passed to [predict.norm_fit()]. `"conditional"`
+#'   (the default, and the historical behaviour) scores the point-estimate
+#'   predictive; `"total"` integrates over the coefficient draws, matching
+#'   what [predict.norm_fit()] itself returns by default. Without this
+#'   argument the scores in `overall` cannot be reproduced from
+#'   `predict()`.
 #' @return An object of class `norm_assessment` with `overall`,
 #'   `marginal`, `conditional`, and `tail` tibbles plus the scores.
 #' @export
-norm_assess <- function(fit, newdata, by = NULL) {
+norm_assess <- function(fit, newdata, by = NULL,
+                        uncertainty = c("conditional", "total")) {
   if (missing(newdata) || is.null(newdata)) {
     cli::cli_abort("Supply {.arg newdata}: held-out data or a cross-fitted frame.")
   }
+  uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
   by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
-  dists <- predict_dists(fit, newdata, uncertainty = "conditional")
+  dists <- predict_dists(fit, newdata, uncertainty = uncertainty)
   scores <- scores_from_dists(fit, dists, newdata, allow_extrapolation = FALSE)
   assess_from_scores(fit, scores, dists, newdata, by_vec)
 }
 
 assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
-  overall <- assess_overall(scores, dists, newdata)
+  overall <- assess_overall(scores, dists, newdata, fit$reference_baseline)
   marginal <- if (is.null(by_vec)) {
     assess_marginal(scores)
   } else {
@@ -63,13 +85,13 @@ assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
   )
 }
 
-assess_overall <- function(scores, dists, newdata) {
+assess_overall <- function(scores, dists, newdata, baseline = NULL) {
   by_out <- split(scores, scores$.outcome)
   rows <- lapply(names(by_out), function(nm) {
     sc <- by_out[[nm]]
     ok <- is.finite(sc$log_density) & is.finite(sc$observed)
     log_score <- mean(sc$log_density[ok])
-    naive <- naive_log_score(sc$observed[ok])
+    naive <- naive_log_score(sc$observed[ok], baseline[[nm]])
     crps <- if (is.null(dists[[nm]])) {
       NA_real_
     } else {
@@ -91,7 +113,14 @@ assess_overall <- function(scores, dists, newdata) {
   dplyr_bind(rows)
 }
 
-naive_log_score <- function(y) {
+# Log score of the unconditional Gaussian baseline. `base` is the
+# reference sample's mean and population sd when the fit carries one;
+# without it the scored sample's own moments are used, which makes the
+# baseline an oracle and the result no longer a plain MSLL.
+naive_log_score <- function(y, base = NULL) {
+  if (!is.null(base)) {
+    return(mean(stats::dnorm(y, base$mean, base$sd, log = TRUE), na.rm = TRUE))
+  }
   mu <- mean(y, na.rm = TRUE)
   s <- stats::sd(y, na.rm = TRUE)
   if (!is.finite(s) || s <= 0) {

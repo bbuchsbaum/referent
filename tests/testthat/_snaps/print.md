@@ -71,11 +71,11 @@
       <norm_assessment> n = 60
     Output
       # A tibble: 3 x 9
-        .outcome   mean_log_score standardized_log_score   crps     mae    rmse   smse
-        <chr>               <dbl>                  <dbl>  <dbl>   <dbl>   <dbl>  <dbl>
-      1 marker_01           #               #  #   #   #  #
-      2 marker_bad         NaN                 NaN       NA     NaN     NaN     NA    
-      3 y                   #                #    #   #   #   #
+       .outcome mean_log_score standardized_log_score crps mae rmse smse
+       <chr> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+      1 marker_01 # # # # # #
+      2 marker_bad NaN NaN NA NaN NaN NA 
+      3 y # # # # # #
       # i 2 more variables: ev <dbl>, cor <dbl>
 
 # print.norm_dynamics reports components, identifiability, and the kernel

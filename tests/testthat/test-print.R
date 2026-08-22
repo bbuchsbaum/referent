@@ -1,6 +1,13 @@
 # Snapshot tests of the print methods. Snapshots are skipped on CRAN; all
 # inputs are seeded and small so the output is deterministic locally.
 
+# Numbers -> "#" and whitespace runs collapsed, so pillar column widths (which
+# depend on digit counts) cannot make snapshots brittle across platforms.
+snap_transform <- function(x) {
+  x <- gsub("-?[0-9]+\\.[0-9]+", "#", x)
+  gsub("[ \t]+", " ", x)
+}
+
 snap_fit <- function() {
   dat <- norm_simulate(120, seed = 90)
   dat$marker_bad <- 1
@@ -40,7 +47,7 @@ test_that("print.norm_assessment shows the overall table", {
   fit <- snap_fit()
   val <- norm_simulate(60, seed = 91)
   a <- norm_assess(fit, newdata = val)
-  expect_snapshot(print(a), transform = function(x) gsub("-?[0-9]+\\.[0-9]+", "#", x))
+  expect_snapshot(print(a), transform = snap_transform)
 })
 
 test_that("print.norm_dynamics reports components, identifiability, and the kernel", {
@@ -49,10 +56,10 @@ test_that("print.norm_dynamics reports components, identifiability, and the kern
   fit <- norm_fit(norm_spec(norm_gaussian(), location = ~ age + sex, scale = ~1),
                   data = dat, outcomes = "y")
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
-  expect_snapshot(print(dyn), transform = function(x) gsub("-?[0-9]+\\.[0-9]+", "#", x))
+  expect_snapshot(print(dyn), transform = snap_transform)
   single <- dat[dat$visit == 1, ]
   dyn0 <- norm_dynamics(fit, data = single, id = participant_id, time = age, crossfit = 0)
-  expect_snapshot(print(dyn0), transform = function(x) gsub("-?[0-9]+\\.[0-9]+", "#", x))
+  expect_snapshot(print(dyn0), transform = snap_transform)
 })
 
 test_that("remaining print methods use cli and return invisibly", {
@@ -60,7 +67,7 @@ test_that("remaining print methods use cli and return invisibly", {
   dat <- norm_simulate(150, seed = 93)
   fit <- norm_fit(simple_spec(), data = dat[1:100, ], outcomes = "y")
   ad <- norm_adapt(fit, data = dat[101:130, ], by = site)
-  expect_snapshot(print(ad$adaptation), transform = function(x) gsub("-?[0-9]+\\.[0-9]+", "#", x))
+  expect_snapshot(print(ad$adaptation), transform = snap_transform)
   cal <- norm_calibrate(fit, data = dat[101:150, ], by = site)
   expect_snapshot(print(cal$calibration))
   sc <- predict(fit, newdata = dat[101:150, ], uncertainty = "conditional")

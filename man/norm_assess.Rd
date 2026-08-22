@@ -4,7 +4,7 @@
 \alias{norm_assess}
 \title{Assess a fitted reference model}
 \usage{
-norm_assess(fit, newdata, by = NULL)
+norm_assess(fit, newdata, by = NULL, uncertainty = c("conditional", "total"))
 }
 \arguments{
 \item{fit}{A \link{norm_fit}.}
@@ -15,6 +15,13 @@ not stored on the fit). For out-of-fold evaluation use
 
 \item{by}{Optional grouping column; the marginal calibration table is
 then reported per group (column \code{.group}).}
+
+\item{uncertainty}{Passed to \code{\link[=predict.norm_fit]{predict.norm_fit()}}. \code{"conditional"}
+(the default, and the historical behaviour) scores the point-estimate
+predictive; \code{"total"} integrates over the coefficient draws, matching
+what \code{\link[=predict.norm_fit]{predict.norm_fit()}} itself returns by default. Without this
+argument the scores in \code{overall} cannot be reproduced from
+\code{predict()}.}
 }
 \value{
 An object of class \code{norm_assessment} with \code{overall},
@@ -26,9 +33,23 @@ calibration, and tail calibration on held-out data.
 }
 \details{
 \code{overall} maps onto the PCNtoolkit evaluation metrics as follows:
-\code{standardized_log_score} is the negative MSLL (mean log score minus
-the log score of an unconditional Gaussian); \code{cor} is Rho (Pearson
-correlation of observed and predicted median); \code{smse} is the
+\code{standardized_log_score} is the negative MSLL: the mean log score
+minus the log score of a Gaussian with the \emph{reference} sample's mean
+and population standard deviation (\code{fit$reference_baseline}, recorded
+by \code{\link[=norm_fit]{norm_fit()}}). The baseline never uses the held-out sample's own
+moments; it falls back to them only for fits made before this field
+existed.
+
+Note that this is \emph{not} the same baseline PCNtoolkit uses. PCNtoolkit
+fits its baseline Gaussian to the sample being scored, so its MSLL is
+computed against a held-out oracle and the two numbers differ by the
+log-score gap between the two baselines (beyond the sign convention).
+Compare against PCNtoolkit only after rescoring both sides on one
+explicitly chosen baseline.
+
+\code{cor} is the Pearson correlation of observed and predicted median;
+PCNtoolkit's \code{Rho} column is a Spearman correlation, so the two are
+related but not interchangeable. \code{smse} is the
 standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
 \code{ev} is explained variance \eqn{1 - \mathrm{var}(y - \hat y)/\mathrm{var}(y)}.
 \code{rmse}, \code{mae}, \code{mean_log_score}, and \code{crps} are the usual proper and

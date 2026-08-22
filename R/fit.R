@@ -76,6 +76,7 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       id = ids,
       id_name = id_name,
       data_hash = digest_data(data[, c(covariate_names, outcome_names), drop = FALSE]),
+      reference_baseline = reference_baseline(data, outcome_names),
       n = nrow(data),
       covariates = covariate_names,
       support_ref = support_ref,
@@ -84,6 +85,33 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
     ),
     class = "norm_fit"
   )
+}
+
+# Mean and population standard deviation (ddof = 0) of every outcome in
+# the reference sample. `norm_assess()` scores a model against this
+# unconditional Gaussian so that the baseline is fixed by the reference
+# population rather than by whatever sample is being scored. Scoring a
+# model against the held-out sample's own moments makes the baseline an
+# oracle: it absorbs part of the signal and flatters or penalises the
+# model depending on how the held-out sample happens to be spread.
+# (PCNtoolkit does exactly that, which is why its MSLL is not directly
+# comparable with this column.) Outcomes with fewer than two finite
+# values, or no spread, get NULL and fall back to the held-out baseline.
+reference_baseline <- function(data, outcomes) {
+  out <- lapply(outcomes, function(nm) {
+    y <- data[[nm]]
+    y <- y[is.finite(y)]
+    if (length(y) < 2L) {
+      return(NULL)
+    }
+    s <- sqrt(mean((y - mean(y))^2))
+    if (!is.finite(s) || s <= 0) {
+      return(NULL)
+    }
+    list(mean = mean(y), sd = s)
+  })
+  names(out) <- outcomes
+  out
 }
 
 # Covariates are exactly the variables named in the spec's formulas.

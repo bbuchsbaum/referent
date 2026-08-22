@@ -43,6 +43,7 @@ ggplot2::autoplot
 #' @param id Subject identifier column.
 #' @param time Time column.
 #' @param centiles Probability levels for centile and fan charts.
+#' @param level Coverage of the simulation envelope on the QQ plot.
 #' @param ... Unused.
 #' @return A ggplot, or a patchwork object when `type = "composition"`
 #'   and patchwork is installed.
@@ -92,12 +93,16 @@ autoplot.norm_fit <- function(object,
 
 #' @rdname autoplot.norm_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_assessment <- function(object, type = c("calibration", "worm", "conditional"), ...) {
+autoplot.norm_assessment <- function(object,
+                                     type = c("calibration", "worm", "qq", "conditional"),
+                                     level = 0.95,
+                                     ...) {
   type <- match.arg(type)
   switch(
     type,
     calibration = plot_calibration(object),
     worm = plot_worm(object),
+    qq = plot_qq(object, level = level),
     conditional = plot_conditional(object)
   )
 }
@@ -522,6 +527,169 @@ plot_worm <- function(assessment) {
   finish_plot(
     p + pretty_x() + pretty_y(),
     title = NULL, xlab = "Expected Z", ylab = "Observed minus expected Z"
+  )
+}
+
+# Normal QQ plot of the Z scores with the envelope a calibrated model implies.
+#
+# The reference is exact rather than nominal. Under a correctly specified
+# reference model the held-out centiles are iid uniform, so the i-th ordered
+# centile is Beta(i, n - i + 1) and the i-th ordered Z is its normal
+# transform. That gives the pointwise band in closed form. The simultaneous
+# band uses equal local levels (Aldor-Noiman et al. 2013, Am. Stat. 67:249):
+# the common two-sided local level gamma is calibrated by Monte Carlo so that
+# the whole ordered sample stays inside with probability `level`.
+#
+# The corner tally reports both bands. Counting only the simultaneous band
+# would let a panel headline "0 outside" while a large share of points sit
+# outside the narrower pointwise band that the same panel draws -- the two
+# bands answer different questions, so the label names both and states what
+# the pointwise rate should be.
+plot_qq <- function(assessment, level = 0.95) {
+  if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
+    level <= 0 || level >= 1) {
+    cli::cli_abort("{.arg level} must be a single probability in (0, 1).")
+  }
+  sc <- assessment$scores
+  sc <- sc[is.finite(sc$z), , drop = FALSE]
+  if (!nrow(sc)) {
+    return(finish_plot(ggplot2::ggplot(), title = "No finite Z scores"))
+  }
+  by_out <- split(sc, sc$.outcome)
+  # The envelope depends only on n, so outcomes of equal size share one.
+  sizes <- unique(vapply(by_out, nrow, integer(1)))
+  envs <- stats::setNames(lapply(sizes, qq_envelope, level = level), sizes)
+  pieces <- lapply(by_out, function(one) {
+    one <- one[order(one$z), , drop = FALSE]
+    env <- envs[[as.character(nrow(one))]]
+    one$expected <- env$expected
+    one$point_lo <- env$point_lo
+    one$point_hi <- env$point_hi
+    one$sim_lo <- env$sim_lo
+    one$sim_hi <- env$sim_hi
+    one$outside <- one$z < env$sim_lo | one$z > env$sim_hi
+    one
+  })
+  df <- dplyr_bind(pieces)
+
+  cols <- referent_cols()
+  pct <- format(100 * level, trim = TRUE)
+  lab_sim <- paste0(pct, "% simultaneous")
+  lab_pt <- paste0(pct, "% pointwise")
+  fills <- stats::setNames(band_fills(2L), c(lab_sim, lab_pt))
+
+  # The bands are defined only on the expected quantiles, so the x view is set
+  # by those; y follows the data, which can run past them in a heavy tail.
+  xlim <- range(df$expected, finite = TRUE)
+  ylim <- range(c(df$expected, df$z), finite = TRUE)
+  ylim <- ylim + c(-1, 1) * 0.06 * diff(ylim)
+  brk <- pretty(ylim, n = 7L)
+
+  # One corner label per panel, naming the band each count belongs to.
+  tally <- dplyr_bind(lapply(pieces, function(one) {
+    n <- nrow(one)
+    k_sim <- sum(one$z < one$sim_lo | one$z > one$sim_hi, na.rm = TRUE)
+    k_pt <- sum(one$z < one$point_lo | one$z > one$point_hi, na.rm = TRUE)
+    tibble::tibble(
+      .outcome = one$.outcome[[1L]],
+      expected = xlim[[1L]] + 0.04 * diff(xlim),
+      z = ylim[[2L]] - 0.03 * diff(ylim),
+      label = sprintf(
+        "outside simultaneous: %d of %d\noutside pointwise: %d (%.1f%%)",
+        k_sim, n, k_pt, 100 * k_pt / n
+      )
+    )
+  }))
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$expected, y = .data$z)) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(ymin = .data$sim_lo, ymax = .data$sim_hi, fill = lab_sim),
+      colour = NA
+    ) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(ymin = .data$point_lo, ymax = .data$point_hi, fill = lab_pt),
+      colour = NA
+    ) +
+    ggplot2::geom_abline(
+      slope = 1, intercept = 0, linetype = "dashed",
+      colour = cols$muted, linewidth = 0.4
+    ) +
+    ggplot2::geom_point(
+      ggplot2::aes(
+        colour = .data$outside, size = .data$outside, alpha = .data$outside
+      )
+    ) +
+    ggplot2::geom_text(
+      data = tally, ggplot2::aes(label = .data$label),
+      hjust = 0, vjust = 1, size = 2.7, colour = cols$muted,
+      inherit.aes = TRUE, show.legend = FALSE
+    ) +
+    ggplot2::scale_fill_manual(values = fills, breaks = c(lab_pt, lab_sim), name = NULL) +
+    ggplot2::scale_colour_manual(
+      values = c("FALSE" = cols$ink, "TRUE" = cols$accent), guide = "none"
+    ) +
+    ggplot2::scale_size_manual(values = c("FALSE" = 1.1, "TRUE" = 2.0), guide = "none") +
+    ggplot2::scale_alpha_manual(values = c("FALSE" = 0.45, "TRUE" = 0.95), guide = "none") +
+    # Both axes are Z, so they share one tick vector and one unit of length.
+    ggplot2::scale_x_continuous(breaks = brk) +
+    ggplot2::scale_y_continuous(breaks = brk) +
+    ggplot2::coord_fixed(ratio = 1, xlim = xlim, ylim = ylim, expand = FALSE)
+
+  multi <- has_groups(df$.outcome)
+  if (multi) {
+    p <- p + ggplot2::facet_wrap(~.outcome, nrow = 1)
+  }
+  finish_plot(
+    p,
+    title = if (multi) NULL else df$.outcome[[1L]],
+    subtitle = paste0(
+      pct, "% pointwise and simultaneous envelopes for a calibrated model; ",
+      format(100 * (1 - level), trim = TRUE),
+      "% of points are expected outside the pointwise band"
+    ),
+    xlab = "Expected Z",
+    ylab = "Observed Z"
+  ) +
+    ggplot2::labs(
+      caption = if (isTRUE(assessment$in_sample)) {
+        "In-sample scores: the envelope assumes held-out data and is optimistic here."
+      }
+    )
+}
+
+# Expected order statistics of Z and the pointwise / simultaneous envelopes
+# implied by n iid uniform centiles. Monte Carlo draws calibrate the
+# equal-local-level gamma; `reps` follows a fixed work budget so the cost of
+# the chart does not grow with the cohort, and the seed keeps it reproducible.
+# At the default budget the realised simultaneous level is within about half a
+# percentage point of `level`.
+qq_envelope <- function(n, level = 0.95, reps = NULL, seed = 20240619L) {
+  n <- as.integer(n)
+  reps <- as.integer(reps %||% min(10000L, max(1000L, as.integer(2e6 / n))))
+  expected <- stats::qnorm(stats::ppoints(n))
+  if (n < 2L) {
+    na <- rep(NA_real_, n)
+    return(list(
+      expected = expected, point_lo = na, point_hi = na,
+      sim_lo = na, sim_hi = na
+    ))
+  }
+  i <- seq_len(n)
+  a <- 1 - level
+  q <- function(g) stats::qnorm(stats::qbeta(g, i, n - i + 1))
+  gamma_sim <- withr::with_seed(seed, {
+    worst <- vapply(seq_len(reps), function(k) {
+      pu <- stats::pbeta(sort(stats::runif(n)), i, n - i + 1)
+      min(pu, 1 - pu)
+    }, numeric(1))
+    stats::quantile(worst, probs = a, names = FALSE, type = 1L)
+  })
+  list(
+    expected = expected,
+    point_lo = q(a / 2),
+    point_hi = q(1 - a / 2),
+    sim_lo = q(gamma_sim),
+    sim_hi = q(1 - gamma_sim)
   )
 }
 

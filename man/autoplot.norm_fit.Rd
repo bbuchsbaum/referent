@@ -24,7 +24,12 @@
   ...
 )
 
-\method{autoplot}{norm_assessment}(object, type = c("calibration", "worm", "conditional"), ...)
+\method{autoplot}{norm_assessment}(
+  object,
+  type = c("calibration", "worm", "qq", "conditional"),
+  level = 0.95,
+  ...
+)
 
 \method{autoplot}{norm_scores}(object, type = c("profile", "heatmap"), id = NULL, ...)
 
@@ -70,6 +75,8 @@ dynamics-calibration plots.}
 \item{centiles}{Probability levels for centile and fan charts.}
 
 \item{...}{Unused.}
+
+\item{level}{Coverage of the simulation envelope on the QQ plot.}
 }
 \value{
 A ggplot, or a patchwork object when \code{type = "composition"}
