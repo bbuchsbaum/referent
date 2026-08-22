@@ -1,0 +1,29 @@
+---
+title: "Synthetic growth reference"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Synthetic growth reference}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+A synthetic height-like growth measure. No brain data.
+
+```{r}
+library(referent)
+set.seed(1)
+ref <- norm_simulate(400, kind = "gaussian_scale")
+spec <- norm_spec(
+  family = norm_gaussian(),
+  location = ~ s(age, k = 8) + sex,
+  scale = ~ s(age, k = 5)
+)
+fit <- norm_fit(spec, data = ref, outcomes = "y")
+val <- norm_simulate(150, kind = "gaussian_scale", seed = 2)
+assessment <- norm_assess(fit, newdata = val)
+assessment$overall
+```

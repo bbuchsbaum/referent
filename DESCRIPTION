@@ -1,0 +1,47 @@
+Package: referent
+Type: Package
+Title: Distributional Reference Models and Individual Deviation Scores
+Version: 0.0.0.9000
+Authors@R: c(
+    person(given = "Brad", family = "Buchsbaum",
+           email = "brad.buchsbaum@gmail.com",
+           role = c("aut", "cre", "cph"))
+  )
+Description: Estimates the conditional predictive distribution of one or
+    more outcomes given a declared reference population, then places new
+    observations within that distribution. Provides centiles, normal-score
+    representations, tail probabilities, calibration diagnostics, site
+    adaptation, and history-conditioned longitudinal forecasts. The package
+    is CDF-first: Z-scores are derived representations of a full
+    conditional distribution, not raw standardized residuals.
+License: MIT + file LICENSE
+URL: https://github.com/bbuchsbaum/referent
+BugReports: https://github.com/bbuchsbaum/referent/issues
+Depends:
+    R (>= 4.2.0)
+Imports:
+    cli,
+    ggplot2,
+    Matrix,
+    mgcv,
+    rlang,
+    stats,
+    tibble,
+    tidyselect,
+    vctrs
+Suggests:
+    future,
+    future.apply,
+    gamlss,
+    gamlss2,
+    knitr,
+    rmarkdown,
+    scoringRules,
+    testthat (>= 3.0.0),
+    vdiffr
+Encoding: UTF-8
+Language: en-US
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/testthat/edition: 3
+VignetteBuilder: knitr

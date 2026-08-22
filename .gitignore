@@ -1,0 +1,21 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.tar.gz
+.DS_Store
+.idea/
+.vscode/
+.omc/
+.claude/
+.mote/
+tests/testthat/testthat-problems.rds
+tests/testthat/_problems/
+tmp/
+inst/doc
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

@@ -1,0 +1,30 @@
+---
+title: "Synthetic psychometric score"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Synthetic psychometric score}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+A cognitive-style score with possible skew.
+
+```{r}
+library(referent)
+set.seed(3)
+ref <- norm_simulate(350, kind = "shash")
+spec <- norm_spec(
+  family = norm_shash(),
+  location = ~ s(age, k = 6) + sex,
+  scale = ~ s(age, k = 4),
+  skew = ~ 1,
+  tail = ~ 1
+)
+fit <- norm_fit(spec, data = ref, outcomes = "y")
+scores <- predict(fit, newdata = ref[1:5, ], uncertainty = "conditional")
+scores[, c(".row", "observed", "centile", "z", "tail_prob")]
+```
