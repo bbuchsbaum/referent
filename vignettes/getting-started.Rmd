@@ -1,0 +1,196 @@
+---
+title: "Getting started with referent"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with referent}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6.5,
+  fig.height = 4,
+  dpi = 96
+)
+```
+
+A reference model answers one question: given a person's covariates, what
+distribution of outcome values would the reference population show? Every
+other quantity in `referent` is read off that conditional distribution.
+A centile is its CDF at the observed value, a Z-score is the normal
+quantile of that centile, and a tail probability is how much of the
+distribution lies beyond the observation. None of these is a clinical
+label.
+
+This vignette walks the standard path on a synthetic growth-like measure:
+fit a reference, choose among candidate distributions out of sample,
+check calibration on held-out people, and place new observations.
+
+```{r setup}
+library(referent)
+```
+
+## Reference data
+
+`norm_simulate()` produces data with a known generative structure. The
+outcome `y` has a location that bends with age and differs by sex, and a
+scale that grows after age 40. Three correlated markers come along for
+later vignettes.
+
+```{r data}
+ref <- norm_simulate(400, kind = "gaussian", scale = "age", seed = 1)
+ref$participant_id <- paste0("R", seq_len(nrow(ref)))
+head(ref[, c("participant_id", "age", "sex", "site", "y")])
+```
+
+## Specify and fit
+
+A `norm_spec()` names a distribution family and one formula per
+distributional parameter. Covariates are whatever the formulas mention;
+other columns are ignored. The Gaussian family with a constant scale fits
+an ordinary additive model; a non-constant scale formula switches to a
+location-scale model.
+
+```{r fit}
+spec <- norm_spec(
+  family = norm_gaussian(),
+  location = ~ s(age, k = 8) + sex,
+  scale = ~ s(age, k = 5)
+)
+fit <- norm_fit(spec, data = ref, outcomes = "y", id = participant_id)
+fit
+```
+
+The centile chart is the fitted conditional distribution, not a scatter
+of the training rows. Held-out people are overlaid as points; the bands
+are the 5th-95th and 25th-75th centile ranges.
+
+```{r centiles}
+val <- norm_simulate(150, kind = "gaussian", scale = "age", seed = 5)
+autoplot(fit, type = "centiles", by = sex, newdata = val)
+```
+
+## Which distribution? A model ladder scored out of sample
+
+Whether a Gaussian is enough, or whether the scale, skewness, or tail
+weight need to vary with age, is an empirical question that in-sample
+fit cannot settle. `norm_select()` takes a list of candidate
+specifications ordered from simplest to most flexible, cross-fits each,
+and applies a lexicographic rule on the out-of-fold scores: drop
+uncalibrated candidates, rank the rest by log score with CRPS as the
+tie-breaker, keep everything within one paired standard error of the
+best, and choose the simplest survivor. Covariate-dependent skew or tail
+must earn a minimum log-score gain before it is accepted.
+
+```{r ladder}
+ladder <- list(
+  gaussian_const = norm_spec(norm_gaussian(), location = ~ s(age, k = 8) + sex),
+  gaussian_scale = spec,
+  shash_scale = norm_spec(norm_shash(), location = ~ s(age, k = 8) + sex,
+                          scale = ~ s(age, k = 5))
+)
+sel <- norm_select(ladder, data = ref, outcomes = "y", folds = 4)
+sel$comparison[, c("model", "mean_log_score", "crps", "var_z", "cover_95",
+                   "calibrated", "selected")]
+```
+
+Read the table from the left: every candidate passed the calibration
+gate, and the log scores differ by a few hundredths of a nat per
+observation. The two Gaussian levels are separated by roughly one
+paired standard error and SHASH, whose skew and tail parameters are
+constant here, is admitted without a shape penalty; with 400 rows and
+four folds the selection among calibrated candidates is close and a
+different seed can move it. What the ladder guarantees is that an
+uncalibrated level is never chosen and that extra flexibility must show
+an out-of-sample gain. `sel$selected` is the winning spec and
+`sel$crossfit` its out-of-fold scores, which are the right input for the
+joint model in the multi-site vignette.
+
+## Check calibration on held-out people
+
+`norm_assess()` needs data the model has not seen. It reports proper
+scores (`mean_log_score`, `crps`), the PCNtoolkit-style point metrics
+(`smse`, `ev`, `cor`), marginal calibration of the normal scores, and
+tail rates at four levels.
+
+```{r assess}
+assessment <- norm_assess(fit, newdata = val)
+assessment$overall[, c("mean_log_score", "standardized_log_score", "crps", "ev", "cor")]
+assessment$marginal[, c("n", "mean_z", "var_z", "cover_50", "cover_80", "cover_95")]
+```
+
+A calibrated model has `mean_z` near 0, `var_z` near 1, and observed
+coverage on the diagonal. The worm plot shows where the predictive shape
+is wrong: a tilt means the scale is off, a U or inverted U means skew,
+an S means the tails.
+
+```{r calibration}
+autoplot(assessment, type = "calibration")
+autoplot(assessment, type = "worm")
+```
+
+## Place new observations
+
+`predict()` returns one row per person and outcome. `uncertainty =
+"total"` (the default) integrates the score over the uncertainty of the
+fitted curves; `"conditional"` uses the point estimate and is faster for
+diagnostics. `support` says whether the person's covariates are inside
+the reference data (`"in"`), near its boundary (`"edge"`), outside it
+(`"out"`, where `z` is masked unless `allow_extrapolation = TRUE`), or in
+a factor level the reference never saw (`"new_group"`).
+
+```{r scores}
+scores <- predict(fit, newdata = val, type = "scores")
+scores[1:5, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
+```
+
+The scores are derived from a full predictive distribution, which you can
+ask for directly. `predict(type = "distribution")` returns a
+[distributional](https://pkg.mitchelloharawild.com/distributional/)
+vector per outcome, so `cdf()`, `quantile()`, `hilo()`, `mean()`,
+`variance()`, and `generate()` all apply, and `as_scores()` turns a
+distribution and an observation into the score columns above.
+
+```{r distributions}
+dists <- predict(fit, newdata = val[1:3, ], type = "distribution",
+                 uncertainty = "conditional")
+dists$y
+hilo(dists$y, 90)
+as_scores(dists$y, val$y[1:3])
+```
+
+`tidy()` summarises the fit per outcome, `glance()` per fit, and
+`augment()` returns the target rows with `.z_<outcome>` and
+`.centile_<outcome>` columns, one row per person.
+
+```{r tidiers}
+tidy(fit)[, c("outcome", "family", "status", "n", "edf")]
+glance(fit)
+augment(fit, val[1:3, ], uncertainty = "conditional")[, c("age", "sex", "y", ".z_y", ".centile_y", ".support")]
+```
+
+## Threshold exceedances are not abnormalities
+
+`norm_flag()` marks `|z|` above a threshold and adjusts the two-sided tail
+probabilities for multiple comparisons. It also reports how many
+exceedances a calibrated model would produce by chance, which is the
+number to compare against before reading anything into the flagged rows.
+
+```{r flag}
+flagged <- norm_flag(scores, threshold = 2)
+attr(flagged, "observed_exceedances")
+attr(flagged, "expected_exceedances")
+flagged[flagged$exceedance, c(".id", "observed", "centile", "z", "tail_prob", "fdr")]
+```
+
+A person can sit in the tail because the chart is right and they are
+unusual, because their covariates are outside the reference support, or
+because the model is mis-specified. The score table keeps those apart:
+`z` represents a centile, `support` says whether that centile can be
+trusted, and the assessment says whether the model deserves it. For
+multi-site data, site transport, and joint deviation across many
+outcomes, continue with `vignette("brain-charts-across-sites")`; for
+repeated visits, `vignette("longitudinal-change")`.

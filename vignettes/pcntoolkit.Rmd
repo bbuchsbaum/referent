@@ -1,0 +1,110 @@
+---
+title: "Coming from PCNtoolkit"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Coming from PCNtoolkit}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+PCNtoolkit users will recognise most of `referent`. The estimand is the
+same: a conditional predictive distribution of an outcome given
+covariates, estimated on a reference population and used to place new
+people. The differences are in what is exposed. `referent` returns the
+distribution itself as a first-class object and derives every score from
+its CDF, it separates site *adaptation* (shifting the distribution) from
+*calibration* (re-mapping its probabilities), and it does not define an
+abnormality index.
+
+```{r setup}
+library(referent)
+ref <- norm_simulate(300, seed = 1)
+val <- norm_simulate(150, seed = 2)
+fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 6) + sex), ref, "y")
+scores <- predict(fit, newdata = val)
+assessment <- norm_assess(fit, newdata = val)
+```
+
+## Concepts
+
+| PCNtoolkit | referent | Notes |
+|---|---|---|
+| normative model (`BLR`, `HBR`, `GPR`) | `norm_spec()` + `norm_fit()` | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
+| response variable | `outcomes =` | several outcomes fit as a panel, kept wide |
+| covariates, batch effects | formula terms | `s(site, bs = "re")` plays the role of a batch random effect |
+| `predict()` / `estimate()` | `predict(fit, newdata)` | returns scores or `<distribution>` columns |
+| cross-validation (`cvfolds`) | `norm_crossfit()` | out-of-fold scores for every reference row; the deployment refit is attached |
+| warp (`SHASHb`, `SinArcsinh`) | `norm_shash()` | sinh-arcsinh likelihood via `mgcv::shash()` |
+| site transfer / `adapt` | `norm_adapt()` | shrunk location (and scale) offsets on the family's own density, trajectory frozen |
+| (no direct analogue) | `norm_calibrate()` | monotone re-mapping of PIT values; optional `by = site` |
+| extreme value / abnormality | not provided | see below |
+
+## Metrics
+
+`norm_assess()` reports the PCNtoolkit evaluation metrics under their
+usual definitions, alongside proper scoring rules.
+
+| PCNtoolkit | referent column | Relationship |
+|---|---|---|
+| `Z` | `z` | `qnorm(centile)`, evaluated from the smaller tail in log space so very large deviations stay finite |
+| `yhat` | `median` | the predictive median; for a Gaussian this equals the mean |
+| `s2` | `variance(dist)` | predictive variance of the distribution returned by `predict(type = "distribution")` |
+| `MSLL` | `-standardized_log_score` | mean log score minus that of an unconditional Gaussian; sign flipped so larger is better |
+| `SMSE` | `smse` | mean squared residual divided by the variance of the observed outcome |
+| `EV` (`EXPV`) | `ev` | explained variance, `1 - var(residual) / var(y)` |
+| `Rho` | `cor` | Pearson correlation of observed and predicted median |
+| `RMSE` | `rmse` | root mean squared residual |
+| (none) | `mean_log_score`, `crps` | proper scores of the full predictive distribution |
+
+```{r metrics}
+assessment$overall[, c("standardized_log_score", "smse", "ev", "cor", "rmse", "crps")]
+```
+
+```{r z}
+d <- predict(fit, newdata = val[1:3, ], type = "distribution")$y
+data.frame(
+  yhat = median(d),
+  s2 = variance(d),
+  Z = scores$z[1:3]
+)
+```
+
+`Z` here includes the uncertainty of the fitted curves
+(`uncertainty = "total"`, the default), which is what PCNtoolkit's
+predictive variance also does. `uncertainty = "conditional"` gives the
+plug-in score.
+
+## Site adaptation
+
+PCNtoolkit's adaptation re-estimates site-specific parameters of a
+pre-trained model from a small local sample. `norm_adapt()` does the
+same with the shared trajectory frozen, estimating a location offset
+(and optionally a log-scale offset) per site by penalised maximum
+likelihood, with shrinkage set in pseudo-observations.
+
+```{r adapt}
+local <- norm_simulate(40, site_shift = 1, seed = 3)
+adapted <- norm_adapt(fit, data = local, parameters = c("location", "scale"))
+adapted$adaptation
+```
+
+PCNtoolkit has no separate calibration step. `referent` keeps the two
+ideas apart because they fix different problems: adaptation moves the
+distribution when a new site's level or spread differs; calibration
+re-maps probabilities when the distributional family is wrong in a way
+that is common to everyone. `vignette("brain-charts-across-sites")`
+compares both against a refit on held-out data.
+
+## What is deliberately missing
+
+PCNtoolkit offers extreme-value and abnormality statistics that summarise
+how far a profile lies in the tails. `referent` does not provide an
+abnormality index. A large `|z|` is a threshold exceedance whose expected
+count under calibration is known; `norm_flag()` reports that count and an
+FDR-adjusted tail probability, and `norm_joint()` gives a calibrated
+joint centile across outcomes. Whether an exceedance means anything is a
+question for the study design, not the scoring function.

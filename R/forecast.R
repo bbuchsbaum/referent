@@ -102,7 +102,8 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
 #'
 #' @param reference A [norm_fit].
 #' @param newdata Grid of covariate values.
-#' @param with_respect_to Name of the time covariate.
+#' @param with_respect_to The time covariate, as a bare column name or a
+#'   string.
 #' @param centiles Probability levels.
 #' @param type Must be `"chart"`.
 #' @param h Finite-difference step.
@@ -110,6 +111,11 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
 #' @return A `norm_derivative` tibble with columns `.outcome`, `time`,
 #'   `centile`, `chart_velocity`, and `chart_velocity_se` (`NA` when the
 #'   engine does not expose a coefficient covariance).
+#' @examples
+#' ref <- norm_simulate(150, seed = 1)
+#' fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+#' grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
+#' norm_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
 #' @export
 norm_derivative <- function(reference,
                             newdata,
@@ -119,7 +125,10 @@ norm_derivative <- function(reference,
                             h = 1e-2,
                             outcomes = NULL) {
   type <- match.arg(type)
-  t_nm <- as.character(with_respect_to)
+  t_nm <- as_col_name(rlang::enquo(with_respect_to))
+  if (is.null(t_nm)) {
+    cli::cli_abort("{.arg with_respect_to} must name the time covariate.")
+  }
   newdata <- tibble::as_tibble(newdata)
   if (!t_nm %in% names(newdata)) {
     cli::cli_abort("{.arg newdata} must contain {.field {t_nm}}.")

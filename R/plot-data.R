@@ -163,7 +163,12 @@ fortify_kernel <- function(fit, lags = NULL) {
   if (!inherits(fit, "norm_dynamics")) {
     cli::cli_abort("{.fn fortify_kernel} expects a {.cls norm_dynamics} object.")
   }
-  hi <- max(c(diff(fit$time_range), fit$lag_range[[2]], 1), na.rm = TRUE)
+  max_lag <- fit$lag_range[[2]]
+  hi <- if (is.finite(max_lag) && max_lag > 0) {
+    1.5 * max_lag
+  } else {
+    max(diff(fit$time_range), 1, na.rm = TRUE)
+  }
   lags <- lags %||% seq(0, hi, length.out = 80)
   dplyr_bind(lapply(fit$outcomes, function(nm) {
     pr <- fit$processes[[nm]]
