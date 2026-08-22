@@ -1,5 +1,6 @@
 ---
 title: "Getting started with referent"
+description: "Fit, score, and interpret one distributional reference model in a complete first workflow."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Getting started with referent}
@@ -7,190 +8,151 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.width = 6.5,
-  fig.height = 4,
-  dpi = 96
-)
-```
-
-A reference model answers one question: given a person's covariates, what
-distribution of outcome values would the reference population show? Every
-other quantity in `referent` is read off that conditional distribution.
-A centile is its CDF at the observed value, a Z-score is the normal
-quantile of that centile, and a tail probability is how much of the
-distribution lies beyond the observation. None of these is a clinical
-label.
-
-This vignette walks the standard path on a synthetic growth-like measure:
-fit a reference, choose among candidate distributions out of sample,
-check calibration on held-out people, and place new observations.
-
-```{r setup}
+```{r setup, message = FALSE, warning = FALSE}
 library(referent)
 ```
 
-## Reference data
+You have a reference cohort, an outcome such as a regional brain volume, and
+covariates that explain ordinary population variation. You want to place new
+observations in the distribution expected for people with those covariates.
+This page takes one default path from those inputs to an interpretable score.
 
-`ref_simulate()` produces data with a known generative structure. The
-outcome `y` has a location that bends with age and differs by sex, and a
-scale that grows after age 40. Three correlated markers come along for
-later vignettes.
+A reference model estimates the full conditional distribution, not just a
+mean curve. A centile is the distribution's CDF at the observed value; `z` is
+`qnorm(centile)`; and `tail_prob` is the smaller tail. None of them is a
+clinical label.
+
+# What data do you need?
+
+The reference rows define the population. Target rows are the observations you
+will score. Here both are deterministic simulations with an age trend, sex
+effect, and age-dependent spread.
 
 ```{r data}
-ref <- ref_simulate(400, kind = "gaussian", scale = "age", seed = 1)
-ref$participant_id <- paste0("R", seq_len(nrow(ref)))
-head(ref[, c("participant_id", "age", "sex", "site", "y")])
+reference <- ref_simulate(400, kind = "gaussian", scale = "age", seed = 1)
+target <- ref_simulate(150, kind = "gaussian", scale = "age", seed = 5)
+head(reference[, c("age", "sex", "site", "y")])
 ```
 
-## Specify and fit
+In your data, use stable participant identifiers and fit only on rows that
+belong to the declared reference population. `referent` never decides who
+belongs in that population for you.
 
-A `ref_spec()` names a distribution family and one formula per
-distributional parameter. Covariates are whatever the formulas mention;
-other columns are ignored. The Gaussian family with a constant scale fits
-an ordinary additive model; a non-constant scale formula switches to a
-location-scale model.
+# How do you fit and score the first model?
 
-```{r fit}
+`ref_spec()` declares one formula for each distributional parameter.
+`ref_fit()` fits that specification, and `predict()` places held-out rows in
+the fitted distribution.
+
+```{r first-fit}
 spec <- ref_spec(
   family = ref_gaussian(),
   location = ~ s(age, k = 8) + sex,
   scale = ~ s(age, k = 5)
 )
-fit <- ref_fit(spec, data = ref, outcomes = "y", id = participant_id)
-fit
-```
-
-The centile chart is the fitted conditional distribution, not a scatter
-of the training rows. Held-out people are overlaid as points; the bands
-are the 5th-95th and 25th-75th centile ranges.
-
-```{r centiles}
-val <- ref_simulate(150, kind = "gaussian", scale = "age", seed = 5)
-autoplot(fit, type = "centiles", by = sex, newdata = val)
-```
-
-## Which distribution? A model ladder scored out of sample
-
-Whether a Gaussian is enough, or whether the scale, skewness, or tail
-weight need to vary with age, is an empirical question that in-sample
-fit cannot settle. `ref_select()` takes a list of candidate
-specifications ordered from simplest to most flexible, cross-fits each,
-and applies a lexicographic rule on the out-of-fold scores: drop
-uncalibrated candidates, rank the rest by log score with CRPS as the
-tie-breaker, keep everything within one paired standard error of the
-best, and choose the simplest survivor. Covariate-dependent skew or tail
-must earn a minimum log-score gain before it is accepted.
-
-```{r ladder}
-ladder <- list(
-  gaussian_const = ref_spec(ref_gaussian(), location = ~ s(age, k = 8) + sex),
-  gaussian_scale = spec,
-  shash_scale = ref_spec(ref_shash(), location = ~ s(age, k = 8) + sex,
-                          scale = ~ s(age, k = 5))
-)
-sel <- ref_select(ladder, data = ref, outcomes = "y", folds = 4)
-sel$comparison[, c("model", "mean_log_score", "crps", "var_z", "cover_95",
-                   "calibrated", "selected")]
-```
-
-Read the table from the left: every candidate passed the calibration
-gate, and the log scores differ by a few hundredths of a nat per
-observation. The two Gaussian levels are separated by roughly one
-paired standard error and SHASH, whose skew and tail parameters are
-constant here, is admitted without a shape penalty; with 400 rows and
-four folds the selection among calibrated candidates is close and a
-different seed can move it. What the ladder guarantees is that an
-uncalibrated level is never chosen and that extra flexibility must show
-an out-of-sample gain. `sel$selected` is the winning spec and
-`sel$crossfit` its out-of-fold scores, which are the right input for the
-joint model in the multi-site vignette.
-
-## Check calibration on held-out people
-
-`ref_assess()` needs data the model has not seen. It reports proper
-scores (`mean_log_score`, `crps`), the PCNtoolkit-style point metrics
-(`smse`, `ev`, `cor`), marginal calibration of the normal scores, and
-tail rates at four levels.
-
-```{r assess}
-assessment <- ref_assess(fit, newdata = val)
-assessment$overall[, c("mean_log_score", "standardized_log_score", "crps", "ev", "cor")]
-assessment$marginal[, c("n", "mean_z", "var_z", "cover_50", "cover_80", "cover_95")]
-```
-
-A calibrated model has `mean_z` near 0, `var_z` near 1, and observed
-coverage on the diagonal. The worm plot shows where the predictive shape
-is wrong: a tilt means the scale is off, a U or inverted U means skew,
-an S means the tails.
-
-```{r calibration}
-autoplot(assessment, type = "calibration")
-autoplot(assessment, type = "worm")
-```
-
-## Place new observations
-
-`predict()` returns one row per person and outcome. `uncertainty =
-"total"` (the default) integrates the score over the uncertainty of the
-fitted curves; `"conditional"` uses the point estimate and is faster for
-diagnostics. `support` says whether the person's covariates are inside
-the reference data (`"in"`), near its boundary (`"edge"`), outside it
-(`"out"`, where `z` is masked unless `allow_extrapolation = TRUE`), or in
-a factor level the reference never saw (`"new_group"`).
-
-```{r scores}
-scores <- predict(fit, newdata = val, type = "scores")
+fit <- ref_fit(spec, data = reference, outcomes = "y")
+target <- target[ref_support(fit, target)$support == "in", ]
+scores <- predict(fit, newdata = target, type = "scores")
 scores[1:5, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
 ```
 
-The scores are derived from a full predictive distribution, which you can
-ask for directly. `predict(type = "distribution")` returns a
-[distributional](https://pkg.mitchelloharawild.com/distributional/)
-vector per outcome, so `cdf()`, `quantile()`, `hilo()`, `mean()`,
-`variance()`, and `generate()` all apply, and `as_scores()` turns a
-distribution and an observation into the score columns above.
+```{r first-fit-checks, include = FALSE}
+stopifnot(
+  nrow(scores) == nrow(target) && nrow(scores) > 100,
+  all(is.finite(scores$centile)),
+  all(scores$centile > 0 & scores$centile < 1),
+  stats::sd(scores$z) > 0.5
+)
+```
+
+Read one row as a chain: `observed` is the measurement, `median` is the
+reference model's central prediction, `centile` is its conditional rank, and
+`z` expresses that rank on a standard-normal scale. `support` says whether the
+covariates justify interpolation.
+
+# What does the fitted chart show?
+
+```{r centiles, fig.alt="Fitted median and central centile bands across age, split by sex, with held-out target observations overlaid."}
+autoplot(fit, type = "centiles", by = sex, newdata = target)
+```
+
+Notice that the bands widen with age because the scale formula varies with
+age. The points are held out: the figure shows how new observations sit in the
+reference distribution, not how closely the model redraws its training data.
+It is a calibration aid, not evidence that the reference cohort is clinically
+appropriate.
+
+# When should you trust a score?
+
+Support is part of the result, not an optional diagnostic. By default,
+`referent` masks probability scores outside the reference covariate range, for
+missing predictors, and for unseen factor levels.
+
+```{r support}
+edge_cases <- target[1:3, ]
+edge_cases$age <- c(median(reference$age), max(reference$age) + 20, NA_real_)
+ref_support(fit, edge_cases)[, c("support", "d2")]
+predict(fit, edge_cases)[, c(".id", "z", "support", "status")]
+```
+
+Do not remove the mask just to obtain a number. First decide whether the row is
+a data error, needs a better reference cohort, or belongs to a documented
+transport analysis. The [troubleshooting article](/articles/troubleshooting/)
+shows those recovery paths.
+
+# How do you use the predictive distribution directly?
+
+`predict(type = "distribution")` returns a `distributional` vector per
+outcome. The same object supplies centiles, intervals, simulation, and scores,
+so those summaries cannot silently drift apart.
 
 ```{r distributions}
-dists <- predict(fit, newdata = val[1:3, ], type = "distribution",
-                 uncertainty = "conditional")
-dists$y
-hilo(dists$y, 90)
-as_scores(dists$y, val$y[1:3])
+dists <- predict(fit, target[1:3, ], type = "distribution",
+                 uncertainty = "conditional")$y
+hilo(dists, 90)
+as_scores(dists, target$y[1:3])[, c("centile", "z", "tail_prob")]
 ```
 
-`tidy()` summarises the fit per outcome, `glance()` per fit, and
-`augment()` returns the target rows with `.z_<outcome>` and
-`.centile_<outcome>` columns, one row per person.
+# Does the model deserve interpretation?
 
-```{r tidiers}
-tidy(fit)[, c("outcome", "family", "status", "n", "edf")]
-glance(fit)
-augment(fit, val[1:3, ], uncertainty = "conditional")[, c("age", "sex", "y", ".z_y", ".centile_y", ".support")]
+Assess on rows that were not used for fitting. Here `uncertainty = "total"`
+matches the default score call above and includes uncertainty in the fitted
+curves.
+
+```{r assess}
+assessment <- ref_assess(fit, target, uncertainty = "total")
+assessment$marginal[, c("n", "mean_z", "var_z", "cover_50", "cover_95")]
+assessment$overall[, c("mean_log_score", "crps", "rmse")]
 ```
 
-## Threshold exceedances are not abnormalities
-
-`ref_flag()` marks `|z|` above a threshold and adjusts the two-sided tail
-probabilities for multiple comparisons. It also reports how many
-exceedances a calibrated model would produce by chance, which is the
-number to compare against before reading anything into the flagged rows.
-
-```{r flag}
-flagged <- ref_flag(scores, threshold = 2)
-attr(flagged, "observed_exceedances")
-attr(flagged, "expected_exceedances")
-flagged[flagged$exceedance, c(".id", "observed", "centile", "z", "tail_prob", "fdr")]
+```{r assess-checks, include = FALSE}
+m <- assessment$marginal
+stopifnot(
+  all(is.finite(m$mean_z)),
+  all(is.finite(m$var_z) & m$var_z > 0.25),
+  all(m$cover_95 > 0.80 & m$cover_95 <= 1)
+)
 ```
 
-A person can sit in the tail because the chart is right and they are
-unusual, because their covariates are outside the reference support, or
-because the model is mis-specified. The score table keeps those apart:
-`z` represents a centile, `support` says whether that centile can be
-trusted, and the assessment says whether the model deserves it. For
-multi-site data, site transport, and joint deviation across many
-outcomes, continue with `vignette("brain-charts-across-sites")`; for
-repeated visits, `vignette("longitudinal-change")`.
+A calibrated model has `mean_z` near 0, `var_z` near 1, and observed coverage
+near its nominal level. Those are sampling targets, not exact pass/fail values
+for one small data set. Use the validation workflow next when you need model
+selection, conditional diagnostics, and tail checks.
+
+# What should you report about large deviations?
+
+```{r flags}
+flags <- ref_flag(scores, threshold = 2)
+c(
+  observed = attr(flags, "observed_exceedances"),
+  expected = attr(flags, "expected_exceedances")
+)
+```
+
+A large `|z|` can mean a genuinely unusual observation, unsupported
+covariates, or a miscalibrated model. Report the reference definition,
+held-out calibration, support status, and expected exceedance count before
+interpreting any flagged row.
+
+Continue with [Validate and choose a reference model](/articles/validate-reference/).
+For site transport, go to [Brain charts across sites](/articles/brain-charts-across-sites/).

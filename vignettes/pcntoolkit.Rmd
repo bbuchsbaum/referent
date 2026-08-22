@@ -1,5 +1,6 @@
 ---
 title: "Coming from PCNtoolkit"
+description: "Translate PCNtoolkit concepts and metrics into referent without overstating equivalence."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Coming from PCNtoolkit}
@@ -29,11 +30,11 @@ scores <- predict(fit, newdata = val)
 assessment <- ref_assess(fit, newdata = val)
 ```
 
-## Concepts
+# Concepts
 
 | PCNtoolkit | referent | Notes |
 |---|---|---|
-| normative model (`BLR`, `HBR`, `GPR`) | `ref_spec()` + `ref_fit()` | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
+| normative model (`BLR`, `HBR`, `GPR`) | [`ref_spec()`](/reference/ref_spec/) + [`ref_fit()`](/reference/ref_fit/) | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
 | response variable | `outcomes =` | several outcomes fit as a panel, kept wide |
 | covariates, batch effects | formula terms | `s(site, bs = "re")` plays the role of a batch random effect |
 | `predict()` / `estimate()` | `predict(fit, newdata)` | returns scores or `<distribution>` columns |
@@ -43,25 +44,49 @@ assessment <- ref_assess(fit, newdata = val)
 | (no direct analogue) | `ref_calibrate()` | monotone re-mapping of PIT values; optional `by = site` |
 | extreme value / abnormality | not provided | see below |
 
-## Metrics
+# Metrics
 
-`ref_assess()` reports the PCNtoolkit evaluation metrics under their
-usual definitions, alongside proper scoring rules.
+`ref_assess()` reports related evaluation quantities alongside proper scoring
+rules, but shared names do not guarantee the same estimand. The table labels
+each relationship rather than silently treating near-matches as identical.
+The PCNtoolkit side follows its
+[1.x evaluation-metrics definitions](https://pcntoolkit.readthedocs.io/en/stable/pages/tutorials/13_evaluation_metrics.html),
+not the legacy 0.35 interface.
 
-| PCNtoolkit | referent column | Relationship |
-|---|---|---|
-| `Z` | `z` | `qnorm(centile)`, evaluated from the smaller tail in log space so very large deviations stay finite |
-| `yhat` | `median` | the predictive median; for a Gaussian this equals the mean |
-| `s2` | `variance(dist)` | predictive variance of the distribution returned by `predict(type = "distribution")` |
-| `MSLL` | `-standardized_log_score` | mean log score minus that of an unconditional Gaussian; sign flipped so larger is better |
-| `SMSE` | `smse` | mean squared residual divided by the variance of the observed outcome |
-| `EV` (`EXPV`) | `ev` | explained variance, `1 - var(residual) / var(y)` |
-| `Rho` | `cor` | Pearson correlation of observed and predicted median |
-| `RMSE` | `rmse` | root mean squared residual |
-| (none) | `mean_log_score`, `crps` | proper scores of the full predictive distribution |
+| PCNtoolkit | referent column | Equivalence | Relationship |
+|---|---|---|---|
+| [`Z`](https://pcntoolkit.readthedocs.io/en/stable/pages/tutorials/13_evaluation_metrics.html) | `z` | Conceptual analogue | Both place an observation in a predictive distribution. `referent` always computes `qnorm(centile)` from the distribution CDF, including non-Gaussian families. |
+| `yhat` | `median` | Exact when `yhat` is the predictive median | For a Gaussian the median also equals the mean. Check the model family's definition before comparing other families. |
+| legacy BLR `s2` | `variance(dist)` | Model-specific analogue | Both can include observation and coefficient uncertainty, but PCNtoolkit 1.x does not expose `s2` as a general output and HBR posterior averaging need not match `referent`'s mixture distribution. |
+| `MSLL` | no exact column | Not numerically equivalent | PCNtoolkit subtracts a Gaussian baseline fitted to the sample being scored and uses lower-is-better loss. `standardized_log_score` uses the frozen reference-sample baseline and higher-is-better log score. Rescore both against one declared baseline before comparing. |
+| `SMSE` | `smse` | Near-equivalent | Both divide MSE by outcome variance, but PCNtoolkit uses a population variance denominator while R's `var()` uses a sample denominator. On the same complete rows, referent's value is PCNtoolkit's value times `(n - 1) / n`. |
+| `EV` (`EXPV`) | `ev` | Algebraically equivalent on nonconstant complete data | Both compute `1 - var(residual) / var(y)`. Constant outcomes and filtering of non-finite rows can produce different edge behaviour. |
+| `Rho` | no exact column | Different statistic | PCNtoolkit 1.x reports Spearman rank correlation. `cor` is Pearson correlation of the observed value and predictive median. |
+| `RMSE` | `rmse` | Exact on the same included rows | Missing and non-finite row handling must also match. |
+| (none) | `mean_log_score`, `crps` | referent additions | Proper scores of the full predictive distribution; larger log score and smaller CRPS are better. |
 
 ```{r metrics}
 assessment$overall[, c("standardized_log_score", "smse", "ev", "cor", "rmse", "crps")]
+```
+
+If you need PCNtoolkit's `Rho`, compute it explicitly from the held-out score
+rows. Pearson and Spearman answer different questions and can disagree even on
+the same predictions.
+
+```{r rho}
+metric_rows <- assessment$scores
+c(
+  pearson = cor(metric_rows$observed, metric_rows$median, method = "pearson"),
+  spearman_rho = cor(metric_rows$observed, metric_rows$median, method = "spearman")
+)
+```
+
+```{r rho-check, include = FALSE}
+rho_values <- c(
+  pearson = cor(metric_rows$observed, metric_rows$median, method = "pearson"),
+  spearman_rho = cor(metric_rows$observed, metric_rows$median, method = "spearman")
+)
+stopifnot(all(is.finite(rho_values)), abs(diff(rho_values)) > 1e-4)
 ```
 
 ```{r z}
@@ -73,12 +98,13 @@ data.frame(
 )
 ```
 
-`Z` here includes the uncertainty of the fitted curves
-(`uncertainty = "total"`, the default), which is what PCNtoolkit's
-predictive variance also does. `uncertainty = "conditional"` gives the
-plug-in score.
+`Z` here includes uncertainty in the fitted curves (`uncertainty = "total"`,
+the default). That is closest to legacy BLR's coefficient-aware predictive
+variance, but it is not a general claim of numerical equivalence across
+PCNtoolkit model families. `uncertainty = "conditional"` gives the plug-in
+score.
 
-## Site adaptation
+# Site adaptation
 
 PCNtoolkit's adaptation re-estimates site-specific parameters of a
 pre-trained model from a small local sample. `ref_adapt()` does the
@@ -99,7 +125,7 @@ re-maps probabilities when the distributional family is wrong in a way
 that is common to everyone. `vignette("brain-charts-across-sites")`
 compares both against a refit on held-out data.
 
-## What is deliberately missing
+# What is deliberately missing
 
 PCNtoolkit offers extreme-value and abnormality statistics that summarise
 how far a profile lies in the tails. `referent` does not provide an
@@ -108,3 +134,7 @@ count under calibration is known; `ref_flag()` reports that count and an
 FDR-adjusted tail probability, and `ref_joint()` gives a calibrated
 joint centile across outcomes. Whether an exceedance means anything is a
 question for the study design, not the scoring function.
+
+Continue with [Troubleshooting reference-model workflows](/articles/troubleshooting/),
+or return to [Getting started with referent](/articles/getting-started/) for the
+default end-to-end workflow.

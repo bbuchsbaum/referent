@@ -15,7 +15,8 @@ Description: Estimates the conditional predictive distribution of one or
     is CDF-first: Z-scores are derived representations of a full
     conditional distribution, not raw standardized residuals.
 License: MIT + file LICENSE
-URL: https://github.com/bbuchsbaum/referent
+URL: https://bbuchsbaum.github.io/referent,
+    https://github.com/bbuchsbaum/referent
 BugReports: https://github.com/bbuchsbaum/referent/issues
 Depends:
     R (>= 4.2.0)

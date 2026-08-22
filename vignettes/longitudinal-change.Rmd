@@ -1,5 +1,6 @@
 ---
 title: "Longitudinal change"
+description: "Separate chart velocity from individual change and forecast repeated measurements."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Longitudinal change}
@@ -33,7 +34,7 @@ conditional distribution under that process.
 library(referent)
 ```
 
-## Longitudinal reference data
+# Longitudinal reference data
 
 Subjects have two to four visits at irregular intervals. The normal
 score of `y` is generated as a stable subject component plus a
@@ -48,7 +49,7 @@ c(stable = truth$tau_b^2, dynamic = truth$tau_g^2, measurement = truth$sigma_e^2
 head(long[, c("participant_id", "visit", "age", "sex", "y")])
 ```
 
-## The marginal reference, then the process
+# The marginal reference, then the process
 
 The marginal model is the usual cross-sectional fit. `ref_dynamics()`
 then estimates the process on the normal scores. By default it uses
@@ -71,15 +72,24 @@ holds the same numbers.
 dyn$components
 ```
 
+```{r dynamics-checks, include = FALSE}
+stopifnot(
+  all(dyn$components$identified),
+  all(is.finite(dyn$components$r_median_lag)),
+  all(abs(dyn$components$stable + dyn$components$dynamic +
+          dyn$components$measurement - 1) < 1e-8)
+)
+```
+
 The kernel plot is the implied correlation between two normal scores of
 the same person as a function of the time between them. The jump at lag
 zero is the measurement nugget; the plateau is the stable rank.
 
-```{r kernel}
+```{r kernel, fig.alt="Estimated within-person correlation of normal scores across time lags, decomposed into stable, dynamic, and measurement components."}
 autoplot(dyn, type = "kernel")
 ```
 
-## Identifiability and the stable model
+# Identifiability and the stable model
 
 Three components cannot be separated from two-visit data at one fixed
 interval. With a single lag, any dependence structure collapses to one
@@ -104,7 +114,19 @@ repeat intervals or three or more visits per subject;
 When too few subjects have repeats, the process is reported as not
 identified and every history-conditioned quantity downstream is `NA`.
 
-## Six longitudinal quantities
+```{r unidentified}
+one_visit <- long[!duplicated(long$participant_id), ]
+dyn_unidentified <- ref_dynamics(
+  fit, data = one_visit, id = participant_id, time = age, crossfit = 0
+)
+dyn_unidentified$components[, c("identified", "process", "r_median_lag")]
+```
+
+The fix is a stronger repeated-measures design, not an optimizer switch. Add
+participants with repeated visits and informative lag variation; do not report
+history-conditioned change from a cross-sectional sample.
+
+# Six longitudinal quantities
 
 The design separates six questions that are often conflated.
 
@@ -153,14 +175,25 @@ rbind(
   naive = c(var = var(naive, na.rm = TRUE),
             fpr = mean(abs(naive) > 1.96, na.rm = TRUE))
 )
+```
+
+```{r calibration-checks, include = FALSE}
+stopifnot(
+  sum(is.finite(tr$innovation_z)) > 500,
+  abs(var(tr$innovation_z, na.rm = TRUE) - 1) < 0.2,
+  abs(mean(abs(tr$innovation_z) > 1.96, na.rm = TRUE) - 0.05) < 0.03
+)
+```
+
+```{r calibration-figure, fig.alt="Held-out calibration of innovation scores from the longitudinal reference process."}
 autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age)
 ```
 
-```{r innovation}
+```{r innovation, fig.alt="Innovation scores for held-out visit transitions, highlighting unexpectedly large history-conditioned changes."}
 autoplot(tr, type = "innovation")
 ```
 
-## Forecasts
+# Forecasts
 
 `ref_forecast()` conditions the marginal distribution at future times
 on a subject's history and returns one `dist_conditioned()` predictive
@@ -169,12 +202,17 @@ width at short horizons reflects the measurement nugget and grows toward
 the marginal spread as the dynamic component decorrelates. Times beyond
 the reference lag range are reported as `extrapolated_lag`.
 
-```{r forecast}
+```{r forecast, fig.alt="History-conditioned forecast fan widening from a subject's last observed visit toward the marginal reference distribution."}
 subject <- held[held$participant_id == 3, ]
 fc <- ref_forecast(dyn, history = subject, times = max(subject$age) + c(0.5, 1, 2, 3, 5))
 fc$summary
 autoplot(fc, type = "fan")
 ```
+
+The fan conditions on the fitted process parameters. It includes uncertainty
+in the marginal reference curve, but it does not propagate uncertainty in the
+estimated kernel parameters; that omission matters most when repeat counts or
+lag coverage are weak.
 
 The forecast distribution obeys every generic of the package: a later
 observation can be scored against it with `as_scores()`, which gives
@@ -184,7 +222,7 @@ the same innovation Z that `ref_transition()` would.
 as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]
 ```
 
-## Reading the output
+# Reading the output
 
 * `components`: fractions of normal-score variance that are stable,
   dynamic, and measurement. A large measurement fraction means visits
@@ -198,3 +236,7 @@ as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]
 * `calibrated` on transitions is `TRUE` only when measurement noise was
   separable; otherwise the innovation Z still conditions on history but
   treats all short-lag dependence as rank dynamics.
+
+Continue with [Coming from PCNtoolkit](/articles/pcntoolkit/), or use
+[Troubleshooting reference models](/articles/troubleshooting/) when the process is
+unidentified or a forecast is unsupported.

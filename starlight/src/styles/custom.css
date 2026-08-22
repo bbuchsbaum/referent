@@ -1,0 +1,14 @@
+/*
+ * Your styles.
+ *
+ * This file is loaded after the Editorial Scientific theme, so anything here
+ * wins. starlightdown never rewrites it.
+ *
+ * The theme's own variables are the easiest thing to reach for:
+ *
+ *   :root[data-theme='light'] {
+ *     --sd-accent: #1f4e79;
+ *   }
+ *
+ * Full token list: node_modules/starlightdown-starlight/styles/tokens.css
+ */
