@@ -167,6 +167,9 @@ fortify_kernel <- function(fit, lags = NULL) {
   lags <- lags %||% seq(0, hi, length.out = 80)
   dplyr_bind(lapply(fit$outcomes, function(nm) {
     pr <- fit$processes[[nm]]
+    if (!isTRUE(pr$identified)) {
+      return(tibble::tibble(lag = lags, correlation = NA_real_, .outcome = nm))
+    }
     r <- vapply(lags, function(h) {
       process_correlation(c(0, h), pr$psi, pr$process)[1, 2]
     }, numeric(1))

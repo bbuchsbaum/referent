@@ -45,7 +45,7 @@ test_that("analytic change_z holds 5% FPR while naive Z2-Z1 does not", {
   expect_gt(max(abs(tab$fpr_naive - 0.05)), 0.04)
 })
 
-test_that("package-level change_z FPR stays near nominal across correlation and lag", {
+test_that("out-of-sample change_z FPR stays near nominal across correlation and lag", {
   skip_on_cran()
   settings <- list(
     list(r = 0.75, lag = 1.5, sigma_e = 0, seed = 71),
@@ -53,23 +53,30 @@ test_that("package-level change_z FPR stays near nominal across correlation and 
     list(r = 0.6, lag = 2, sigma_e = 0.35, seed = 73)
   )
   rows <- lapply(settings, function(cfg) {
-    dat <- do.call(simulate_two_visit, c(list(n_id = 420), cfg))
-    got <- fit_two_visit_transition(dat)
-    expect_true(isTRUE(got$dyn$identifiability$change))
-    tr <- got$transition
+    train <- do.call(simulate_two_visit, c(list(n_id = 500), cfg))
+    test <- do.call(simulate_two_visit, c(list(n_id = 1000), modifyList(cfg, list(seed = cfg$seed + 100))))
+    got <- fit_two_visit_transition(train)
+    pr <- got$dyn$processes$y
+    expect_true(pr$identified)
+    expect_identical(pr$process$name, "stable")
+    tr <- norm_transition(got$dyn, data = test, id = participant_id, time = age)
     naive <- naive_change_z(tr)
     tibble::tibble(
       r = cfg$r,
       lag = cfg$lag,
       sigma_e = cfg$sigma_e,
       n = sum(is.finite(tr$change_z)),
+      var_change = stats::var(tr$change_z, na.rm = TRUE),
+      var_innov = stats::var(tr$innovation_z, na.rm = TRUE),
       fpr_change = false_positive_rate(tr$change_z),
       fpr_naive = false_positive_rate(naive)
     )
   })
   tab <- dplyr_bind(rows)
-  expect_true(all(tab$n > 200))
-  expect_true(all(abs(tab$fpr_change - 0.05) < 0.04))
+  expect_true(all(tab$n >= 1000))
+  expect_true(all(abs(tab$var_change - 1) < 0.1))
+  expect_true(all(abs(tab$var_innov - 1) < 0.1))
+  expect_true(all(abs(tab$fpr_change - 0.05) < 0.02))
   expect_gt(max(abs(tab$fpr_naive - 0.05)), abs(tab$fpr_change[which.max(abs(tab$fpr_naive - 0.05))] - 0.05))
   expect_gt(tab$fpr_naive[tab$r == 0.25], 0.07)
   expect_lt(tab$fpr_naive[tab$r == 0.75], 0.04)

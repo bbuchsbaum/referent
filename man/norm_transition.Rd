@@ -18,10 +18,29 @@ norm_transition(dynamic, data, id, time, conditioning = c("all", "last"))
 \item{conditioning}{\code{"all"} uses the full prior history.}
 }
 \value{
-A \code{norm_transition} table.
+A \code{norm_transition} tibble, one row per consecutive visit pair
+and outcome (zero rows, full column set, when no subject has two
+visits).
 }
 \description{
-Distinguishes six longitudinal quantities: chart velocity, observed
-velocity, expected velocity, velocity centile, innovation Z, and
-change Z. \code{z_gain} is an interoperability alias for \code{innovation_z}.
+Distinguishes the longitudinal quantities of the velocity design memo:
+observed velocity, expected velocity, velocity centile, innovation Z,
+and change Z.
+}
+\details{
+\itemize{
+\item \code{innovation_z} is the history-conditioned score
+\eqn{(Z_2 - m)/s}; with one previous visit it equals the Z-gain
+\eqn{(Z_2 - rZ_1)/\sqrt{1-r^2}}.
+\item \code{velocity_centile} is the conditional centile of the end value given
+the history, i.e. \code{pnorm(innovation_z)} after the copula map.
+\item \code{change_z} is the unconditional standardised difference
+\eqn{(Z_2 - Z_1)/\sqrt{2(1-r)}} and \code{change_centile = pnorm(change_z)}.
+}
+
+When the process for an outcome is not identified
+(\code{dynamic$processes[[outcome]]$identified} is \code{FALSE}), every
+history-conditioned quantity is \code{NA} and \code{support} is \code{"unidentified"}.
+Duplicate visit times within a subject give a warning and \code{NA}
+velocities for the zero-length transition.
 }

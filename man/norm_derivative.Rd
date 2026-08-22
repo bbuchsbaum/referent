@@ -10,7 +10,8 @@ norm_derivative(
   with_respect_to,
   centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
   type = c("chart"),
-  h = 0.01
+  h = 0.01,
+  outcomes = NULL
 )
 }
 \arguments{
@@ -25,9 +26,18 @@ norm_derivative(
 \item{type}{Must be \code{"chart"}.}
 
 \item{h}{Finite-difference step.}
+
+\item{outcomes}{Optional subset of outcomes (default: all).}
+}
+\value{
+A \code{norm_derivative} tibble with columns \code{.outcome}, \code{time},
+\code{centile}, \code{chart_velocity}, and \code{chart_velocity_se} (\code{NA} when the
+engine does not expose a coefficient covariance).
 }
 \description{
 Estimates \eqn{\partial Q_t(p)/\partial t} of the modeled quantile
-curves. This is a population-chart derivative, not an individual
-longitudinal estimate.
+curves by central finite differences, with a delta-method standard
+error from the fitted coefficient covariance (\code{Vp}) applied to the
+finite-difference of the linear-predictor matrix. This is a
+population-chart derivative, not an individual longitudinal estimate.
 }

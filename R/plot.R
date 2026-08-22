@@ -448,10 +448,15 @@ plot_transition <- function(object, type) {
     change = "Change Z"
   )
   df <- tibble::as_tibble(object)
+  support_cols <- referent_cols()$support
+  extra <- setdiff(unique(df$support), names(support_cols))
+  if (length(extra)) {
+    support_cols <- c(support_cols, stats::setNames(rep("#7a7a7a", length(extra)), extra))
+  }
   p <- ggplot2::ggplot(df, ggplot2::aes(.data$.dt, .data[[y_nm]], colour = .data$support)) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted) +
     ggplot2::geom_point(alpha = 0.7, size = 1.6) +
-    ggplot2::scale_colour_manual(values = referent_cols()$support, name = "Support") +
+    ggplot2::scale_colour_manual(values = support_cols, name = "Support") +
     pretty_x() + pretty_y()
   finish_plot(p, title = NULL, xlab = "Elapsed time", ylab = ylab)
 }

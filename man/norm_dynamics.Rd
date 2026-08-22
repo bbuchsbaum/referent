@@ -22,16 +22,33 @@ norm_dynamics(
 
 \item{time}{Time variable (typically age).}
 
-\item{process}{A process constructor such as \code{\link[=norm_matern32]{norm_matern32()}}.}
+\item{process}{A process constructor such as \code{\link[=norm_matern32]{norm_matern32()}} or
+\code{\link[=norm_process]{norm_process()}}.}
 
-\item{crossfit}{Number of subject-level folds used to obtain Z scores.}
+\item{crossfit}{Number of subject-level folds used to obtain
+out-of-fold Z scores via \code{\link[=norm_crossfit]{norm_crossfit()}} (whole subjects stay in one
+fold). \code{0} or \code{NULL} uses in-sample scores from \code{reference}.}
 }
 \value{
-An object of class \code{norm_dynamics}.
+An object of class \code{norm_dynamics} with, per outcome, a fitted
+process (\verb{$processes}), and a \code{components} table of normalised
+variance fractions with approximate standard errors.
 }
 \description{
 Attaches a Gaussian-copula process on calibrated normal scores
 \eqn{Z=\Phi^{-1}(F(y\mid x))}. The default kernel is stable rank plus
 a Matern-3/2 process plus a measurement nugget, which is positive
 semidefinite for every irregular visit schedule.
+}
+\details{
+Because the marginal scores have unit variance, the three variance
+components are estimated on the simplex
+\eqn{\tau_b^2 + \tau_g^2 + \sigma_e^2 = 1} and the Matern length-scale
+is bounded by the observed lags. When all within-subject lags are
+(nearly) identical the length-scale is not identified and the model is
+automatically reduced to the stable-rank-plus-nugget kernel
+(\code{process = "stable"}), which has a single parameter: the correlation
+at the common lag. Optimisation is multi-start L-BFGS-B; when no start
+converges the process is reported as \code{identified = FALSE} and every
+history-conditioned quantity downstream is \code{NA}.
 }
