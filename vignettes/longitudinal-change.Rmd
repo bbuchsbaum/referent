@@ -1,0 +1,200 @@
+---
+title: "Longitudinal change"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Longitudinal change}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6.5,
+  fig.height = 4,
+  dpi = 96
+)
+```
+
+A cross-sectional chart is a trajectory of distributions, not a
+distribution of trajectories. It says what the population looks like at
+each age; it says nothing about how one person moves from one visit to
+the next. People track centiles, and whether a follow-up value is
+surprising depends on how strongly their earlier values predict it.
+
+`referent` treats this as a dynamic extension of the reference model.
+The marginal fit maps each visit to a normal score
+`Z = qnorm(F(y | x))`; a Gaussian process on those scores describes
+within-person dependence across time; everything longitudinal is then a
+conditional distribution under that process.
+
+```{r setup}
+library(referent)
+```
+
+## Longitudinal reference data
+
+Subjects have two to four visits at irregular intervals. The normal
+score of `y` is generated as a stable subject component plus a
+Matern-3/2 process in time plus measurement noise, with variance
+fractions 0.5, 0.35, and 0.15.
+
+```{r data}
+long <- norm_simulate(1200, kind = "longitudinal", seed = 1)
+truth <- attr(long, "truth")
+c(stable = truth$tau_b^2, dynamic = truth$tau_g^2, measurement = truth$sigma_e^2,
+  ell = truth$ell)
+head(long[, c("participant_id", "visit", "age", "sex", "y")])
+```
+
+## The marginal reference, then the process
+
+The marginal model is the usual cross-sectional fit. `norm_dynamics()`
+then estimates the process on the normal scores. By default it uses
+out-of-fold scores from a subject-level cross-fit, so that in-sample
+shrinkage does not masquerade as within-person dependence.
+
+```{r fit}
+spec <- norm_spec(norm_gaussian(), location = ~ s(age, k = 6) + sex, scale = ~1)
+fit <- norm_fit(spec, data = long, outcomes = "y", id = participant_id)
+dyn <- norm_dynamics(fit, data = long, id = participant_id, time = age)
+dyn
+```
+
+The print shows the estimated variance fractions of the stable, dynamic,
+and measurement components, the correlation at the median lag with a
+standard error, and the Matern length-scale. The `components` table
+holds the same numbers.
+
+```{r components}
+dyn$components
+```
+
+The kernel plot is the implied correlation between two normal scores of
+the same person as a function of the time between them. The jump at lag
+zero is the measurement nugget; the plateau is the stable rank.
+
+```{r kernel}
+autoplot(dyn, type = "kernel")
+```
+
+## Identifiability and the stable model
+
+Three components cannot be separated from two-visit data at one fixed
+interval. With a single lag, any dependence structure collapses to one
+number, the correlation at that lag, and the Matern length-scale is not
+identified. `norm_dynamics()` detects this and reduces to the stable
+model (`norm_process("stable")`): a subject intercept plus nugget, one
+parameter. Everything downstream still works; it just cannot
+extrapolate to other intervals, and forecasts at other lags are flagged
+`extrapolated_lag`.
+
+```{r stable}
+two_visit <- long[long$visit <= 2, ]
+two_visit <- two_visit[ave(two_visit$visit, two_visit$participant_id, FUN = length) == 2, ]
+two_visit$age <- ave(two_visit$age, two_visit$participant_id, FUN = function(a) a[1] + 2 * (seq_along(a) - 1))
+dyn_fixed <- norm_dynamics(fit, data = two_visit, id = participant_id, time = age, crossfit = 0)
+dyn_fixed$components[, c("process", "identified", "ell_identified", "median_lag", "r_median_lag")]
+```
+
+Separating measurement noise from rank dynamics needs either short
+repeat intervals or three or more visits per subject;
+`dyn$identifiability$measurement` records whether that was possible.
+When too few subjects have repeats, the process is reported as not
+identified and every history-conditioned quantity downstream is `NA`.
+
+## Six longitudinal quantities
+
+The design separates six questions that are often conflated.
+
+| Quantity | Question | Where |
+|---|---|---|
+| Chart velocity | How does a reference centile itself move with age? | `norm_derivative()` |
+| Observed velocity | At what raw rate did this person change? | `norm_transition()$observed_velocity` |
+| Expected velocity | What rate was expected given this person's history? | `norm_transition()$expected_velocity` |
+| Velocity centile | Where does the observed rate fall in the conditional distribution? | `norm_transition()$velocity_centile` |
+| Innovation Z | How surprising is the follow-up after conditioning on history? | `norm_transition()$innovation_z` |
+| Change Z | How unusual is the change in the unconditional distribution of changes? | `norm_transition()$change_z` |
+
+Chart velocity is a property of the population curve, not of any person:
+
+```{r derivative}
+grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
+norm_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
+```
+
+The others come from `norm_transition()`, one row per consecutive pair
+of visits. Innovation Z is the history-conditioned score
+`(Z_2 - m) / s`, where `m` and `s` are the conditional mean and SD of
+the new score given all earlier ones; with one prior visit it reduces
+to the Z-gain `(Z_2 - r Z_1) / sqrt(1 - r^2)`. Change Z is the
+difference `Z_2 - Z_1` standardised by its own SD `sqrt(2(1 - r))`.
+Both are N(0, 1) under the reference process; the naive difference
+`Z_2 - Z_1` is not.
+
+```{r transition}
+held <- norm_simulate(2400, kind = "longitudinal", seed = 7)
+tr <- norm_transition(dyn, data = held, id = participant_id, time = age)
+tr[1:4, c(".id", ".dt", "observed_velocity", "expected_velocity",
+          "velocity_centile", "innovation_z", "change_z", "support")]
+```
+
+On held-out subjects from the same generator both scores are calibrated,
+and the rate of `|z| > 1.96` is near 5%. The naive difference is not.
+
+```{r calib}
+naive <- with(tr, qnorm(end_centile) - qnorm(start_centile))
+rbind(
+  innovation = c(var = var(tr$innovation_z, na.rm = TRUE),
+                 fpr = mean(abs(tr$innovation_z) > 1.96, na.rm = TRUE)),
+  change = c(var = var(tr$change_z, na.rm = TRUE),
+             fpr = mean(abs(tr$change_z) > 1.96, na.rm = TRUE)),
+  naive = c(var = var(naive, na.rm = TRUE),
+            fpr = mean(abs(naive) > 1.96, na.rm = TRUE))
+)
+autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age)
+```
+
+```{r innovation}
+autoplot(tr, type = "innovation")
+```
+
+## Forecasts
+
+`norm_forecast()` conditions the marginal distribution at future times
+on a subject's history and returns one `dist_conditioned()` predictive
+distribution per time. The fan starts at the last observed visit; its
+width at short horizons reflects the measurement nugget and grows toward
+the marginal spread as the dynamic component decorrelates. Times beyond
+the reference lag range are reported as `extrapolated_lag`.
+
+```{r forecast}
+subject <- held[held$participant_id == 3, ]
+fc <- norm_forecast(dyn, history = subject, times = max(subject$age) + c(0.5, 1, 2, 3, 5))
+fc$summary
+autoplot(fc, type = "fan")
+```
+
+The forecast distribution obeys every generic of the package: a later
+observation can be scored against it with `as_scores()`, which gives
+the same innovation Z that `norm_transition()` would.
+
+```{r score-forecast}
+as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]
+```
+
+## Reading the output
+
+* `components`: fractions of normal-score variance that are stable,
+  dynamic, and measurement. A large measurement fraction means visits
+  are noisy and short-interval change is mostly noise; a large stable
+  fraction means people hold their rank and innovation Z is sensitive.
+* `r_median_lag` with its SE: the one number the data identify most
+  directly. If the SE is large, do not interpret `ell`.
+* `support` on transitions and forecasts: `in`, `extrapolated_lag`,
+  `unsupported_age`, `insufficient_history`, or `unidentified`. Only
+  `in` rows have a calibrated innovation Z.
+* `calibrated` on transitions is `TRUE` only when measurement noise was
+  separable; otherwise the innovation Z still conditions on history but
+  treats all short-lag dependence as rank dynamics.

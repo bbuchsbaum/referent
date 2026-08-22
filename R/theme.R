@@ -53,9 +53,12 @@ referent_cols <- function() {
       edge = "#c48b2a",
       out = "#9b2226",
       new_group = "#6c4d8a",
+      unknown = "#9a9a9a",
+      missing_predictor = "#9a9a9a",
       insufficient_history = "#7a7a7a",
-      unsupported_age = "#7a7a7a",
-      unsupported_lag = "#7a7a7a"
+      unsupported_age = "#d08c60",
+      extrapolated_lag = "#b07aa1",
+      unidentified = "#5c5c5c"
     )
   )
 }
@@ -96,10 +99,25 @@ centile_label <- function(p) {
   ifelse(abs(p - 0.5) < 1e-8, "Median", paste0(format(100 * p, trim = TRUE), "th"))
 }
 
-support_fill_scale <- function() {
-  ggplot2::scale_fill_manual(
-    values = referent_cols()$support,
-    breaks = names(referent_cols()$support),
-    drop = FALSE
+# Manual support scale restricted to the statuses actually present, in the
+# canonical order; unknown statuses get a neutral grey.
+support_scale <- function(present, aesthetics = "fill") {
+  cols <- referent_cols()$support
+  present <- unique(as.character(present[!is.na(present)]))
+  extra <- setdiff(present, names(cols))
+  if (length(extra)) {
+    cols <- c(cols, stats::setNames(rep("#7a7a7a", length(extra)), extra))
+  }
+  keep <- c(intersect(names(cols), present), extra)
+  ggplot2::scale_discrete_manual(
+    aesthetics = aesthetics,
+    values = cols[keep],
+    breaks = keep,
+    name = "Support"
   )
+}
+
+# Drop a legend that would carry a single level.
+single_level_legend <- function(x) {
+  length(unique(x[!is.na(x)])) <= 1L
 }

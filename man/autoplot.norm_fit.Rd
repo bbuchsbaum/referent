@@ -2,11 +2,16 @@
 % Please edit documentation in R/plot.R
 \name{autoplot.norm_fit}
 \alias{autoplot.norm_fit}
+\alias{autoplot.norm_assessment}
+\alias{autoplot.norm_scores}
+\alias{autoplot.norm_forecast}
+\alias{autoplot.norm_transition}
+\alias{autoplot.norm_dynamics}
 \title{Graphics for reference models}
 \usage{
 \method{autoplot}{norm_fit}(
   object,
-  type = c("centiles", "visits", "coverage", "composition", "support", "trajectories",
+  type = c("centiles", "trajectories", "support", "visits", "coverage", "composition",
     "adaptation"),
   outcome = NULL,
   x = NULL,
@@ -16,6 +21,28 @@
   id = NULL,
   time = NULL,
   centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
+  ...
+)
+
+\method{autoplot}{norm_assessment}(object, type = c("calibration", "worm", "conditional"), ...)
+
+\method{autoplot}{norm_scores}(object, type = c("profile", "heatmap"), id = NULL, ...)
+
+\method{autoplot}{norm_forecast}(
+  object,
+  type = c("fan"),
+  centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
+  ...
+)
+
+\method{autoplot}{norm_transition}(object, type = c("velocity", "innovation", "change"), ...)
+
+\method{autoplot}{norm_dynamics}(
+  object,
+  type = c("kernel", "calibration"),
+  data = NULL,
+  id = NULL,
+  time = NULL,
   ...
 )
 }
@@ -29,15 +56,16 @@ or dynamics object.}
 
 \item{x}{Covariate mapped to the x-axis (default \code{age} if present).}
 
-\item{newdata}{Grid or observations to overlay.}
+\item{newdata}{Observations to overlay or to classify.}
 
 \item{by}{Optional grouping factor for faceted charts.}
 
-\item{data}{Visit-level data for composition plots.}
+\item{data}{Visit-level data for composition, trajectory, and
+dynamics-calibration plots.}
 
-\item{id}{Subject identifier for visits and trajectories.}
+\item{id}{Subject identifier column.}
 
-\item{time}{Time variable for coverage and trajectories.}
+\item{time}{Time column.}
 
 \item{centiles}{Probability levels for centile and fan charts.}
 
@@ -51,4 +79,36 @@ and patchwork is installed.
 Every \code{autoplot()} method returns a \code{ggplot} object styled with
 \code{\link[=theme_referent]{theme_referent()}}. Individual observations are overlays, not part of
 the fitted geometry.
+}
+\details{
+For a \link{norm_fit}:
+\itemize{
+\item \code{"centiles"}: the fitted conditional distribution along \code{x}
+(median, dashed outer centiles, and shaded bands), optionally faceted
+by a factor covariate and with \code{newdata} overlaid as points.
+\item \code{"trajectories"}: the centile chart with subject paths from \code{data}
+drawn over it.
+\item \code{"support"}: where \code{newdata} falls relative to the reference support
+(histogram of \code{x} coloured by \code{\link[=norm_support]{norm_support()}} status).
+\item \code{"visits"}: visits per subject in the reference sample (from the \code{id}
+declared at fit time) or in \code{data}.
+\item \code{"coverage"}: the distribution of \code{x} in \code{data} against the
+reference range and the 2nd/98th-percentile edges of the fit.
+\item \code{"composition"}: visits and coverage side by side (a patchwork when
+that package is installed, otherwise a list of two plots).
+\item \code{"adaptation"}: location offsets (with standard errors) estimated by
+\code{\link[=norm_adapt]{norm_adapt()}}.
+}
+
+For a \code{norm_dynamics}, \code{"kernel"} draws the fitted process correlation
+against lag and \code{"calibration"} draws a normal Q-Q plot of held-out
+innovation Z from \code{\link[=norm_transition]{norm_transition()}} on \code{data}; the latter needs
+\code{data}, \code{id}, and \code{time}.
+}
+\examples{
+ref <- norm_simulate(150, seed = 1)
+fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+autoplot(fit, type = "centiles", by = sex, newdata = ref[1:20, ])
+sc <- predict(fit, newdata = ref[1:6, ], uncertainty = "conditional")
+autoplot(sc, type = "heatmap")
 }

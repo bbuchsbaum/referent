@@ -90,7 +90,7 @@ test_that("kernel recovery: r(lag) at the median lag within 0.08 of truth on irr
   expect_lt(abs(pr$r_median - r_true), 0.08)
   comp <- dyn$components
   expect_equal(comp$r_median_lag, pr$r_median)
-  expect_message(print(dyn), "matern32")
+  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "matern32")
 })
 
 test_that("out-of-sample calibration of innovation_z and change_z on irregular 3-visit data", {
@@ -131,7 +131,7 @@ test_that("stable model on fixed-lag two-visit data recovers r with ell unidenti
   expect_lt(abs(pr$r_median - 0.6), 0.05)
   expect_lt(abs(correlation_at_lag(2, pr$psi, pr$process) - 0.6), 0.05)
   expect_true(is.finite(pr$r_median_se))
-  expect_message(print(dyn), "ell not identified")
+  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "ell not identified")
 })
 
 test_that("stable and Matern kernels agree on r(lag) for near-fixed lags", {
@@ -179,7 +179,7 @@ test_that("unidentified dynamics give NA history-conditioned quantities and no f
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
   expect_error(norm_forecast(dyn, history = hist, times = max(hist$age) + 1), "not identified")
   expect_true(all(is.na(fortify_kernel(dyn)$correlation)))
-  expect_message(print(dyn), "not identified")
+  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "not identified")
 })
 
 test_that("norm_transition handles no transitions and duplicate visit times", {

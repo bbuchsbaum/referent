@@ -1,10 +1,30 @@
-test_that("flag reports exceedances rather than abnormalities", {
+test_that("norm_flag reports exceedances and FDR rather than abnormalities", {
   d <- distributional::dist_normal(0, 1)
-  sc <- as_scores(d, c(0, 3, -2.5))
+  y <- c(0, 3, -2.5, 0.5, 1.9)
+  sc <- as_scores(d, y)
   sc$.in_sample <- FALSE
-  fl <- flag(sc, threshold = 2)
-  expect_equal(sum(fl$exceedance), 2)
+  fl <- norm_flag(sc, threshold = 2)
+  expect_s3_class(fl, "norm_flags")
+  expect_equal(fl$exceedance, abs(y) > 2)
+  expect_equal(attr(fl, "observed_exceedances"), 2L)
+  expect_equal(attr(fl, "expected_exceedances"), 2 * stats::pnorm(-2) * 5)
+  expect_equal(fl$fdr, stats::p.adjust(sc$tail_prob, method = "fdr"))
   expect_false(any(grepl("abnormal", names(fl), ignore.case = TRUE)))
+  body <- utils::capture.output(msg <- cli::cli_fmt(print(fl)))
+  expect_match(paste(msg, collapse = "\n"), "2 exceedances")
+  expect_true(any(grepl("exceedance", body)))
+  # in-sample scores warn
+  sc_in <- sc
+  sc_in$.in_sample <- TRUE
+  expect_warning(norm_flag(sc_in), "in-sample")
+})
+
+test_that("flag() is a deprecated alias for norm_flag()", {
+  sc <- as_scores(distributional::dist_normal(0, 1), c(0, 3))
+  sc$.in_sample <- FALSE
+  rlang::reset_warning_verbosity("referent_flag_deprecated")
+  expect_warning(fl <- flag(sc, threshold = 2), "deprecated")
+  expect_equal(fl$exceedance, norm_flag(sc, threshold = 2)$exceedance)
 })
 
 test_that("scores_matrix pivots a long table and keeps ids", {

@@ -475,7 +475,7 @@ classify_temporal_support <- function(dyn, t_from, t_to, history_n) {
 
 #' @export
 print.norm_dynamics <- function(x, ...) {
-  cli::cli_text("{.cls norm_dynamics} {x$process$name} for {length(x$outcomes)} outcome{?s}")
+  cli::cli_text("{.cls norm_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}")
   cli::cli_text(
     "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]; lag range [{signif(x$lag_range[1], 3)}, {signif(x$lag_range[2], 3)}]; Z: {x$z_source %||% 'in_sample'}"
   )

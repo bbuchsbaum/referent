@@ -19,7 +19,8 @@ norm_derivative(
 
 \item{newdata}{Grid of covariate values.}
 
-\item{with_respect_to}{Name of the time covariate.}
+\item{with_respect_to}{The time covariate, as a bare column name or a
+string.}
 
 \item{centiles}{Probability levels.}
 
@@ -40,4 +41,10 @@ curves by central finite differences, with a delta-method standard
 error from the fitted coefficient covariance (\code{Vp}) applied to the
 finite-difference of the linear-predictor matrix. This is a
 population-chart derivative, not an individual longitudinal estimate.
+}
+\examples{
+ref <- norm_simulate(150, seed = 1)
+fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
+norm_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
 }
