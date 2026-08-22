@@ -24,3 +24,4 @@
 ^\.DS_Store$
 ^issues\.jsonl$
 ^\.ruff_cache$
+^Rplots\.pdf$
