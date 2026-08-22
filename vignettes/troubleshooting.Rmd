@@ -17,7 +17,8 @@ knitr::opts_chunk$set(
 )
 ```
 
-This article starts where [Getting started with referent](/articles/getting-started/)
+This article starts where [Getting started with referent](https://bbuchsbaum.github.io/referent/articles/getting-started/)
+(`vignette("getting-started", package = "referent")`)
 ends. You have a
 fitted reference model, but a score is missing, a transported site behaves
 unexpectedly, or a longitudinal extension refuses to make a claim. Each
@@ -162,7 +163,7 @@ Use this override only after fitting a deliberate transport step from an
 appropriate local reference sample. Keep `support` in every exported score
 table, report how many local controls estimated the transport, and validate on
 different local observations. See
-[Brain charts across sites](/articles/brain-charts-across-sites/) for the full
+[Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/) for the full
 comparison among population scoring, adaptation, calibration, and refitting.
 
 # Why does a small local correction look weak or fail to calibrate?
@@ -382,18 +383,18 @@ subjects or short-interval repeats.
 Treat visit design as part of the estimand. Collect repeated observations from
 enough subjects, include varied lags when estimating a time-decaying process,
 and inspect `components`, `identified`, `ell_identified`, and support before
-interpreting change. [Longitudinal change](/articles/longitudinal-change/) explains
+interpreting change. [Longitudinal change](https://bbuchsbaum.github.io/referent/articles/longitudinal-change/) explains
 the stable fixed-lag fallback, innovation Z, change Z, velocity, and
 forecasting.
 
 # Where should you go next?
 
-Return to [Getting started with referent](/articles/getting-started/) for the ordinary
+Return to [Getting started with referent](https://bbuchsbaum.github.io/referent/articles/getting-started/) for the ordinary
 fit-score-assess path. Use
-[Brain charts across sites](/articles/brain-charts-across-sites/) for site transport,
+[Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/) for site transport,
 joint scores, and reporting; use
-[Longitudinal change](/articles/longitudinal-change/) for repeated visits; and use
-[Coming from PCNtoolkit](/articles/pcntoolkit/) when translating an existing
+[Longitudinal change](https://bbuchsbaum.github.io/referent/articles/longitudinal-change/) for repeated visits; and use
+[Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/) when translating an existing
 PCNtoolkit workflow.
 The function reference for `predict.ref_fit()`, `ref_support()`,
 `ref_assess()`, and `ref_dynamics()` gives the exact status and return-value

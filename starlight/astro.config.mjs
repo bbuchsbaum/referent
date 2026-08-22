@@ -9,5 +9,12 @@ import sd from './.starlightdown/config.mjs';
 export default defineConfig({
 	site: sd.site,
 	base: sd.base,
-	integrations: [starlight({ ...sd.starlight })],
+	integrations: [
+		starlight({
+			...sd.starlight,
+			// Tab and header read "referent", not the full DESCRIPTION Title.
+			title: 'referent',
+			components: { Head: './src/components/Head.astro' },
+		}),
+	],
 });

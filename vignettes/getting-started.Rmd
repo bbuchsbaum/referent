@@ -22,6 +22,110 @@ mean curve. A centile is the distribution's CDF at the observed value; `z` is
 `qnorm(centile)`; and `tail_prob` is the smaller tail. None of them is a
 clinical label.
 
+# FAQ: choosing covariates and a reference population
+
+These decisions are made before the first `ref_fit()` call and no function
+in the package makes them for you. The answers below are the defaults a
+careful analyst would reach for; each links to the place where the package
+gives you the evidence to revise them.
+
+**Which covariates?** Age and sex are the usual conditioning set for a brain
+chart: they explain ordinary population variation you do not want to call a
+deviation. Put age in a smooth, `s(age, k = 8)`, and sex as a factor. Anything
+you add becomes part of the question the score answers: conditioning on
+education, for example, turns "is this volume unusual for a 60-year-old
+woman?" into "... for a 60-year-old woman with this much education", which may
+or may not be what you want to know.
+
+**Site as a random effect, not a covariate.** Scanners shift measurements, but
+a new participant may come from a scanner that contributed no reference rows.
+`s(site, bs = "re")` estimates a shrunk level per site and returns the
+population curve for an unseen level (reported as `support == "new_group"`),
+while a fixed `site` factor has no prediction at all for a level it never saw.
+[Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/)
+covers the transport choices that follow.
+
+**Head size: covariate or offset?** A covariate `log(icv)` lets the data decide
+how volume scales with intracranial volume; the score then asks whether the
+volume is unusual *for that head size*. An offset, `offset(log(icv))` under
+`transform = "log"`, fixes the scaling at proportional and scores the volume
+*as a fraction of* head size. The two differ when the scaling is not
+proportional (it usually is not, across regions), and they answer different
+questions: prefer the covariate unless you have a reason to assert
+proportionality.
+
+```{r icv}
+proportions <- ref_simulate(400, seed = 11)
+proportions$icv <- exp(rnorm(nrow(proportions), 14, 0.1))
+proportions$volume <- exp(0.8 * log(proportions$icv) + 0.02 * proportions$age +
+                            rnorm(nrow(proportions), 0, 0.05))
+as_covariate <- ref_spec(ref_gaussian(), ~ s(age, k = 6) + sex + log(icv),
+                         transform = "log")
+as_offset <- ref_spec(ref_gaussian(), ~ s(age, k = 6) + sex + offset(log(icv)),
+                      transform = "log")
+rbind(
+  covariate = tidy(ref_fit(as_covariate, proportions, "volume"))[, c("status", "edf")],
+  offset = tidy(ref_fit(as_offset, proportions, "volume"))[, c("status", "edf")]
+)
+```
+
+Both fit; the offset model spends one parameter fewer because it never
+estimates the slope on `log(icv)`, and it is misspecified here because the
+true exponent is 0.8, not 1.
+
+**Who belongs in the reference?** Everyone whose distribution you want to call
+"expected". A reference of healthy controls gives scores relative to health; a
+population-based reference includes the prevalence of disease in that
+population. The package never decides this because no covariate column can
+encode the decision: write the inclusion rule down, apply it before
+`ref_fit()`, and record it in `ref_freeze(criteria = )` so it travels with
+the reference.
+
+**How many local controls does `ref_adapt()` need?** Adaptation estimates a
+location offset and, optionally, a log-scale offset, each shrunk toward zero
+by a ridge worth `location_prior_n` and `scale_prior_n` pseudo-observations.
+The location offset is a shrunk mean residual: with 30 controls its standard
+error is about `1 / sqrt(30)`, or 0.18 in `z` units, and it is usable with
+far fewer. The scale offset needs several times more, because the variance
+of a variance estimate is larger. The
+[site-transport comparison](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/)
+sets out that arithmetic for 30 controls, and its conclusion is the general
+one: adapt location first, adapt scale only when local n justifies it, and
+calibrate by site only with still more.
+
+**What does `|z| > 2` mean?** Under a calibrated model, 4.55% of rows from
+the reference population exceed it by chance, so the count you observe is
+only informative against that expectation. `ref_flag()` reports it as the
+`expected_exceedances` attribute alongside the observed count and an
+FDR-adjusted tail probability per row. A flagged row is an exceedance with a
+known chance rate, not a diagnosis.
+
+**Gaussian or SHASH?** Start Gaussian. Switch to `ref_shash()` when held-out
+scores are skewed or heavy-tailed (`skew_z` and `excess_kurtosis_z` in
+`ref_assess()$marginal`), and let `ref_select()` arbitrate: its calibration
+gate removes candidates whose out-of-fold coverage and tail rates are wrong,
+and its one-standard-error rule keeps the simplest model that predicts as
+well as the best. A SHASH fit can also let skew and tail weight vary with a
+covariate. Use that flexibility sparingly; it is estimated from the tails of
+the data, where there is least information.
+
+```{r shash-shape}
+skewed <- ref_simulate(400, kind = "shash", skew = 0.6, tail = 1, seed = 12)
+shape_spec <- ref_spec(
+  family = ref_shash(),
+  location = ~ s(age, k = 6) + sex,
+  scale = ~ s(age, k = 5),
+  skew = ~ s(age, k = 4),
+  tail = ~ 1
+)
+shape_fit <- ref_fit(shape_spec, skewed, outcomes = "y")
+shape_fit
+```
+
+Read further in
+[Validate and choose a reference model](https://bbuchsbaum.github.io/referent/articles/validate-reference/)
+(`vignette("validate-reference", package = "referent")`).
+
 # What data do you need?
 
 The reference rows define the population. Target rows are the observations you
@@ -97,8 +201,10 @@ predict(fit, edge_cases)[, c(".id", "z", "support", "status")]
 
 Do not remove the mask just to obtain a number. First decide whether the row is
 a data error, needs a better reference cohort, or belongs to a documented
-transport analysis. The [troubleshooting article](/articles/troubleshooting/)
-shows those recovery paths.
+transport analysis. The
+[troubleshooting article](https://bbuchsbaum.github.io/referent/articles/troubleshooting/)
+(`vignette("troubleshooting", package = "referent")`) shows those recovery
+paths.
 
 # How do you use the predictive distribution directly?
 
@@ -111,6 +217,17 @@ dists <- predict(fit, target[1:3, ], type = "distribution",
                  uncertainty = "conditional")$y
 hilo(dists, 90)
 as_scores(dists, target$y[1:3])[, c("centile", "z", "tail_prob")]
+```
+
+`generate()` draws synthetic observations from the same distributions, which
+is how you simulate a reference-like cohort with given covariates, for a
+power calculation or to check a downstream pipeline on data with no real
+participants in it.
+
+```{r generate}
+set.seed(1)
+synthetic <- generate(dists, times = 4)
+synthetic
 ```
 
 # Does the model deserve interpretation?
@@ -154,5 +271,5 @@ covariates, or a miscalibrated model. Report the reference definition,
 held-out calibration, support status, and expected exceedance count before
 interpreting any flagged row.
 
-Continue with [Validate and choose a reference model](/articles/validate-reference/).
-For site transport, go to [Brain charts across sites](/articles/brain-charts-across-sites/).
+Continue with [Validate and choose a reference model](https://bbuchsbaum.github.io/referent/articles/validate-reference/).
+For site transport, go to [Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/).
