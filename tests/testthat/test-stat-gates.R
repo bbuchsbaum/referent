@@ -55,5 +55,5 @@ test_that("dynamics refuse unusual-change labels without repeats", {
   tr <- norm_transition(dyn, data = dat2, id = participant_id, time = age)
   expect_true(all(is.na(tr$innovation_z)))
   expect_true(all(is.na(tr$change_z)))
-  expect_true(all(tr$support == "insufficient_history"))
+  expect_true(all(tr$support == "unidentified"))
 })

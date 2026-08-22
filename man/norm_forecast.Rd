@@ -9,17 +9,30 @@ norm_forecast(dynamic, history, times, outcome = NULL)
 \arguments{
 \item{dynamic}{A \link{norm_dynamics} object.}
 
-\item{history}{Subject history data frame.}
+\item{history}{Subject history data frame. Must contain the time column
+used in \code{\link[=norm_dynamics]{norm_dynamics()}} and the outcome.}
 
 \item{times}{Future times.}
 
 \item{outcome}{Outcome name.}
 }
 \value{
-A \code{norm_forecast}.
+A \code{norm_forecast} with \verb{$dist} (one \link{norm_dist} per time),
+\verb{$summary} (median and 90\% interval), \verb{$history_n}, and
+\verb{$lag_support} (\code{"in"} or \code{"extrapolated_lag"} per forecast time,
+judged from the last history visit against the reference lag range).
 }
 \description{
 Returns predictive \link{norm_dist} objects at each requested time. The
 dynamic process only changes the predictive distribution; scores and
 graphics then follow from the existing contract.
+}
+\details{
+The forecast refuses to run when the process for \code{outcome} is not
+identified (see \code{\link[=norm_dynamics]{norm_dynamics()}}): a history-conditioned distribution
+from an unestimated kernel would be silently wrong. History rows with a
+non-finite time or outcome are dropped and the number actually used is
+returned as \code{history_n}. Epistemic uncertainty of the reference location
+is carried in the marginal distributions but the uncertainty of the
+kernel parameters is not propagated into the forecast.
 }
