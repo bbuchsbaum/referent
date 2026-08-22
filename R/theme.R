@@ -101,7 +101,7 @@ centile_label <- function(p) {
 
 # Manual support scale restricted to the statuses actually present, in the
 # canonical order; unknown statuses get a neutral grey.
-support_scale <- function(present, aesthetics = "fill") {
+support_scale <- function(present, aesthetics = "fill", ...) {
   cols <- referent_cols()$support
   present <- unique(as.character(present[!is.na(present)]))
   extra <- setdiff(present, names(cols))
@@ -113,11 +113,12 @@ support_scale <- function(present, aesthetics = "fill") {
     aesthetics = aesthetics,
     values = cols[keep],
     breaks = keep,
-    name = "Support"
+    name = "Support",
+    ...
   )
 }
 
-# Drop a legend that would carry a single level.
-single_level_legend <- function(x) {
-  length(unique(x[!is.na(x)])) <= 1L
+# More than one non-missing level?
+has_groups <- function(x) {
+  length(unique(x[!is.na(x)])) > 1L
 }

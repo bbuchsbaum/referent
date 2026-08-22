@@ -20,7 +20,7 @@ test_that("a frozen reference predicts identically after a saveRDS/readRDS round
   expect_equal(norm_support(ref2, new)$support, a$support[a$.outcome == "y"])
   expect_equal(ref2$criteria, "healthy volunteers")
   expect_equal(ref2$units, "mm")
-  expect_equal(ref2$statuses, c(y = "ok", marker_01 = "ok"))
+  expect_equal(fit_statuses(ref2), c(y = "ok", marker_01 = "ok"))
   expect_equal(tidy(ref2)$outcome, c("y", "marker_01"))
 })
 

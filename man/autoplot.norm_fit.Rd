@@ -11,8 +11,7 @@
 \usage{
 \method{autoplot}{norm_fit}(
   object,
-  type = c("centiles", "trajectories", "support", "visits", "coverage", "composition",
-    "adaptation"),
+  type = c("centiles", "trajectories", "support", "adaptation"),
   outcome = NULL,
   x = NULL,
   newdata = NULL,
@@ -48,6 +47,7 @@
   data = NULL,
   id = NULL,
   time = NULL,
+  level = 0.95,
   ...
 )
 }
@@ -65,8 +65,8 @@ or dynamics object.}
 
 \item{by}{Optional grouping factor for faceted charts.}
 
-\item{data}{Visit-level data for composition, trajectory, and
-dynamics-calibration plots.}
+\item{data}{Visit-level data for trajectory and dynamics-calibration
+plots.}
 
 \item{id}{Subject identifier column.}
 
@@ -76,11 +76,10 @@ dynamics-calibration plots.}
 
 \item{...}{Unused.}
 
-\item{level}{Coverage of the simulation envelope on the QQ plot.}
+\item{level}{Coverage of the envelope on the Q-Q and worm plots.}
 }
 \value{
-A ggplot, or a patchwork object when \code{type = "composition"}
-and patchwork is installed.
+A ggplot.
 }
 \description{
 Every \code{autoplot()} method returns a \code{ggplot} object styled with
@@ -97,18 +96,26 @@ by a factor covariate and with \code{newdata} overlaid as points.
 drawn over it.
 \item \code{"support"}: where \code{newdata} falls relative to the reference support
 (histogram of \code{x} coloured by \code{\link[=norm_support]{norm_support()}} status).
-\item \code{"visits"}: visits per subject in the reference sample (from the \code{id}
-declared at fit time) or in \code{data}.
-\item \code{"coverage"}: the distribution of \code{x} in \code{data} against the
-reference range and the 2nd/98th-percentile edges of the fit.
-\item \code{"composition"}: visits and coverage side by side (a patchwork when
-that package is installed, otherwise a list of two plots).
 \item \code{"adaptation"}: location offsets (with standard errors) estimated by
 \code{\link[=norm_adapt]{norm_adapt()}}.
 }
 
+For a \code{norm_assessment}, \code{"calibration"} plots observed against nominal
+coverage, \code{"conditional"} the largest fitted drift of \code{z} against each
+covariate, and \code{"qq"} / \code{"worm"} the ordered Z scores against their
+expected normal order statistics, raw or detrended (observed minus
+expected), inside the envelope a calibrated model implies. Under a
+correctly specified model the held-out centiles are iid uniform, so
+the i-th ordered centile is Beta(i, n - i + 1): the pointwise band is
+its normal transform in closed form, and the simultaneous band uses
+equal local levels (Aldor-Noiman et al. 2013, Am. Stat. 67:249) with
+the common local level calibrated by Monte Carlo so the whole ordered
+sample stays inside with probability \code{level}. The corner tally names
+both bands, since about \code{1 - level} of the points are expected outside
+the pointwise band even when the model is right.
+
 For a \code{norm_dynamics}, \code{"kernel"} draws the fitted process correlation
-against lag and \code{"calibration"} draws a normal Q-Q plot of held-out
+against lag and \code{"calibration"} draws the same Q-Q chart of held-out
 innovation Z from \code{\link[=norm_transition]{norm_transition()}} on \code{data}; the latter needs
 \code{data}, \code{id}, and \code{time}.
 }

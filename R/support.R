@@ -7,7 +7,7 @@ support_reference <- function(data, covariate_names) {
     z <- z[is.finite(z)]
     qs <- stats::quantile(z, probs = c(0, 0.02, 0.98, 1), na.rm = TRUE)
     list(min = qs[[1]], edge_lo = qs[[2]], edge_hi = qs[[3]], max = qs[[4]],
-         mean = mean(z), sd = stats::sd(z) %||% 1)
+         mean = mean(z), sd = stats::sd(z))
   })
   names(ranges) <- numeric_names
   levels <- lapply(factor_names, function(nm) unique(as.character(covs[[nm]])))
@@ -20,9 +20,6 @@ support_reference <- function(data, covariate_names) {
   list(
     numeric = ranges,
     factor_levels = levels,
-    numeric_names = numeric_names,
-    factor_names = factor_names,
-    center = if (!is.null(X)) colMeans(X, na.rm = TRUE) else NULL,
     cov = if (!is.null(X) && nrow(X) > ncol(X) + 2) {
       stats::cov(X, use = "pairwise.complete.obs")
     } else {
@@ -59,7 +56,9 @@ classify_support <- function(ref, newdata) {
   n <- nrow(newdata)
   status <- rep("in", n)
   d2 <- rep(NA_real_, n)
-  for (nm in ref$numeric_names) {
+  numeric_names <- names(ref$numeric)
+  factor_names <- names(ref$factor_levels)
+  for (nm in numeric_names) {
     if (!nm %in% names(newdata)) {
       next
     }
@@ -68,7 +67,7 @@ classify_support <- function(ref, newdata) {
     status[is.finite(z) & (z < r$edge_lo | z > r$edge_hi) & status == "in"] <- "edge"
     status[is.finite(z) & (z < r$min | z > r$max)] <- "out"
   }
-  for (nm in ref$factor_names) {
+  for (nm in factor_names) {
     if (!nm %in% names(newdata)) {
       next
     }
@@ -76,13 +75,13 @@ classify_support <- function(ref, newdata) {
     unseen <- !is.na(lev) & !lev %in% ref$factor_levels[[nm]]
     status[unseen] <- "new_group"
   }
-  used <- intersect(c(ref$numeric_names, ref$factor_names), names(newdata))
+  used <- intersect(c(numeric_names, factor_names), names(newdata))
   if (length(used)) {
     status[!stats::complete.cases(newdata[, used, drop = FALSE])] <- "unknown"
   }
-  if (!is.null(ref$cov) && length(ref$numeric_names) &&
-      all(ref$numeric_names %in% names(newdata))) {
-    X <- scale_with_ref(newdata[, ref$numeric_names, drop = FALSE], ref)
+  if (!is.null(ref$cov) && length(numeric_names) &&
+      all(numeric_names %in% names(newdata))) {
+    X <- scale_with_ref(newdata[, numeric_names, drop = FALSE], ref)
     d2 <- mahalanobis_safe(X, ref$cov)
     q <- stats::qchisq(0.99, df = max(ncol(X), 1))
     status[is.finite(d2) & d2 > q & status == "in"] <- "edge"
@@ -93,8 +92,8 @@ classify_support <- function(ref, newdata) {
 
 scale_with_ref <- function(data, ref) {
   X <- as.matrix(data)
-  for (j in seq_along(ref$numeric_names)) {
-    nm <- ref$numeric_names[[j]]
+  for (j in seq_along(ref$numeric)) {
+    nm <- names(ref$numeric)[[j]]
     s <- ref$numeric[[nm]]$sd
     if (!is.finite(s) || s == 0) {
       s <- 1

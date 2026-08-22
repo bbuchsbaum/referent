@@ -45,3 +45,18 @@ test_that("joint support uses the Mahalanobis radius over several numeric covari
   expect_true(st$support[[2]] %in% c("edge", "out"))
   expect_equal(st$support[[1]], "in")
 })
+
+test_that("new subject ids are not new_group support", {
+  dat <- norm_simulate(50, seed = 75)
+  dat$participant_id <- paste0("S", seq_len(nrow(dat)))
+  fit <- norm_fit(
+    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+    data = dat,
+    outcomes = "y",
+    id = participant_id
+  )
+  tgt <- dat[1:8, ]
+  tgt$participant_id <- paste0("T", seq_len(nrow(tgt)))
+  sc <- predict(fit, newdata = tgt, uncertainty = "conditional")
+  expect_false(any(sc$support == "new_group"))
+})

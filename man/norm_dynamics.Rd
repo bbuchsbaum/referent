@@ -9,7 +9,7 @@ norm_dynamics(
   data,
   id,
   time,
-  process = norm_matern32(),
+  process = norm_process(),
   crossfit = 5
 )
 }
@@ -22,8 +22,7 @@ norm_dynamics(
 
 \item{time}{Time variable (typically age).}
 
-\item{process}{A process constructor such as \code{\link[=norm_matern32]{norm_matern32()}} or
-\code{\link[=norm_process]{norm_process()}}.}
+\item{process}{A kernel from \code{\link[=norm_process]{norm_process()}}.}
 
 \item{crossfit}{Number of subject-level folds used to obtain
 out-of-fold Z scores via \code{\link[=norm_crossfit]{norm_crossfit()}} (whole subjects stay in one

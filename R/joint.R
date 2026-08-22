@@ -17,7 +17,6 @@
 #' @param scores A `norm_scores` or `norm_transition` table of reference
 #'   scores (out-of-fold for honest calibration), or the wide output of
 #'   [augment()] (its `.z_<outcome>` columns).
-#' @param method Must be `"gaussian_copula"`.
 #' @param covariance `"shrinkage"` or `"identity"`.
 #' @param value Score column (`"z"` or `"innovation_z"`).
 #' @return A `norm_joint` model. `predict(joint, scores)` returns one row
@@ -25,10 +24,8 @@
 #'   `joint$reference` holds the reference rows scored leave-one-out.
 #' @export
 norm_joint <- function(scores,
-                       method = c("gaussian_copula"),
                        covariance = c("shrinkage", "identity"),
                        value = NULL) {
-  method <- match.arg(method)
   covariance <- match.arg(covariance)
   value <- value %||% if ("innovation_z" %in% names(scores)) "innovation_z" else "z"
   wide <- scores_matrix(scores, value = value)
@@ -41,7 +38,6 @@ norm_joint <- function(scores,
     list(
       correlation = R,
       outcomes = colnames(Z),
-      method = method,
       covariance = covariance,
       value = value,
       reference_pit = sort(p_ref),
@@ -114,14 +110,9 @@ joint_correlation <- function(Z, covariance) {
   r <- stats::cor(Z, use = "pairwise.complete.obs")
   r[!is.finite(r)] <- 0
   diag(r) <- 1
-  w2 <- matrix(0, p, p)
-  w_mean <- matrix(0, p, p)
-  for (i in seq_len(n)) {
-    w <- tcrossprod(X[i, ])
-    w_mean <- w_mean + w
-    w2 <- w2 + w^2
-  }
-  w_mean <- w_mean / n
+  # w_ij = x_i x_j per row; its mean and mean square via crossprod
+  w_mean <- crossprod(X) / n
+  w2 <- crossprod(X^2)
   var_r <- (n / (n - 1)^3) * (w2 - n * w_mean^2)
   off <- row(r) != col(r)
   lambda <- sum(var_r[off]) / sum(r[off]^2)
@@ -135,37 +126,11 @@ joint_correlation <- function(Z, covariance) {
 #' @export
 print.norm_joint <- function(x, ...) {
   cli::cli_text(
-    "{.cls norm_joint} {x$method}, {length(x$outcomes)} outcome{?s}, n = {x$n_reference} reference subjects"
+    "{.cls norm_joint} gaussian copula, {length(x$outcomes)} outcome{?s}, n = {x$n_reference} reference subjects"
   )
   lam <- attr(x$correlation, "lambda")
   if (!is.null(lam)) {
     cli::cli_text("shrinkage lambda = {signif(lam, 3)}")
   }
   invisible(x)
-}
-
-# Pivot a long score table to a rows x outcomes matrix of `value`.
-scores_matrix <- function(scores, value = "z") {
-  wide <- grep(paste0("^\\.", value, "_"), names(scores), value = TRUE)
-  if (!".outcome" %in% names(scores) && length(wide)) {
-    mat <- as.matrix(scores[, wide, drop = FALSE])
-    colnames(mat) <- sub(paste0("^\\.", value, "_"), "", wide)
-    rows <- seq_len(nrow(mat))
-    return(list(matrix = mat, .row = rows, .id = scores[[".id"]] %||% rows))
-  }
-  if (!value %in% names(scores)) {
-    cli::cli_abort("Unknown score column {.field {value}}.")
-  }
-  row_col <- if (".row" %in% names(scores)) ".row" else ".id"
-  rows <- unique(scores[[row_col]])
-  outs <- unique(scores$.outcome)
-  mat <- matrix(NA_real_, length(rows), length(outs), dimnames = list(NULL, outs))
-  mat[cbind(match(scores[[row_col]], rows), match(scores$.outcome, outs))] <-
-    as.numeric(scores[[value]])
-  ids <- if (".id" %in% names(scores)) {
-    scores$.id[match(rows, scores[[row_col]])]
-  } else {
-    rows
-  }
-  list(matrix = mat, .row = rows, .id = ids)
 }

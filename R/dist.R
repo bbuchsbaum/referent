@@ -6,9 +6,9 @@
 #' `variance()`, `hilo()`, tibble columns, and `ggdist` layers all work.
 #' Gaussian fits use [distributional::dist_normal()]; SHASH fits use
 #' `dist_shash()`; `uncertainty = "total"` predictions from location-scale
-#' and SHASH fits are equal-weight mixtures over coefficient draws
-#' (`dist_shash_mc()`); history-conditioned forecasts are
-#' `dist_conditioned()`.
+#' and SHASH fits are equal-weight mixtures over coefficient draws (an
+#' internal `dist_shash_draws` class, one SHASH parameter set per draw and
+#' observation); history-conditioned forecasts are `dist_conditioned()`.
 #'
 #' @details
 #' `dist_shash()` follows the `mgcv::shash()` parameterisation. With
@@ -16,25 +16,16 @@
 #' \eqn{F(y) = \Phi(\sinh(\delta\,\mathrm{asinh}(z)-\epsilon))}; `eps = 0`,
 #' `delta = 1` is the Gaussian \eqn{N(\mu, \sigma^2)}.
 #'
-#' `dist_shash_mc()` holds, for every observation, one SHASH parameter set
-#' per coefficient draw (a matrix column per draw). Its CDF and density are
-#' averages over the draws computed in log space, its quantile is found by
-#' safeguarded Newton iteration on the mixture CDF, and `generate()` samples a draw and then
-#' the component. A Gaussian draw mixture is the special case
-#' `eps = 0`, `delta = 1`.
-#'
 #' `dist_conditioned()` maps a marginal predictive distribution through a
 #' conditional normal score: \eqn{F_*(y) = \Phi((z(y)-m)/s)} with
 #' \eqn{z(y) = \Phi^{-1}(F(y))}, so `m = 0`, `s = 1` recovers the marginal.
 #'
-#' Tail probabilities of all three classes are evaluated in log space, so
-#' scores for observations 40 standard deviations out remain finite and
-#' distinct (see [as_scores()]).
+#' Tail probabilities of every class are evaluated in log space, so scores
+#' for observations 40 standard deviations out remain finite and distinct
+#' (see [as_scores()]).
 #'
 #' @param mu,sigma,eps,delta Location, scale (> 0), skewness, and tail
-#'   weight (> 0). For `dist_shash()` numeric vectors recycled to a common
-#'   length; for `dist_shash_mc()` matrices with one row per observation
-#'   and one column per draw (a vector is treated as draw-invariant).
+#'   weight (> 0), recycled to a common length.
 #' @param marginal A `distribution` vector of marginal predictive
 #'   distributions.
 #' @param m,s Conditional mean and standard deviation (> 0) of the latent
@@ -65,9 +56,12 @@ dist_shash <- function(mu, sigma, eps = 0, delta = 1) {
   )
 }
 
-#' @rdname dist_shash
-#' @export
-dist_shash_mc <- function(mu, sigma, eps = 0, delta = 1) {
+# Equal-weight mixture over coefficient draws: every parameter is a matrix
+# with one row per observation and one column per draw (a vector is
+# draw-invariant). Its CDF and density are averages over the draws in log
+# space, the quantile is found by safeguarded Newton iteration on the
+# mixture CDF, and generate() samples a draw and then the component.
+dist_shash_draws <- function(mu, sigma, eps = 0, delta = 1) {
   check_shash_params(sigma, delta)
   n <- max(NROW(mu), NROW(sigma), NROW(eps), NROW(delta))
   k <- max(NCOL(mu), NCOL(sigma), NCOL(eps), NCOL(delta))
@@ -83,7 +77,7 @@ dist_shash_mc <- function(mu, sigma, eps = 0, delta = 1) {
   }
   distributional::new_dist(
     mu = rows(mu), sigma = rows(sigma), eps = rows(eps), delta = rows(delta),
-    class = "dist_shash_mc"
+    class = "dist_shash_draws"
   )
 }
 
@@ -189,13 +183,13 @@ log_tail.dist_shash <- function(x, q, lower.tail = TRUE) {
 }
 
 #' @export
-log_tail.dist_shash_mc <- function(x, q, lower.tail = TRUE) {
-  mc_log_cdf(mc_fields(x, q), lower.tail)
+log_tail.dist_shash_draws <- function(x, q, lower.tail = TRUE) {
+  draws_log_cdf(draws_fields(x, q), lower.tail)
 }
 
 #' @export
 log_tail.dist_conditioned <- function(x, q, lower.tail = TRUE) {
-  z <- scores_from_log_tails(log_tail(x[["dist"]], q, TRUE), log_tail(x[["dist"]], q, FALSE))$z
+  z <- elem_z(x[["dist"]], q)
   stats::pnorm((z - x[["m"]]) / x[["s"]], lower.tail = lower.tail, log.p = TRUE)
 }
 
@@ -219,16 +213,33 @@ log_dens.dist_shash <- function(x, at) {
 }
 
 #' @export
-log_dens.dist_shash_mc <- function(x, at) {
-  mc_log_density(mc_fields(x, at))
+log_dens.dist_shash_draws <- function(x, at) {
+  draws_log_density(draws_fields(x, at))
 }
 
 #' @export
 log_dens.dist_conditioned <- function(x, at) {
-  z <- scores_from_log_tails(log_tail(x[["dist"]], at, TRUE), log_tail(x[["dist"]], at, FALSE))$z
+  z <- elem_z(x[["dist"]], at)
   log_dens(x[["dist"]], at) +
     stats::dnorm((z - x[["m"]]) / x[["s"]], log = TRUE) - log(x[["s"]]) -
     stats::dnorm(z, log = TRUE)
+}
+
+# Normal score of `q` under an element (or unpacked vector) `x`, taken from
+# whichever tail is smaller so that z = 8, 10, 40 stay distinct.
+elem_z <- function(x, q) {
+  scores_from_log_tails(log_tail(x, q, TRUE), log_tail(x, q, FALSE))$z
+}
+
+# cdf() and density() of the three classes are the exponentiated log
+# tails and log densities; the same bodies serve every class.
+cdf_from_log_tail <- function(x, q, ...) {
+  exp(log_tail(x, q))
+}
+
+density_from_log_dens <- function(x, at, ..., log = FALSE) {
+  out <- log_dens(x, at)
+  if (log) out else exp(out)
 }
 
 # --- dist_shash element methods (vectorised in every argument) ------------
@@ -242,16 +253,13 @@ format.dist_shash <- function(x, digits = 2, ...) {
   )
 }
 
+#' @method cdf dist_shash
 #' @export
-cdf.dist_shash <- function(x, q, ...) {
-  exp(log_tail(x, q))
-}
+cdf.dist_shash <- cdf_from_log_tail
 
+#' @method density dist_shash
 #' @export
-density.dist_shash <- function(x, at, ..., log = FALSE) {
-  out <- log_dens(x, at)
-  if (log) out else exp(out)
-}
+density.dist_shash <- density_from_log_dens
 
 #' @export
 quantile.dist_shash <- function(x, p, ...) {
@@ -273,13 +281,13 @@ variance.dist_shash <- function(x, ...) {
   shash_variance(x[["mu"]], x[["sigma"]], x[["eps"]], x[["delta"]])
 }
 
-# --- dist_shash_mc: equal-weight mixture over coefficient draws -----------
+# --- dist_shash_draws: equal-weight mixture over coefficient draws --------
 # On an element every field is a draw vector of length K; on an unpacked
-# vector every field is an n x K matrix. `mc_fields()` returns the fields
-# as matrices with one row per evaluation point so the kernels apply to
-# both cases: rows x draws, with `q` recycled down the rows.
+# vector every field is an n x K matrix. `draws_fields()` returns the
+# fields as matrices with one row per evaluation point so the kernels
+# apply to both cases: rows x draws, with `q` recycled down the rows.
 
-mc_fields <- function(x, q) {
+draws_fields <- function(x, q) {
   f <- unclass(x)[c("mu", "sigma", "eps", "delta")]
   if (is.matrix(f$mu)) {
     q <- rep_len(q, nrow(f$mu))
@@ -290,15 +298,11 @@ mc_fields <- function(x, q) {
   c(list(q = q), f)
 }
 
-mc_draws <- function(x) {
-  if (is.matrix(x[["mu"]])) ncol(x[["mu"]]) else length(x[["mu"]])
-}
-
 #' @export
-format.dist_shash_mc <- function(x, digits = 2, ...) {
+format.dist_shash_draws <- function(x, digits = 2, ...) {
   gaussian <- isTRUE(all(x[["eps"]] == 0) && all(x[["delta"]] == 1))
   sprintf(
-    "%s[%d](%s, %s)", if (gaussian) "N" else "SHASH", mc_draws(x),
+    "%s[%d](%s, %s)", if (gaussian) "N" else "SHASH", length(x[["mu"]]),
     format(mean(x[["mu"]]), digits = digits, ...),
     format(mean(x[["sigma"]]), digits = digits, ...)
   )
@@ -313,31 +317,28 @@ log_mean_exp <- function(m) {
   out
 }
 
-mc_log_cdf <- function(a, lower.tail = TRUE) {
+draws_log_cdf <- function(a, lower.tail = TRUE) {
   log_mean_exp(shash_log_cdf(a$q, a$mu, a$sigma, a$eps, a$delta, lower.tail))
 }
 
-mc_log_density <- function(a) {
+draws_log_density <- function(a) {
   log_mean_exp(shash_log_density(a$q, a$mu, a$sigma, a$eps, a$delta))
 }
 
+#' @method cdf dist_shash_draws
 #' @export
-cdf.dist_shash_mc <- function(x, q, ...) {
-  exp(log_tail(x, q))
-}
+cdf.dist_shash_draws <- cdf_from_log_tail
 
+#' @method density dist_shash_draws
 #' @export
-density.dist_shash_mc <- function(x, at, ..., log = FALSE) {
-  out <- log_dens(x, at)
-  if (log) out else exp(out)
-}
+density.dist_shash_draws <- density_from_log_dens
 
 # Quantile by safeguarded Newton iteration on the mixture CDF, started
 # from the mean component quantile and bracketed by the extreme component
 # quantiles; only unconverged rows are re-evaluated.
 #' @export
-quantile.dist_shash_mc <- function(x, p, ..., iter = 30L) {
-  a <- mc_fields(x, p)
+quantile.dist_shash_draws <- function(x, p, ..., iter = 30L) {
+  a <- draws_fields(x, p)
   p <- a$q
   q_comp <- shash_quantile(p, a$mu, a$sigma, a$eps, a$delta)
   i <- seq_len(nrow(q_comp))
@@ -353,11 +354,11 @@ quantile.dist_shash_mc <- function(x, p, ..., iter = 30L) {
     }
     sub <- lapply(a[c("mu", "sigma", "eps", "delta")], function(f) f[idx, , drop = FALSE])
     sub$q <- cur[idx]
-    err <- exp(mc_log_cdf(sub)) - p[idx]
+    err <- exp(draws_log_cdf(sub)) - p[idx]
     below <- err < 0
     lo[idx] <- ifelse(below, cur[idx], lo[idx])
     hi[idx] <- ifelse(below, hi[idx], cur[idx])
-    nxt <- cur[idx] - err / exp(mc_log_density(sub))
+    nxt <- cur[idx] - err / exp(draws_log_density(sub))
     bad <- !is.finite(nxt) | nxt < lo[idx] | nxt > hi[idx]
     nxt[bad] <- ((lo[idx] + hi[idx]) / 2)[bad]
     tol <- 1e-9 * pmax(1, abs(nxt))
@@ -370,8 +371,8 @@ quantile.dist_shash_mc <- function(x, p, ..., iter = 30L) {
 }
 
 #' @export
-generate.dist_shash_mc <- function(x, times, ...) {
-  a <- mc_fields(x, numeric(1))
+generate.dist_shash_draws <- function(x, times, ...) {
+  a <- draws_fields(x, numeric(1))
   n <- if (is.matrix(x[["mu"]])) nrow(x[["mu"]]) else 1L
   k <- ncol(a$mu)
   j <- sample.int(k, n * times, replace = TRUE)
@@ -382,14 +383,14 @@ generate.dist_shash_mc <- function(x, times, ...) {
 }
 
 #' @export
-mean.dist_shash_mc <- function(x, ...) {
-  a <- mc_fields(x, numeric(1))
+mean.dist_shash_draws <- function(x, ...) {
+  a <- draws_fields(x, numeric(1))
   rowMeans(shash_mean(a$mu, a$sigma, a$eps, a$delta))
 }
 
 #' @export
-variance.dist_shash_mc <- function(x, ...) {
-  a <- mc_fields(x, numeric(1))
+variance.dist_shash_draws <- function(x, ...) {
+  a <- draws_fields(x, numeric(1))
   m <- shash_mean(a$mu, a$sigma, a$eps, a$delta)
   v <- shash_variance(a$mu, a$sigma, a$eps, a$delta)
   rowMeans(v + m^2) - rowMeans(m)^2
@@ -405,20 +406,17 @@ format.dist_conditioned <- function(x, digits = 2, ...) {
   )
 }
 
+#' @method cdf dist_conditioned
 #' @export
-cdf.dist_conditioned <- function(x, q, ...) {
-  exp(log_tail(x, q))
-}
+cdf.dist_conditioned <- cdf_from_log_tail
+
+#' @method density dist_conditioned
+#' @export
+density.dist_conditioned <- density_from_log_dens
 
 #' @export
 quantile.dist_conditioned <- function(x, p, ...) {
   quantile(x[["dist"]], stats::pnorm(x[["m"]] + x[["s"]] * stats::qnorm(p)))
-}
-
-#' @export
-density.dist_conditioned <- function(x, at, ..., log = FALSE) {
-  out <- log_dens(x, at)
-  if (log) out else exp(out)
 }
 
 #' @export
@@ -452,7 +450,7 @@ dist_unpack <- function(d) {
         return(NULL)
       }
       inner
-    } else if (length(v[[1L]]) == 1L && !inherits(el[[1L]], "dist_shash_mc")) {
+    } else if (length(v[[1L]]) == 1L && !inherits(el[[1L]], "dist_shash_draws")) {
       unlist(v, use.names = FALSE)
     } else {
       do.call(rbind, v)
@@ -480,67 +478,16 @@ dist_eval <- function(d, fun, arg, ..., unpacked = NULL) {
   mapply(function(e, a) if (is.null(e)) NA_real_ else fun(e, a, ...), el, arg)
 }
 
-dist_log_tail <- function(d, q, lower.tail = TRUE) {
-  dist_eval(d, log_tail, q, lower.tail = lower.tail)
-}
-
-dist_cdf <- function(d, q) {
-  exp(dist_log_tail(d, q))
-}
-
-dist_log_density <- function(d, y) {
-  dist_eval(d, log_dens, y)
-}
-
 dist_quantile <- function(d, p) {
   dist_eval(d, quantile, p)
 }
 
-# n x times matrix of simulated values.
-dist_generate <- function(d, times) {
-  u <- dist_unpack(d)
-  if (is.null(u) || length(d) <= 1L) {
-    return(do.call(rbind, lapply(generate(d, times), function(g) g %||% rep(NA_real_, times))))
-  }
-  if (inherits(u, "dist_shash_mc")) {
-    return(generate(u, times))
-  }
-  matrix(quantile(u, stats::runif(length(d) * times)), length(d), times)
+# Normal score of y under d, taken from the smaller tail.
+dist_z <- function(d, y) {
+  dist_eval(d, elem_z, y)
 }
 
-# --- Scores ---------------------------------------------------------------
-
-#' Scores derived from a predictive CDF
-#'
-#' @param distribution A `distribution` vector (see [dist_shash]).
-#' @param y Observed values, recycled against `distribution`.
-#' @return A tibble of centiles, Z-scores, tails, residuals, and log
-#'   densities. Tails are evaluated in log space so that `z = 8, 10, 40`
-#'   remain distinct. There is no abnormality column.
-#' @examples
-#' as_scores(distributional::dist_normal(0, 1), c(-2, 0, 2))
-#' @export
-as_scores <- function(distribution, y) {
-  n <- max(length(distribution), length(y))
-  y <- rep_len(as.numeric(y), n)
-  distribution <- vctrs::vec_recycle(distribution, n)
-  u <- dist_unpack(distribution)
-  tails <- scores_from_log_tails(
-    dist_eval(distribution, log_tail, y, lower.tail = TRUE, unpacked = u),
-    dist_eval(distribution, log_tail, y, lower.tail = FALSE, unpacked = u)
-  )
-  med <- dist_eval(distribution, quantile, rep(0.5, n), unpacked = u)
-  tibble::tibble(
-    observed = y,
-    median = med,
-    centile = tails$centile,
-    z = tails$z,
-    tail_prob = tails$tail_prob,
-    tail_surprisal = tails$tail_surprisal,
-    residual = y - med,
-    log_density = dist_eval(distribution, log_dens, y, unpacked = u)
-  )
-}
+# --- Scores from log tails -------------------------------------------------
 
 # Centile, z, and two-sided tail from log lower/upper tail probabilities.
 # z is taken from whichever tail is smaller, so z = 8, 10, 40 are distinct.
@@ -560,15 +507,35 @@ scores_from_log_tails <- function(log_lower, log_upper) {
   )
 }
 
-# Normal score of y under d, taken from the smaller tail.
-dist_z <- function(d, y) {
-  scores_from_log_tails(dist_log_tail(d, y, TRUE), dist_log_tail(d, y, FALSE))$z
-}
-
 # Log tails recovered from a z-score (exact inverse of scores_from_log_tails).
 log_tails_from_z <- function(z) {
   list(
     lower = stats::pnorm(z, log.p = TRUE, lower.tail = TRUE),
     upper = stats::pnorm(z, log.p = TRUE, lower.tail = FALSE)
   )
+}
+
+# Per-observation CRPS: closed form for a Gaussian predictive, otherwise
+# the CRPS of the K-atom quantile discretisation of the predictive (atoms
+# at the p = (k - 1/2)/K quantiles, equal weights). For a distribution with
+# finite first moment the discretisation error is O(1/K); K = 199 keeps it
+# well below the sampling noise of any held-out comparison.
+crps_from_dist <- function(dist, y, K = 199L) {
+  y <- rep_len(as.numeric(y), length(dist))
+  u <- dist_unpack(dist)
+  if (inherits(u, "dist_normal")) {
+    return(crps_norm(y, u$mu, u$sigma))
+  }
+  n <- length(dist)
+  p <- (seq_len(K) - 0.5) / K
+  q <- vapply(p, function(pk) dist_eval(dist, quantile, rep(pk, n), unpacked = u), numeric(n))
+  q <- matrix(q, n, K)
+  # sum_{j,k} |q_j - q_k| over sorted atoms is 2 * sum_k (2k - K - 1) q_(k)
+  w <- 2 * seq_len(K) - K - 1
+  rowMeans(abs(q - y)) - drop(q %*% w) / K^2
+}
+
+crps_norm <- function(y, mu, sigma) {
+  z <- (y - mu) / sigma
+  sigma * (z * (2 * stats::pnorm(z) - 1) + 2 * stats::dnorm(z) - 1 / sqrt(pi))
 }

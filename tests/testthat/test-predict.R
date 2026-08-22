@@ -1,16 +1,51 @@
-test_that("tails are computed in log space: z = 8, 10, 40 are distinct and monotone", {
-  d <- distributional::dist_normal(0, 1)
-  sc <- as_scores(d, c(-40, -10, -8, 0, 8, 10, 40))
-  expect_true(all(is.finite(sc$z)))
-  expect_equal(sc$z, c(-40, -10, -8, 0, 8, 10, 40), tolerance = 1e-8)
-  expect_true(all(diff(sc$z) > 0))
-  expect_true(all(diff(sc$tail_surprisal[5:7]) > 0))
-  expect_equal(sc$tail_surprisal[[7]], -(log(2) + stats::pnorm(-40, log.p = TRUE)))
-  s <- dist_shash(0, 1, 0.6, 0.85)
-  scs <- as_scores(s, c(-60, -20, 0, 20, 60, 200))
-  expect_true(all(is.finite(scs$z)))
-  expect_true(all(diff(scs$z) > 0))
-  expect_gt(scs$z[[6]], scs$z[[5]] + 0.5)
+test_that("empty newdata returns an empty distribution", {
+  set.seed(40)
+  dat <- norm_simulate(60, seed = 40)
+  fit <- norm_fit(
+    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+    data = dat,
+    outcomes = "y"
+  )
+  d <- predict(fit, newdata = dat[0, ], type = "distribution")
+  expect_equal(nrow(d), 0L)
+  expect_equal(length(d$y), 0L)
+  sc <- predict(fit, newdata = dat[0, ], uncertainty = "conditional")
+  expect_equal(nrow(sc), 0L)
+})
+
+test_that("total uncertainty works for one row and gaulss", {
+  set.seed(41)
+  dat <- norm_simulate(80, kind = "gaussian", scale = "age", seed = 41)
+  fit <- norm_fit(
+    norm_spec(
+      family = norm_gaussian(),
+      location = ~ s(age, k = 5) + sex,
+      scale = ~ s(age, k = 4)
+    ),
+    data = dat,
+    outcomes = "y"
+  )
+  d <- predict(fit, newdata = dat[1, ], type = "distribution", uncertainty = "total")$y
+  expect_equal(length(d), 1L)
+  u <- dist_unpack(d)
+  expect_s3_class(u, "dist_shash_draws")
+  expect_equal(dim(u$sigma), dim(u$mu))
+  expect_gt(stats::sd(u$mu), 0)
+})
+
+test_that("unseen groups do not abort prediction", {
+  set.seed(42)
+  dat <- norm_simulate(50, seed = 42)
+  fit <- norm_fit(
+    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+    data = dat,
+    outcomes = "y"
+  )
+  extra <- dat[1, ]
+  extra$sex <- factor("X", levels = c(levels(dat$sex), "X"))
+  sc <- predict(fit, newdata = extra, uncertainty = "conditional")
+  expect_equal(nrow(sc), 1L)
+  expect_equal(sc$support, "new_group")
 })
 
 test_that("NA predictors give NA scores with status missing_predictor (gaulss and shash)", {
@@ -49,7 +84,7 @@ test_that("total uncertainty is deterministic and the returned distribution is t
   expect_named(dt, c(".id", "y"))
   d <- dt$y
   expect_s3_class(d, "distribution")
-  expect_equal(mc_draws(vctrs::vec_data(d)[[1]]), 200L)
+  expect_equal(ncol(dist_unpack(d)$mu), 200L)
   expect_equal(dist_cdf(d, new$y), a$centile)
   expect_equal(dist_quantile(d, 0.5), a$median)
   expect_equal(dist_log_density(d, new$y), a$log_density)
@@ -64,10 +99,10 @@ test_that("total uncertainty is deterministic and the returned distribution is t
   fit2 <- fit
   fit2$spec <- spec2
   d2 <- predict(fit2, newdata = new, type = "distribution", uncertainty = "total")$y
-  expect_equal(mc_draws(vctrs::vec_data(d2)[[1]]), 50L)
+  expect_equal(ncol(dist_unpack(d2)$mu), 50L)
   expect_false(isTRUE(all.equal(dist_unpack(d2)$mu[, 1], dist_unpack(d)$mu[, 1])))
   d3 <- predict(fit, newdata = new, type = "distribution", uncertainty = "total", n_draw = 20)$y
-  expect_equal(mc_draws(vctrs::vec_data(d3)[[1]]), 20L)
+  expect_equal(ncol(dist_unpack(d3)$mu), 20L)
 })
 
 test_that("non-syntactic outcome names fit and predict", {
@@ -113,4 +148,51 @@ test_that("norm_support reports unknown for NA covariates", {
   new <- dat[1:3, ]
   new$age[2] <- NA
   expect_equal(norm_support(fit, new)$support, c("in", "unknown", "in"))
+})
+
+test_that("augment matches the long score table", {
+  d <- perf_data()
+  fit <- norm_calibrate(norm_fit(perf_specs()$gaulss, d$ref, c("y", "marker_01")),
+                        d$new, by = site)
+  long <- predict(fit, d$new, uncertainty = "conditional")
+  wide <- augment(fit, d$new, uncertainty = "conditional")
+  for (nm in c("y", "marker_01")) {
+    rows <- long[long$.outcome == nm, ]
+    expect_equal(wide[[paste0(".z_", nm)]], rows$z)
+    expect_equal(wide[[paste0(".centile_", nm)]], rows$centile)
+  }
+  expect_equal(wide$.support, long$support[long$.outcome == "y"])
+})
+
+test_that("draw parameters from the lp matrix match per-draw evaluation", {
+  d <- perf_data()
+  fit <- norm_fit(perf_specs()$shash, d$ref, "y")
+  m <- fit$models$y
+  lp <- predict(m$model, d$new[1:5, ], type = "lpmatrix")
+  beta <- coef(m$model)
+  draws <- cbind(beta, beta * 1.01, beta * 0.99)
+  joint <- params_from_eta(eta_from_lp(lp, draws), m$model, "shash", m)
+  for (j in 1:3) {
+    single <- params_from_eta(eta_from_lp(lp, draws[, j]), m$model, "shash", m)
+    for (p in c("location", "scale", "skew", "tail")) {
+      expect_equal(joint[[p]][, j], single[[p]])
+    }
+  }
+})
+
+test_that("shifted log density agrees with the distribution methods", {
+  d <- perf_data()
+  fit <- norm_fit(perf_specs()$shash, d$ref, "y")
+  dist <- predict(fit, d$new, type = "distribution", uncertainty = "conditional")$y
+  y <- d$new$y
+  u <- dist_unpack(dist)
+  expect_equal(
+    shifted_log_density(u, y, 0.3, 0.1),
+    dist_log_density(shift_params(dist, 0.3, 0.1), y)
+  )
+  total <- predict(fit, d$new[1:10, ], type = "distribution", uncertainty = "total")$y
+  expect_equal(
+    shifted_log_density(dist_unpack(total), y[1:10], -0.2, 0.05),
+    dist_log_density(shift_params(total, -0.2, 0.05), y[1:10])
+  )
 })

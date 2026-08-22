@@ -61,7 +61,8 @@ augment(fit, target[1:3, ])   # target + .z_y, .centile_y, .support
 
 Gaussian fits return `dist_normal()`; SHASH fits return `dist_shash()`;
 `uncertainty = "total"` returns an equal-weight mixture over coefficient
-draws (`dist_shash_mc()`); forecasts return `dist_conditioned()`.
+draws (an internal `dist_shash_draws` class); forecasts return
+`dist_conditioned()`.
 
 ## Workflow
 
@@ -71,7 +72,7 @@ draws (`dist_shash_mc()`); forecasts return `dist_conditioned()`.
 | Fit one model per outcome | `norm_fit()` |
 | Score observations or get distributions | `predict()`, `as_scores()`, `augment()` |
 | Choose among candidate distributions out of sample | `norm_select()`, `norm_crossfit()` |
-| Check calibration on held-out data | `norm_assess()`, `acceptable_calibration()` |
+| Check calibration on held-out data | `norm_assess()` |
 | Transport to a new site | `norm_adapt()`, `norm_calibrate()`, `norm_support()` |
 | Joint deviation across outcomes | `norm_joint()` |
 | Threshold exceedances with FDR | `norm_flag()` |

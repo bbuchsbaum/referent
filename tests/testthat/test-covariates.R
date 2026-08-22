@@ -59,8 +59,8 @@ test_that("support uses only formula covariates", {
   dat <- norm_simulate(150, seed = 84)
   spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1)
   fit <- norm_fit(spec, data = dat, outcomes = "y")
-  expect_equal(fit$support_ref$numeric_names, "age")
-  expect_equal(fit$support_ref$factor_names, "sex")
+  expect_equal(names(fit$support_ref$numeric), "age")
+  expect_equal(names(fit$support_ref$factor_levels), "sex")
   tgt <- dat[1:5, ]
   tgt$marker_01 <- 1e6
   tgt$marker_02 <- -1e6
@@ -79,7 +79,7 @@ test_that("the model card lists only formula covariates", {
   fit <- norm_fit(spec, data = dat, outcomes = "y")
   ref <- norm_reference(fit)
   expect_equal(ref$covariates, c("age", "sex"))
-  expect_equal(names(ref$ranges), "age")
+  expect_equal(names(ref$support_ref$numeric), "age")
   out <- paste(cli::cli_fmt(print(ref)), collapse = "\n")
   expect_match(out, "covariates: age")
   expect_no_match(out, "marker")

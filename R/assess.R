@@ -9,8 +9,7 @@
 #' minus the log score of a Gaussian with the *reference* sample's mean
 #' and population standard deviation (`fit$reference_baseline`, recorded
 #' by [norm_fit()]). The baseline never uses the held-out sample's own
-#' moments; it falls back to them only for fits made before this field
-#' existed.
+#' moments.
 #'
 #' Note that this is *not* the same baseline PCNtoolkit uses. PCNtoolkit
 #' fits its baseline Gaussian to the sample being scored, so its MSLL is
@@ -79,16 +78,20 @@ assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
       tail = assess_tail(scores),
       scores = scores,
       n = nrow(newdata),
-      in_sample = isTRUE(attr(scores, "in_sample"))
+      in_sample = nrow(scores) > 0 && all(scores$.in_sample)
     ),
     class = "norm_assessment"
   )
 }
 
-assess_overall <- function(scores, dists, newdata, baseline = NULL) {
+# Apply `fun(outcome_name, outcome_scores)` per outcome and bind the rows.
+by_outcome <- function(scores, fun) {
   by_out <- split(scores, scores$.outcome)
-  rows <- lapply(names(by_out), function(nm) {
-    sc <- by_out[[nm]]
+  dplyr_bind(lapply(names(by_out), function(nm) fun(nm, by_out[[nm]])))
+}
+
+assess_overall <- function(scores, dists, newdata, baseline = NULL) {
+  by_outcome(scores, function(nm, sc) {
     ok <- is.finite(sc$log_density) & is.finite(sc$observed)
     log_score <- mean(sc$log_density[ok])
     naive <- naive_log_score(sc$observed[ok], baseline[[nm]])
@@ -110,67 +113,29 @@ assess_overall <- function(scores, dists, newdata, baseline = NULL) {
       cor = if (sum(ok) > 2) stats::cor(sc$observed[ok], sc$median[ok]) else NA_real_
     )
   })
-  dplyr_bind(rows)
 }
 
-# Log score of the unconditional Gaussian baseline. `base` is the
-# reference sample's mean and population sd when the fit carries one;
-# without it the scored sample's own moments are used, which makes the
-# baseline an oracle and the result no longer a plain MSLL.
+# Log score of the unconditional Gaussian baseline: the reference
+# sample's mean and population sd, or NA when the fit has none (an
+# outcome without spread in the reference).
 naive_log_score <- function(y, base = NULL) {
-  if (!is.null(base)) {
-    return(mean(stats::dnorm(y, base$mean, base$sd, log = TRUE), na.rm = TRUE))
+  if (is.null(base)) {
+    return(NA_real_)
   }
-  mu <- mean(y, na.rm = TRUE)
-  s <- stats::sd(y, na.rm = TRUE)
-  if (!is.finite(s) || s <= 0) {
-    s <- 1
-  }
-  mean(stats::dnorm(y, mu, s, log = TRUE), na.rm = TRUE)
-}
-
-# Per-observation CRPS: closed form for a Gaussian predictive, otherwise
-# the sample CRPS of scoringRules on seeded draws, or a quantile-grid
-# approximation when scoringRules is not installed.
-crps_from_dist <- function(dist, y, times = 500L, seed = 1L) {
-  y <- rep_len(as.numeric(y), length(dist))
-  u <- dist_unpack(dist)
-  if (inherits(u, "dist_normal")) {
-    return(crps_norm(y, u$mu, u$sigma))
-  }
-  if (has_pkg("scoringRules")) {
-    draws <- withr::with_seed(seed, dist_generate(dist, times))
-    ok <- is.finite(y) & rowSums(!is.finite(draws)) == 0L
-    out <- rep(NA_real_, length(y))
-    out[ok] <- scoringRules::crps_sample(y[ok], draws[ok, , drop = FALSE])
-    return(out)
-  }
-  p <- (seq_len(99L) - 0.5) / 99
-  vapply(seq_along(y), function(i) {
-    qs <- dist_quantile(dist[i], p)
-    mean(abs(qs - y[[i]])) - 0.5 * mean(abs(outer(qs, qs, `-`)))
-  }, numeric(1))
-}
-
-crps_norm <- function(y, mu, sigma) {
-  z <- (y - mu) / sigma
-  sigma * (z * (2 * stats::pnorm(z) - 1) + 2 * stats::dnorm(z) - 1 / sqrt(pi))
+  mean(stats::dnorm(y, base$mean, base$sd, log = TRUE), na.rm = TRUE)
 }
 
 assess_marginal <- function(scores) {
-  by_out <- split(scores, scores$.outcome)
-  rows <- lapply(names(by_out), function(nm) {
-    z <- by_out[[nm]]$z
-    z <- z[is.finite(z)]
-    u <- by_out[[nm]]$centile
-    u <- u[is.finite(u)]
+  by_outcome(scores, function(nm, sc) {
+    z <- sc$z[is.finite(sc$z)]
+    u <- sc$centile[is.finite(sc$centile)]
     tibble::tibble(
       .outcome = nm,
       n = length(z),
       mean_z = mean(z),
       var_z = stats::var(z),
-      skew_z = if (length(z) > 3) skewness(z) else NA_real_,
-      excess_kurtosis = if (length(z) > 4) excess_kurtosis(z) else NA_real_,
+      skew_z = if (length(z) > 3) std_moment(z, 3) else NA_real_,
+      excess_kurtosis = if (length(z) > 4) std_moment(z, 4) - 3 else NA_real_,
       cover_50 = mean(u > 0.25 & u < 0.75, na.rm = TRUE),
       cover_80 = mean(u > 0.10 & u < 0.90, na.rm = TRUE),
       cover_90 = mean(u > 0.05 & u < 0.95, na.rm = TRUE),
@@ -178,54 +143,26 @@ assess_marginal <- function(scores) {
       cover_99 = mean(u > 0.005 & u < 0.995, na.rm = TRUE)
     )
   })
-  dplyr_bind(rows)
 }
 
-skewness <- function(x) {
-  x <- x[is.finite(x)]
-  m <- mean(x)
+# k-th standardised moment; 0 when x has no spread.
+std_moment <- function(x, k) {
   s <- stats::sd(x)
   if (!is.finite(s) || s == 0) {
     return(0)
   }
-  mean(((x - m) / s)^3)
-}
-
-excess_kurtosis <- function(x) {
-  x <- x[is.finite(x)]
-  m <- mean(x)
-  s <- stats::sd(x)
-  if (!is.finite(s) || s == 0) {
-    return(0)
-  }
-  mean(((x - m) / s)^4) - 3
+  mean(((x - mean(x)) / s)^k)
 }
 
 assess_conditional <- function(scores, newdata, fit) {
   covs <- intersect(fit$covariates, names(newdata))
   numeric_covs <- covs[vapply(newdata[covs], is.numeric, logical(1))]
-  empty <- tibble::tibble(
-    .outcome = character(), covariate = character(),
-    location_drift = numeric(), location_se = numeric(),
-    scale_drift = numeric(), scale_se = numeric()
-  )
-  if (!length(numeric_covs)) {
-    return(empty)
-  }
   rows <- list()
   for (nm in unique(scores$.outcome)) {
     sc <- scores[scores$.outcome == nm, , drop = FALSE]
     for (cv in numeric_covs) {
       x <- newdata[[cv]][sc$.row]
       ok <- is.finite(sc$z) & is.finite(x)
-      if (sum(ok) < 20L) {
-        rows[[length(rows) + 1L]] <- tibble::tibble(
-          .outcome = nm, covariate = cv,
-          location_drift = NA_real_, location_se = NA_real_,
-          scale_drift = NA_real_, scale_se = NA_real_
-        )
-        next
-      }
       dat <- data.frame(z = sc$z[ok], x = x[ok])
       loc <- drift_gam(z ~ s(x, k = 5), dat)
       sc2 <- drift_gam(I(z^2 - 1) ~ s(x, k = 5), dat)
@@ -236,12 +173,24 @@ assess_conditional <- function(scores, newdata, fit) {
       )
     }
   }
+  if (!length(rows)) {
+    return(tibble::tibble(
+      .outcome = character(), covariate = character(),
+      location_drift = numeric(), location_se = numeric(),
+      scale_drift = numeric(), scale_se = numeric()
+    ))
+  }
   dplyr_bind(rows)
 }
 
-# Largest absolute fitted value of a diagnostic GAM and its SE there.
+# Largest absolute fitted value of a diagnostic GAM and its SE there; NA
+# with fewer than 20 usable rows or when the GAM fails.
 drift_gam <- function(formula, dat) {
-  m <- tryCatch(mgcv::gam(formula, data = dat), error = function(e) NULL)
+  m <- if (nrow(dat) < 20L) {
+    NULL
+  } else {
+    tryCatch(mgcv::gam(formula, data = dat), error = function(e) NULL)
+  }
   if (is.null(m)) {
     return(list(drift = NA_real_, se = NA_real_))
   }
@@ -252,10 +201,8 @@ drift_gam <- function(formula, dat) {
 
 assess_tail <- function(scores) {
   levels <- c(0.005, 0.01, 0.025, 0.05)
-  by_out <- split(scores, scores$.outcome)
-  rows <- lapply(names(by_out), function(nm) {
-    tp <- by_out[[nm]]$tail_prob
-    tp <- tp[is.finite(tp)]
+  by_outcome(scores, function(nm, sc) {
+    tp <- sc$tail_prob[is.finite(sc$tail_prob)]
     n <- length(tp)
     tibble::tibble(
       .outcome = nm,
@@ -266,7 +213,6 @@ assess_tail <- function(scores) {
       se = sqrt(levels * (1 - levels) / pmax(n, 1))
     )
   })
-  dplyr_bind(rows)
 }
 
 #' @export

@@ -29,7 +29,8 @@ norm_crossfit <- function(spec,
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
   strata_vec <- pull_column(data, rlang::enquo(strata), default = NULL)
   cluster_vec <- pull_column(data, rlang::enquo(cluster), default = seq_len(nrow(data)))
-  id_vec <- pull_column(data, rlang::enquo(id), default = seq_len(nrow(data)))
+  id_quo <- rlang::enquo(id)
+  id_vec <- pull_column(data, id_quo, default = seq_len(nrow(data)))
   fold_id <- make_folds(cluster_vec, folds, strata_vec)
   pieces <- lapply(seq_len(folds), function(k) {
     train <- data[fold_id != k, , drop = FALSE]
@@ -56,11 +57,10 @@ norm_crossfit <- function(spec,
   })
   scores <- dplyr_bind(Filter(Negate(is.null), pieces))
   scores <- scores[order(scores$.outcome, scores$.row), , drop = FALSE]
-  deployment <- norm_fit(spec, data = data, outcomes = outcome_names, id = id_vec, ...)
+  deployment <- norm_fit(spec, data = data, outcomes = outcome_names, id = !!id_quo, ...)
   structure(
     scores,
     class = c("norm_scores", class(scores)),
-    in_sample = FALSE,
     deployment = deployment,
     folds = fold_id
   )

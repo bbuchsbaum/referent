@@ -31,33 +31,22 @@ simulate_skewed <- function(n, seed = NULL, skew = 1.4, tail = 0.7) {
   data.frame(age, sex, site, y)
 }
 
-simulate_two_visit <- function(n_id, r, lag = 2, sigma_e = 0, seed = NULL) {
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-  r <- max(min(r, 0.98), -0.98)
-  id <- rep(seq_len(n_id), each = 2L)
-  age1 <- stats::runif(n_id, 30, 70)
-  age <- as.numeric(rbind(age1, age1 + lag))
-  sex <- factor(rep(sample(c("F", "M"), n_id, replace = TRUE), each = 2L))
-  site <- factor(rep("A", 2L * n_id))
-  z1 <- stats::rnorm(n_id)
-  z2 <- r * z1 + sqrt(1 - r^2) * stats::rnorm(n_id)
-  if (sigma_e > 0) {
-    z1 <- z1 + stats::rnorm(n_id, sd = sigma_e)
-    z2 <- z2 + stats::rnorm(n_id, sd = sigma_e)
-  }
-  z <- as.numeric(rbind(z1, z2))
-  mu <- 10 + 0.08 * (age - 50)
-  y <- mu + 1.3 * z
-  data.frame(
-    participant_id = id,
-    age = age,
-    sex = sex,
-    site = site,
-    y = y,
-    visit = rep(1:2, n_id)
+# Two-visit longitudinal data with a fixed lag and correlation `r` between
+# the visits' normal scores (stable rank + nugget, no Matern component).
+simulate_two_visit <- function(n_id, r, lag = 2, seed = NULL) {
+  norm_simulate(
+    2L * n_id, kind = "longitudinal", lag = lag,
+    tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), seed = seed
   )
+}
+
+# Vectorised CDF and log density of a distribution vector.
+dist_cdf <- function(d, q) {
+  exp(dist_eval(d, log_tail, q))
+}
+
+dist_log_density <- function(d, y) {
+  dist_eval(d, log_dens, y)
 }
 
 worm_rmse <- function(z) {
@@ -75,3 +64,26 @@ false_positive_rate <- function(z, threshold = stats::qnorm(0.975)) {
   z <- z[is.finite(z)]
   mean(abs(z) > threshold)
 }
+
+# Everything a print method emits: cli messages and standard output.
+print_text <- function(x) {
+  body <- utils::capture.output(msg <- cli::cli_fmt(print(x)))
+  paste(c(msg, body), collapse = "\n")
+}
+
+# Multi-outcome fits used by the prediction and performance tests.
+perf_data <- function() {
+  ref <- norm_simulate(300, sites = 4, scale = "age", seed = 11)
+  new <- norm_simulate(80, sites = 4, scale = "age", seed = 12)
+  list(ref = ref, new = new)
+}
+
+perf_specs <- function() {
+  list(
+    constant = norm_spec(norm_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re")),
+    gaulss = norm_spec(norm_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re"),
+                       scale = ~ s(age, k = 4)),
+    shash = norm_spec(norm_shash(), ~ s(age, k = 6) + sex, scale = ~ s(age, k = 4))
+  )
+}
+

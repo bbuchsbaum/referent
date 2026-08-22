@@ -25,6 +25,11 @@ plot_label <- function(p, aes) {
   ggplot2::get_labs(p)[[aes]]
 }
 
+# The guide of the colour scale ("legend" or "none").
+colour_guide <- function(p) {
+  p$scales$get_scales("colour")$guide
+}
+
 test_that("centile chart: paired ribbons, median, facets, overlay, and stable appearance", {
   pf <- plot_fit(31)
   built <- fortify_centiles(pf$fit, by = "sex")
@@ -65,7 +70,7 @@ test_that("trajectories overlay subject paths on the centile chart", {
   vdiffr::expect_doppelganger("trajectories", p)
 })
 
-test_that("support, visits, coverage, and composition use the fit", {
+test_that("support plot classifies newdata against the fit", {
   pf <- plot_fit(33)
   new <- pf$data[1:40, ]
   new$age[1:5] <- 120
@@ -80,32 +85,6 @@ test_that("support, visits, coverage, and composition use the fit", {
   expect_builds(p1)
   expect_identical(p1$theme$legend.position, "none")
   expect_error(autoplot(pf$fit, type = "support"), "newdata")
-  # visits come from the id declared at fit time
-  pv <- autoplot(pf$fit, type = "visits")
-  bv <- expect_builds(pv)
-  expect_equal(sum(bv$data[[1]]$y), nrow(pf$data))
-  long <- norm_simulate(120, kind = "longitudinal", seed = 34)
-  pv2 <- autoplot(pf$fit, type = "visits", data = long, id = participant_id)
-  bv2 <- expect_builds(pv2)
-  expect_equal(sum(bv2$data[[1]]$y), length(unique(long$participant_id)))
-  expect_equal(fortify_visits(long, participant_id)$n_subjects, bv2$data[[1]]$y)
-  fit_noid <- norm_fit(pf$fit$spec, data = pf$data, outcomes = "y")
-  expect_error(autoplot(fit_noid, type = "visits"), "identifier")
-  # coverage draws the reference range from the fit
-  pc <- autoplot(pf$fit, type = "coverage", data = long, by = site)
-  bc <- expect_builds(pc)
-  cls <- layer_classes(pc)
-  expect_true("GeomVline" %in% cls)
-  r <- pf$fit$support_ref$numeric$age
-  expect_equal(sort(bc$data[[which(cls == "GeomVline")]]$xintercept), c(r$min, r$max))
-  expect_equal(plot_label(pc, "x"), "age")
-  expect_builds(autoplot(pf$fit, type = "coverage", data = long))
-  expect_error(autoplot(pf$fit, type = "coverage"), "data")
-  cov <- fortify_coverage(long, age, by = site)
-  expect_true(all(c("time", ".group") %in% names(cov)))
-  skip_if_not_installed("patchwork")
-  pcomp <- autoplot(pf$fit, type = "composition", data = long, id = participant_id, by = site)
-  expect_s3_class(pcomp, "patchwork")
 })
 
 test_that("adaptation plot shows offsets with intervals per group", {
@@ -120,15 +99,16 @@ test_that("adaptation plot shows offsets with intervals per group", {
   expect_equal(nrow(pts), 4L * 2L)
   expect_equal(plot_label(p, "x"), "site")
   expect_error(autoplot(pf$fit, type = "adaptation"), "norm_adapt")
+  expect_identical(colour_guide(p), "legend")
   # pooled adaptation of a single outcome has no colour legend
   fit1 <- norm_fit(pf$fit$spec, data = pf$data, outcomes = "y")
   ad1 <- norm_adapt(fit1, data = local)
   p1 <- autoplot(ad1, type = "adaptation")
   expect_builds(p1)
-  expect_false("colour" %in% names(p1$mapping))
+  expect_identical(colour_guide(p1), "none")
 })
 
-test_that("assessment plots: calibration, worm, conditional", {
+test_that("assessment plots: calibration, qq, worm, conditional", {
   pf <- plot_fit(37, n = 150)
   val <- norm_simulate(80, seed = 38)
   a <- norm_assess(pf$fit, newdata = val)
@@ -136,19 +116,37 @@ test_that("assessment plots: calibration, worm, conditional", {
   b <- expect_builds(p)
   cls <- layer_classes(p)
   expect_equal(nrow(b$data[[which(cls == "GeomPoint")]]), 2L * 5L)
-  expect_equal(plot_label(p, "colour"), "Outcome")
+  expect_identical(colour_guide(p), "legend")
+  # qq and worm share the envelope: the worm is the qq chart minus the expected line
+  pq <- autoplot(a, type = "qq")
   pw <- autoplot(a, type = "worm")
+  bq <- expect_builds(pq)
   bw <- expect_builds(pw)
-  expect_true("GeomSmooth" %in% layer_classes(pw))
+  clq <- layer_classes(pq)
+  expect_equal(sum(clq == "GeomRibbon"), 2L)
   expect_equal(nrow(bw$data[[which(layer_classes(pw) == "GeomPoint")]]), 2L * 80L)
+  env_q <- pq$data
+  env_w <- pw$data
+  expect_equal(env_w$y, env_q$y - env_q$expected)
+  expect_equal(env_w$sim_lo, env_q$sim_lo - env_q$expected)
+  expect_equal(env_w$point_hi, env_q$point_hi - env_q$expected)
+  expect_identical(env_w$outside, env_q$outside)
+  # the pointwise band is the exact Beta order-statistic band
+  n <- sum(env_q$.outcome == "y")
+  one <- env_q[env_q$.outcome == "y", ]
+  i <- seq_len(n)
+  expect_equal(one$point_lo, stats::qnorm(stats::qbeta(0.025, i, n - i + 1)))
+  expect_equal(one$point_hi, stats::qnorm(stats::qbeta(0.975, i, n - i + 1)))
+  expect_true(all(one$sim_lo <= one$point_lo & one$sim_hi >= one$point_hi))
+  expect_error(autoplot(a, type = "qq", level = 1.2), "probability")
   pc <- autoplot(a, type = "conditional")
   bc <- expect_builds(pc)
   expect_equal(nrow(bc$data[[which(layer_classes(pc) == "GeomCol")]]), 2L)
-  # a single outcome maps no colour and leaks no legend
+  # a single outcome leaks no legend
   a1 <- norm_assess(norm_fit(pf$fit$spec, pf$data, "y"), newdata = val)
   p1 <- autoplot(a1, type = "calibration")
   expect_builds(p1)
-  expect_null(plot_label(p1, "colour"))
+  expect_identical(colour_guide(p1), "none")
   expect_builds(autoplot(a1, type = "worm"))
 })
 
@@ -193,8 +191,11 @@ test_that("dynamics plots: kernel, held-out calibration, transitions, and anchor
   pc <- autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age)
   bc <- expect_builds(pc)
   expect_match(plot_label(pc, "subtitle"), "held-out innovation Z")
+  expect_equal(plot_label(pc, "y"), "Innovation Z")
   tr <- norm_transition(dyn, data = held, id = participant_id, time = age)
-  expect_equal(nrow(bc$data[[2]]), sum(is.finite(tr$innovation_z)))
+  pts <- bc$data[[which(layer_classes(pc) == "GeomPoint")]]
+  expect_equal(nrow(pts), sum(is.finite(tr$innovation_z)))
+  expect_equal(sum(layer_classes(pc) == "GeomRibbon"), 2L)
   expect_error(autoplot(dyn, type = "calibration"), "data")
   expect_error(autoplot(dyn, type = "calibration", data = held), "id")
   for (ty in c("velocity", "innovation", "change")) {

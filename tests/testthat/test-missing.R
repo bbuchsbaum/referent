@@ -58,9 +58,9 @@ test_that("SHASH assessment, crossfit, and printing tolerate NA outcomes and pre
   dt <- predict(sfit, newdata = test[1:6, ], type = "distribution", uncertainty = "total")
   expect_no_error(out <- format(dt$y))
   expect_equal(length(out), 6L)
-  cf_dat <- dat[1:150, ]
+  cf_dat <- dat[1:200, ]
   cf_dat$y[4] <- NA
-  cf <- norm_crossfit(simple_spec("shash"), data = cf_dat, outcomes = "y", folds = 3)
+  cf <- norm_crossfit(simple_spec("shash"), data = cf_dat, outcomes = "y", folds = 2)
   expect_true(is.na(cf$crps[cf$.row == 4]))
   expect_true(mean(is.finite(cf$crps)) > 0.9)
 })

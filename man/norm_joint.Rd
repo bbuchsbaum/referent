@@ -5,12 +5,7 @@
 \alias{predict.norm_joint}
 \title{Gaussian-copula joint deviation layer}
 \usage{
-norm_joint(
-  scores,
-  method = c("gaussian_copula"),
-  covariance = c("shrinkage", "identity"),
-  value = NULL
-)
+norm_joint(scores, covariance = c("shrinkage", "identity"), value = NULL)
 
 \method{predict}{norm_joint}(object, newdata, ...)
 }
@@ -18,8 +13,6 @@ norm_joint(
 \item{scores}{A \code{norm_scores} or \code{norm_transition} table of reference
 scores (out-of-fold for honest calibration), or the wide output of
 \code{\link[=augment]{augment()}} (its \verb{.z_<outcome>} columns).}
-
-\item{method}{Must be \code{"gaussian_copula"}.}
 
 \item{covariance}{\code{"shrinkage"} or \code{"identity"}.}
 

@@ -52,8 +52,8 @@ test_that("print.norm_assessment shows the overall table", {
 
 test_that("print.norm_dynamics reports components, identifiability, and the kernel", {
   withr::local_options(cli.num_colors = 1L, width = 80)
-  dat <- simulate_two_visit(200, r = 0.6, lag = 2, sigma_e = 0, seed = 92)
-  fit <- norm_fit(norm_spec(norm_gaussian(), location = ~ age + sex, scale = ~1),
+  dat <- simulate_two_visit(200, r = 0.6, lag = 2, seed = 92)
+  fit <- norm_fit(norm_spec(norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
                   data = dat, outcomes = "y")
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   expect_snapshot(print(dyn), transform = snap_transform)

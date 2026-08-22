@@ -61,12 +61,8 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
   marg <- predict_dists(dynamic$reference, new_grid, uncertainty = "conditional")[[outcome]]
   hist_marg <- predict_dists(dynamic$reference, history, uncertainty = "conditional")[[outcome]]
   z_hist <- dist_z(hist_marg, y_hist)
-  cond <- lapply(times, function(t) condition_z(z_hist, t_hist, t, pr$psi, pr$process))
-  dists <- dist_conditioned(
-    marg,
-    m = vapply(cond, `[[`, numeric(1), "m"),
-    s = vapply(cond, `[[`, numeric(1), "s")
-  )
+  cond <- condition_history(z_hist, t_hist, times, pr)
+  dists <- dist_conditioned(marg, m = cond$m, s = cond$s)
   lag_support <- classify_temporal_support(dynamic, rep(max(t_hist), length(times)),
                                            times, rep(length(t_hist), length(times)))
   summary <- tibble::tibble(
@@ -105,7 +101,6 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
 #' @param with_respect_to The time covariate, as a bare column name or a
 #'   string.
 #' @param centiles Probability levels.
-#' @param type Must be `"chart"`.
 #' @param h Finite-difference step.
 #' @param outcomes Optional subset of outcomes (default: all).
 #' @return A `norm_derivative` tibble with columns `.outcome`, `time`,
@@ -121,10 +116,8 @@ norm_derivative <- function(reference,
                             newdata,
                             with_respect_to,
                             centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
-                            type = c("chart"),
                             h = 1e-2,
                             outcomes = NULL) {
-  type <- match.arg(type)
   t_nm <- as_col_name(rlang::enquo(with_respect_to))
   if (is.null(t_nm)) {
     cli::cli_abort("{.arg with_respect_to} must name the time covariate.")
@@ -144,8 +137,8 @@ norm_derivative <- function(reference,
     if (!fit_ok(fit_one)) {
       return(NULL)
     }
-    d_plus <- predict_engine_dist(fit_one, plus, uncertainty = "conditional")
-    d_minus <- predict_engine_dist(fit_one, minus, uncertainty = "conditional")
+    d_plus <- predict_mgcv_dist(fit_one, plus)
+    d_minus <- predict_mgcv_dist(fit_one, minus)
     vel <- vapply(centiles, function(p) {
       (dist_quantile(d_plus, p) - dist_quantile(d_minus, p)) / (2 * h)
     }, numeric(nrow(newdata)))
@@ -179,7 +172,7 @@ derivative_se <- function(fit_one, plus, minus, centiles, h) {
   na <- matrix(NA_real_, n, length(centiles))
   model <- fit_one$model
   fam <- fit_one$family$name
-  if (!identical(fit_one$engine, "mgcv") || is.null(model$Vp)) {
+  if (is.null(model$Vp)) {
     return(na)
   }
   lp_p <- tryCatch(predict_gam_quiet(model, plus, type = "lpmatrix"), error = function(e) NULL)

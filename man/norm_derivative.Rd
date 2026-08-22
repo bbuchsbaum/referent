@@ -9,7 +9,6 @@ norm_derivative(
   newdata,
   with_respect_to,
   centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
-  type = c("chart"),
   h = 0.01,
   outcomes = NULL
 )
@@ -23,8 +22,6 @@ norm_derivative(
 string.}
 
 \item{centiles}{Probability levels.}
-
-\item{type}{Must be \code{"chart"}.}
 
 \item{h}{Finite-difference step.}
 

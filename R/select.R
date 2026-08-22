@@ -3,8 +3,8 @@
 #' Every criterion is computed from out-of-fold cross-fitted scores:
 #'
 #' 1. Drop failed or unstable fits.
-#' 2. Drop models whose out-of-fold calibration is unacceptable (see
-#'    [acceptable_calibration()]).
+#' 2. Drop models whose out-of-fold calibration is unacceptable (the
+#'    calibration gate below).
 #' 3. Rank survivors by out-of-fold mean log score; ties are broken by
 #'    out-of-fold CRPS.
 #' 4. Keep the candidates within one standard error of the best, where
@@ -15,6 +15,18 @@
 #' 5. Require `shape_threshold` extra mean log score before accepting any
 #'    spec with covariate-dependent skew or tail.
 #' 6. Choose the simplest remaining model (lowest ladder level).
+#'
+#' @details
+#' The calibration gate passes a model when, for every outcome with
+#' \eqn{n} out-of-fold scores, \eqn{|\bar z| \le 0.10 + 2/\sqrt{n}},
+#' \eqn{0.80 - 2\sqrt{2/n} \le \mathrm{var}(z) \le 1.25 + 2\sqrt{2/n}},
+#' the 95% coverage lies in \eqn{[0.93, 0.97] \pm 2\sqrt{0.05 \cdot 0.95/n}},
+#' and the observed 5% two-sided tail rate lies in
+#' \eqn{0.05 \pm (0.015 + 2\sqrt{0.05 \cdot 0.95/n})}. The fixed margins
+#' are practical tolerances; the \eqn{2/\sqrt{n}} terms are two standard
+#' errors under perfect calibration, so small samples are not rejected
+#' for noise alone. The `calibrated` column of `comparison` records the
+#' gate's verdict per model.
 #'
 #' @param specs A named list of [norm_spec] objects, simplest first.
 #' @param data Reference data.
@@ -139,22 +151,7 @@ paired_se <- function(fits, best, models) {
   list(log_density = se_ld, crps = se_crps)
 }
 
-#' Calibration gate used by the model ladder
-#'
-#' A model passes when, for every outcome with \eqn{n} out-of-fold scores,
-#' \eqn{|\bar z| \le 0.10 + 2/\sqrt{n}},
-#' \eqn{0.80 - 2\sqrt{2/n} \le \mathrm{var}(z) \le 1.25 + 2\sqrt{2/n}},
-#' the 95% coverage lies in \eqn{[0.93, 0.97] \pm 2\sqrt{0.05 \cdot 0.95/n}},
-#' and the observed 5% two-sided tail rate lies in
-#' \eqn{0.05 \pm (0.015 + 2\sqrt{0.05 \cdot 0.95/n})}. The fixed margins
-#' are practical tolerances; the \eqn{2/\sqrt{n}} terms are two standard
-#' errors under perfect calibration, so small samples are not rejected
-#' for noise alone.
-#'
-#' @param assessment A [norm_assess()] result or a list with `marginal`
-#'   and `tail` tables.
-#' @return `TRUE` or `FALSE`.
-#' @export
+# Calibration gate of the ladder; see the details of norm_select().
 acceptable_calibration <- function(assessment) {
   m <- assessment$marginal
   if (!nrow(m)) {

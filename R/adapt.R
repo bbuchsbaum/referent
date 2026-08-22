@@ -47,11 +47,7 @@ norm_adapt <- function(fit,
   data <- tibble::as_tibble(data)
   by_quo <- rlang::enquo(by)
   by_vec <- pull_column(data, by_quo, default = rep(".all", nrow(data)))
-  by_name <- if (rlang::quo_is_null(by_quo) || rlang::quo_is_missing(by_quo)) {
-    NULL
-  } else {
-    tryCatch(rlang::as_name(by_quo), error = function(e) NULL)
-  }
+  by_name <- as_col_name(by_quo)
   if (inherits(fit, "norm_dynamics")) {
     fit$reference <- norm_adapt(
       fit$reference, data = data, by = !!by_quo, parameters = parameters,
@@ -84,7 +80,6 @@ norm_adapt <- function(fit,
       parameters = parameters,
       offsets = offsets,
       n_local = nrow(data),
-      effective_n = table(by_chr),
       location_prior_n = location_prior_n,
       scale_prior_n = scale_prior_n
     ),
@@ -124,14 +119,8 @@ estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) 
     -ll + 0.5 * location_prior_n * theta[[1L]]^2 +
       (if (fit_scale) scale_prior_n * log_s^2 else 0)
   }
-  start <- if (fit_scale) c(0, 0) else 0
-  opt <- if (fit_scale) {
-    stats::optim(start, objective, method = "BFGS", hessian = TRUE)
-  } else {
-    o <- stats::optimize(objective, interval = c(-20, 20))
-    h <- stats::optimHess(o$minimum, objective)
-    list(par = o$minimum, hessian = h)
-  }
+  opt <- stats::optim(if (fit_scale) c(0, 0) else 0, objective,
+                      method = "BFGS", hessian = TRUE)
   se <- tryCatch(sqrt(diag(solve(opt$hessian))), error = function(e) rep(NA_real_, 2))
   list(
     location = opt$par[[1L]] * s_bar,
@@ -144,21 +133,32 @@ estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) 
 }
 
 # Log density of `y` under an unpacked distribution vector whose location
-# is shifted by `loc` and scale multiplied by exp(`log_s`), without
-# rebuilding the vector (the optimiser calls this many times).
+# is shifted by `loc` and scale multiplied by exp(`log_s`). The optimiser
+# calls this many times, so the draw mixture is evaluated on its fields
+# rather than rebuilt.
 shifted_log_density <- function(u, y, loc, log_s) {
-  mu <- u$mu + loc
-  sigma <- u$sigma * exp(log_s)
+  check_adaptable(u)
+  u$mu <- u$mu + loc
+  u$sigma <- u$sigma * exp(log_s)
+  log_dens(u, y)
+}
+
+check_adaptable <- function(u) {
+  if (!inherits(u, c("dist_normal", "dist_shash", "dist_shash_draws"))) {
+    cli::cli_abort("Cannot adapt a {.cls {class(u)[[1L]]}} distribution.")
+  }
+}
+
+# Rebuild an unpacked distribution vector with new location and scale.
+dist_rebuild <- function(u, mu, sigma) {
+  check_adaptable(u)
   if (inherits(u, "dist_normal")) {
-    return(stats::dnorm(y, mu, sigma, log = TRUE))
+    return(distributional::dist_normal(mu, sigma))
   }
   if (inherits(u, "dist_shash")) {
-    return(shash_log_density(y, mu, sigma, u$eps, u$delta))
+    return(dist_shash(mu, sigma, u$eps, u$delta))
   }
-  if (inherits(u, "dist_shash_mc")) {
-    return(mc_log_density(list(q = y, mu = mu, sigma = sigma, eps = u$eps, delta = u$delta)))
-  }
-  cli::cli_abort("Cannot adapt a {.cls {class(u)[[1L]]}} distribution.")
+  dist_shash_draws(mu, sigma, u$eps, u$delta)
 }
 
 # Shift the location of every element of a distribution vector by `loc`
@@ -178,22 +178,17 @@ shift_params <- function(d, loc, log_s, loc_se = 0, seed = 1L) {
   if (is.null(u)) {
     cli::cli_abort("Cannot adapt a distribution vector with missing or mixed elements.")
   }
+  mu <- u$mu + loc
+  sigma <- u$sigma * exp(log_s)
   if (inherits(u, "dist_normal")) {
-    return(distributional::dist_normal(
-      u$mu + loc, sqrt((u$sigma * exp(log_s))^2 + loc_se^2)
-    ))
-  }
-  if (inherits(u, "dist_shash")) {
-    return(dist_shash(u$mu + loc, u$sigma * exp(log_s), u$eps, u$delta))
-  }
-  if (inherits(u, "dist_shash_mc")) {
+    sigma <- sqrt(sigma^2 + loc_se^2)
+  } else if (inherits(u, "dist_shash_draws")) {
     k <- ncol(u$mu)
     jitter <- withr::with_seed(seed + 1L, stats::rnorm(k))
     jitter <- if (k > 1L) as.numeric(scale(jitter)) else 0
-    mu <- u$mu + loc + outer(loc_se, jitter)
-    return(dist_shash_mc(mu, u$sigma * exp(log_s), u$eps, u$delta))
+    mu <- mu + outer(loc_se, jitter)
   }
-  cli::cli_abort("Cannot adapt a {.cls {class(u)[[1L]]}} distribution.")
+  dist_rebuild(u, mu, sigma)
 }
 
 apply_adaptation <- function(adaptation, dists, newdata, total = FALSE, seed = 1L) {

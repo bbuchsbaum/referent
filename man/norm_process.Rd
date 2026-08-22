@@ -2,25 +2,14 @@
 % Please edit documentation in R/dynamics.R
 \name{norm_process}
 \alias{norm_process}
-\alias{norm_matern32}
-\title{Longitudinal process constructors}
+\title{Longitudinal process kernel}
 \usage{
-norm_process(
-  kernel = c("matern32", "stable"),
-  stable_rank = TRUE,
-  measurement = ~1,
-  ell = 5
-)
-
-norm_matern32(stable_rank = TRUE, measurement = ~1, ell = 5)
+norm_process(kernel = c("matern32", "stable"), stable_rank = TRUE, ell = 5)
 }
 \arguments{
 \item{kernel}{\code{"matern32"} or \code{"stable"}.}
 
 \item{stable_rank}{Include a subject-level intercept.}
-
-\item{measurement}{Optional formula for measurement-noise covariates
-(currently recorded, not expanded).}
 
 \item{ell}{Initial length-scale (\code{Inf} selects the stable kernel).}
 }
@@ -31,7 +20,6 @@ A \code{norm_process} object.
 \code{norm_process()} builds the dependence kernel for \code{\link[=norm_dynamics]{norm_dynamics()}}.
 \code{"matern32"} is stable rank + Matern-3/2 + nugget; \code{"stable"} is stable
 rank + nugget only (a single correlation shared by every positive lag),
-the right model when visits share one fixed lag. \code{norm_matern32()} is
-the historical constructor; \code{norm_matern32(ell = Inf)} is the stable
-model.
+the right model when visits share one fixed lag. \code{ell = Inf} also
+selects the stable kernel.
 }

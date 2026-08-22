@@ -126,39 +126,6 @@ eq_group <- function(x, g) {
   x == g
 }
 
-fortify_visits <- function(data, id) {
-  data <- tibble::as_tibble(data)
-  visit_table(pull_column(data, rlang::enquo(id)))
-}
-
-visit_table <- function(id_vec) {
-  n_per <- as.integer(table(as.character(id_vec)))
-  tab <- as.data.frame(table(n_per), stringsAsFactors = FALSE)
-  names(tab) <- c("n_visits", "n_subjects")
-  tab$n_visits <- as.integer(as.character(tab$n_visits))
-  tibble::as_tibble(tab)
-}
-
-fortify_coverage <- function(data, time, by = NULL) {
-  coverage_frame(tibble::as_tibble(data), rlang::enquo(time), rlang::enquo(by))
-}
-
-coverage_frame <- function(data, time_quo, by_quo) {
-  time_vec <- as.numeric(pull_column(data, time_quo))
-  if (rlang::quo_is_null(by_quo) || rlang::quo_is_missing(by_quo)) {
-    grp <- rep("all", length(time_vec))
-    by_name <- NULL
-  } else {
-    grp <- as.character(pull_column(data, by_quo))
-    by_name <- tryCatch(rlang::as_name(by_quo), error = function(e) "group")
-  }
-  tibble::tibble(
-    time = time_vec,
-    .group = grp,
-    .by = by_name %||% "group"
-  )
-}
-
 fortify_kernel <- function(fit, lags = NULL) {
   if (!inherits(fit, "norm_dynamics")) {
     cli::cli_abort("{.fn fortify_kernel} expects a {.cls norm_dynamics} object.")
@@ -175,23 +142,7 @@ fortify_kernel <- function(fit, lags = NULL) {
     if (!isTRUE(pr$identified)) {
       return(tibble::tibble(lag = lags, correlation = NA_real_, .outcome = nm))
     }
-    r <- vapply(lags, function(h) {
-      process_correlation(c(0, h), pr$psi, pr$process)[1, 2]
-    }, numeric(1))
-    tibble::tibble(lag = lags, correlation = r, .outcome = nm)
+    tibble::tibble(lag = lags, correlation = process_kernel(lags, pr$psi, pr$process),
+                   .outcome = nm)
   }))
-}
-
-default_x <- function(fit) {
-  if ("age" %in% fit$covariates) {
-    return("age")
-  }
-  fit$support_ref$numeric_names[[1]] %||% fit$covariates[[1]]
-}
-
-as_col_name <- function(quo, default = NULL) {
-  if (rlang::quo_is_null(quo) || rlang::quo_is_missing(quo)) {
-    return(default)
-  }
-  tryCatch(rlang::as_name(quo), error = function(e) default)
 }

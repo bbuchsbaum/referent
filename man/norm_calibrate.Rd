@@ -4,14 +4,12 @@
 \alias{norm_calibrate}
 \title{Held-out probability recalibration}
 \usage{
-norm_calibrate(fit, data, method = c("rank"), by = NULL)
+norm_calibrate(fit, data, by = NULL)
 }
 \arguments{
 \item{fit}{A \link{norm_fit}.}
 
 \item{data}{Calibration reference data, not reused for evaluation.}
-
-\item{method}{\code{"rank"} (rank-interpolated empirical CDF).}
 
 \item{by}{Optional grouping column (e.g. site). Groups absent from the
 calibration data fall back to the pooled map.}

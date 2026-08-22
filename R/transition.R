@@ -21,18 +21,13 @@
 #' @param dynamic A [norm_dynamics] object.
 #' @param data Subject visits.
 #' @param id Subject identifier.
-#' @param time Time variable.
-#' @param conditioning `"all"` uses the full prior history.
+#' @param time Time variable. Every transition is conditioned on the
+#'   subject's full prior history.
 #' @return A `norm_transition` tibble, one row per consecutive visit pair
 #'   and outcome (zero rows, full column set, when no subject has two
 #'   visits).
 #' @export
-norm_transition <- function(dynamic,
-                            data,
-                            id,
-                            time,
-                            conditioning = c("all", "last")) {
-  conditioning <- match.arg(conditioning)
+norm_transition <- function(dynamic, data, id, time) {
   data <- tibble::as_tibble(data)
   id_vec <- pull_column(data, rlang::enquo(id))
   time_vec <- pull_column(data, rlang::enquo(time))
@@ -43,23 +38,16 @@ norm_transition <- function(dynamic,
     )
   }
   rows <- lapply(dynamic$outcomes, function(nm) {
-    transition_outcome(dynamic, data, nm, id_vec, time_vec, conditioning)
+    transition_outcome(dynamic, data, nm, id_vec, time_vec)
   })
   rows <- Filter(Negate(is.null), rows)
   out <- if (length(rows)) dplyr_bind(rows) else transition_template()
   structure(out, class = c("norm_transition", class(out)))
 }
 
-transition_columns <- c(
-  ".id", ".outcome", ".from_time", ".to_time", ".dt", "start_value", "end_value",
-  "start_centile", "end_centile", "observed_change", "expected_change",
-  "change_centile", "change_z", "observed_velocity", "expected_velocity",
-  "velocity_lower", "velocity_upper", "velocity_centile", "innovation_z",
-  "history_n", "predictive_sd", "measurement_sd", "support", "calibrated"
-)
-
+# Typed zero-row table for the case without any transition.
 transition_template <- function() {
-  out <- tibble::tibble(
+  tibble::tibble(
     .id = character(), .outcome = character(), .from_time = numeric(),
     .to_time = numeric(), .dt = numeric(), start_value = numeric(),
     end_value = numeric(), start_centile = numeric(), end_centile = numeric(),
@@ -71,10 +59,9 @@ transition_template <- function() {
     history_n = integer(), predictive_sd = numeric(), measurement_sd = numeric(),
     support = character(), calibrated = logical()
   )
-  out[, transition_columns]
 }
 
-transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditioning) {
+transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
   if (!outcome %in% names(data)) {
     return(NULL)
   }
@@ -93,7 +80,7 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
     lapply(seq_along(idx)[-1], function(j) {
       i1 <- idx[[j - 1L]]
       i2 <- idx[[j]]
-      hist <- if (identical(conditioning, "all")) idx[seq_len(j - 1L)] else i1
+      hist <- idx[seq_len(j - 1L)]
       y1 <- data[[outcome]][i1]
       y2 <- data[[outcome]][i2]
       dt <- time_vec[i2] - time_vec[i1]
@@ -104,8 +91,8 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
       dt_ok <- is.finite(dt) && dt > 0
       div <- if (dt_ok) dt else NA_real_
       if (identified && dt_ok) {
-        cond <- condition_z(z[hist], time_vec[hist], time_vec[i2], pr$psi, pr$process)
-        r12 <- correlation_at_lag(abs(dt), pr$psi, pr$process)
+        cond <- condition_history(z[hist], time_vec[hist], time_vec[i2], pr)
+        r12 <- process_kernel(abs(dt), pr$psi, pr$process)
         if (is.finite(cond$s)) {
           d_cond <- dist_conditioned(d_end, cond$m, cond$s)
           innov <- (z[i2] - cond$m) / cond$s
@@ -129,8 +116,8 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
         .dt = dt,
         start_value = y1,
         end_value = y2,
-        start_centile = dist_cdf(marg[i1], y1),
-        end_centile = dist_cdf(d_end, y2),
+        start_centile = exp(dist_eval(marg[i1], log_tail, y1)),
+        end_centile = exp(dist_eval(d_end, log_tail, y2)),
         observed_change = y2 - y1,
         expected_change = exp_end - y1,
         change_centile = stats::pnorm(change_z),
@@ -153,7 +140,7 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec, conditi
   if (!length(pieces)) {
     return(NULL)
   }
-  dplyr_bind(pieces)[, transition_columns]
+  dplyr_bind(pieces)
 }
 
 #' @export

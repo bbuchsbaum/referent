@@ -37,8 +37,7 @@ calibration, and tail calibration on held-out data.
 minus the log score of a Gaussian with the \emph{reference} sample's mean
 and population standard deviation (\code{fit$reference_baseline}, recorded
 by \code{\link[=norm_fit]{norm_fit()}}). The baseline never uses the held-out sample's own
-moments; it falls back to them only for fits made before this field
-existed.
+moments.
 
 Note that this is \emph{not} the same baseline PCNtoolkit uses. PCNtoolkit
 fits its baseline Gaussian to the sample being scored, so its MSLL is

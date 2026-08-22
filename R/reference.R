@@ -30,20 +30,10 @@ norm_reference <- function(fit,
       id_name = fit$id_name,
       data_hash = fit$data_hash,
       reference_baseline = fit$reference_baseline,
-      statuses = fit_statuses(fit),
       n = fit$n,
       criteria = criteria,
       units = units,
       missing_policy = missing_policy,
-      factor_levels = fit$support_ref$factor_levels,
-      ranges = fit$support_ref$numeric,
-      family = fit$spec$family$name,
-      formulas = list(
-        location = fit$spec$location,
-        scale = fit$spec$scale,
-        skew = fit$spec$skew,
-        tail = fit$spec$tail
-      ),
       versions = list(
         referent = as.character(utils::packageVersion("referent")),
         mgcv = as.character(utils::packageVersion("mgcv")),
@@ -55,7 +45,7 @@ norm_reference <- function(fit,
 }
 
 strip_fit_one <- function(fit_one) {
-  if (!is.null(fit_one$model) && identical(fit_one$engine, "mgcv")) {
+  if (!is.null(fit_one$model)) {
     fit_one$model <- strip_gam(fit_one$model)
   }
   fit_one
@@ -64,7 +54,7 @@ strip_fit_one <- function(fit_one) {
 #' @export
 print.norm_reference <- function(x, ...) {
   cli::cli_h1("referent model card")
-  cli::cli_text("family: {x$family}")
+  cli::cli_text("family: {x$spec$family$name}")
   cli::cli_text("engine: {x$spec$engine}")
   cli::cli_text("outcomes: {.field {x$outcomes}}")
   cli::cli_text("covariates: {.field {x$covariates}}")
@@ -73,7 +63,7 @@ print.norm_reference <- function(x, ...) {
   cli::cli_text(
     "package {x$versions$referent}, mgcv {x$versions$mgcv}, R {x$versions$r}"
   )
-  st <- x$statuses
+  st <- fit_statuses(x)
   cli::cli_text("statuses: {paste(paste0(names(st), '=', st), collapse = ', ')}")
   if (!is.null(x$adaptation)) {
     cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
@@ -81,22 +71,13 @@ print.norm_reference <- function(x, ...) {
   if (!is.null(x$calibration)) {
     cli::cli_text("calibrated: {x$calibration$method} on n = {x$calibration$n}")
   }
-  if (length(x$ranges)) {
+  ranges <- x$support_ref$numeric
+  if (length(ranges)) {
     cli::cli_text("Covariate ranges")
-    for (nm in names(x$ranges)) {
-      r <- x$ranges[[nm]]
+    for (nm in names(ranges)) {
+      r <- ranges[[nm]]
       cli::cli_text("  {nm}: [{signif(r$min, 4)}, {signif(r$max, 4)}]")
     }
   }
   invisible(x)
-}
-
-#' @export
-predict.norm_reference <- function(object, newdata, ...) {
-  fit <- object
-  class(fit) <- setdiff(class(fit), "norm_reference")
-  if (!inherits(fit, "norm_fit")) {
-    class(fit) <- c("norm_fit", class(fit))
-  }
-  predict.norm_fit(fit, newdata = newdata, ...)
 }

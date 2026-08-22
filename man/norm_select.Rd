@@ -31,8 +31,8 @@ Every criterion is computed from out-of-fold cross-fitted scores:
 \details{
 \enumerate{
 \item Drop failed or unstable fits.
-\item Drop models whose out-of-fold calibration is unacceptable (see
-\code{\link[=acceptable_calibration]{acceptable_calibration()}}).
+\item Drop models whose out-of-fold calibration is unacceptable (the
+calibration gate below).
 \item Rank survivors by out-of-fold mean log score; ties are broken by
 out-of-fold CRPS.
 \item Keep the candidates within one standard error of the best, where
@@ -44,4 +44,15 @@ is dropped as well.
 spec with covariate-dependent skew or tail.
 \item Choose the simplest remaining model (lowest ladder level).
 }
+
+The calibration gate passes a model when, for every outcome with
+\eqn{n} out-of-fold scores, \eqn{|\bar z| \le 0.10 + 2/\sqrt{n}},
+\eqn{0.80 - 2\sqrt{2/n} \le \mathrm{var}(z) \le 1.25 + 2\sqrt{2/n}},
+the 95\% coverage lies in \eqn{[0.93, 0.97] \pm 2\sqrt{0.05 \cdot 0.95/n}},
+and the observed 5\% two-sided tail rate lies in
+\eqn{0.05 \pm (0.015 + 2\sqrt{0.05 \cdot 0.95/n})}. The fixed margins
+are practical tolerances; the \eqn{2/\sqrt{n}} terms are two standard
+errors under perfect calibration, so small samples are not rejected
+for noise alone. The \code{calibrated} column of \code{comparison} records the
+gate's verdict per model.
 }

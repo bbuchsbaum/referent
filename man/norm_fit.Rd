@@ -14,8 +14,8 @@ norm_fit(spec, data, outcomes, id = NULL, ...)
 \item{outcomes}{Tidyselect specification or character vector of outcome
 columns. The covariate frame is kept wide.}
 
-\item{id}{Optional subject identifier (column name or vector). It is
-carried on scores but is never a covariate.}
+\item{id}{Optional subject identifier column. It is carried on scores
+but is never a covariate.}
 
 \item{...}{Passed to the engine fitter.}
 }

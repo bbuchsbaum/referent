@@ -2,21 +2,16 @@
 % Please edit documentation in R/dist.R
 \name{dist_shash}
 \alias{dist_shash}
-\alias{dist_shash_mc}
 \alias{dist_conditioned}
 \title{Predictive distributions}
 \usage{
 dist_shash(mu, sigma, eps = 0, delta = 1)
 
-dist_shash_mc(mu, sigma, eps = 0, delta = 1)
-
 dist_conditioned(marginal, m, s)
 }
 \arguments{
 \item{mu, sigma, eps, delta}{Location, scale (> 0), skewness, and tail
-weight (> 0). For \code{dist_shash()} numeric vectors recycled to a common
-length; for \code{dist_shash_mc()} matrices with one row per observation
-and one column per draw (a vector is treated as draw-invariant).}
+weight (> 0), recycled to a common length.}
 
 \item{marginal}{A \code{distribution} vector of marginal predictive
 distributions.}
@@ -35,9 +30,9 @@ vectors, so \code{cdf()}, \code{quantile()}, \code{density()}, \code{generate()}
 \code{variance()}, \code{hilo()}, tibble columns, and \code{ggdist} layers all work.
 Gaussian fits use \code{\link[distributional:dist_normal]{distributional::dist_normal()}}; SHASH fits use
 \code{dist_shash()}; \code{uncertainty = "total"} predictions from location-scale
-and SHASH fits are equal-weight mixtures over coefficient draws
-(\code{dist_shash_mc()}); history-conditioned forecasts are
-\code{dist_conditioned()}.
+and SHASH fits are equal-weight mixtures over coefficient draws (an
+internal \code{dist_shash_draws} class, one SHASH parameter set per draw and
+observation); history-conditioned forecasts are \code{dist_conditioned()}.
 }
 \details{
 \code{dist_shash()} follows the \code{mgcv::shash()} parameterisation. With
@@ -45,20 +40,13 @@ and SHASH fits are equal-weight mixtures over coefficient draws
 \eqn{F(y) = \Phi(\sinh(\delta\,\mathrm{asinh}(z)-\epsilon))}; \code{eps = 0},
 \code{delta = 1} is the Gaussian \eqn{N(\mu, \sigma^2)}.
 
-\code{dist_shash_mc()} holds, for every observation, one SHASH parameter set
-per coefficient draw (a matrix column per draw). Its CDF and density are
-averages over the draws computed in log space, its quantile is found by
-safeguarded Newton iteration on the mixture CDF, and \code{generate()} samples a draw and then
-the component. A Gaussian draw mixture is the special case
-\code{eps = 0}, \code{delta = 1}.
-
 \code{dist_conditioned()} maps a marginal predictive distribution through a
 conditional normal score: \eqn{F_*(y) = \Phi((z(y)-m)/s)} with
 \eqn{z(y) = \Phi^{-1}(F(y))}, so \code{m = 0}, \code{s = 1} recovers the marginal.
 
-Tail probabilities of all three classes are evaluated in log space, so
-scores for observations 40 standard deviations out remain finite and
-distinct (see \code{\link[=as_scores]{as_scores()}}).
+Tail probabilities of every class are evaluated in log space, so scores
+for observations 40 standard deviations out remain finite and distinct
+(see \code{\link[=as_scores]{as_scores()}}).
 }
 \examples{
 d <- dist_shash(mu = 0.2, sigma = 1.1, eps = 0.3, delta = 0.9)

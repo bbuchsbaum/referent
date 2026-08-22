@@ -18,6 +18,7 @@ norm_simulate(
   tau_g = sqrt(0.35),
   sigma_e = sqrt(0.15),
   ell = 5,
+  lag = NULL,
   seed = NULL
 )
 }
@@ -46,6 +47,10 @@ rescaled to sum to unit variance.}
 \item{ell}{Matern-3/2 length-scale in time units (\code{"longitudinal"}
 only).}
 
+\item{lag}{Optional fixed lag (\code{"longitudinal"} only): every subject
+then has exactly two visits this far apart, the design under which
+the Matern length-scale is not identified.}
+
 \item{seed}{Optional seed; the global RNG state is restored afterwards.}
 }
 \value{
@@ -66,7 +71,8 @@ generative parameters are stored in \code{attr(x, "truth")}.
 \item \code{"shash"}: \code{y} is sinh-arcsinh with the same location and scale and
 constant skew and tail.
 \item \code{"longitudinal"}: subjects have 2 to \code{visits + 1} visits with
-irregular lags. The normal score of \code{y} follows a stable subject
+irregular lags (or exactly two visits a fixed \code{lag} apart when \code{lag}
+is given). The normal score of \code{y} follows a stable subject
 component plus a Matern-3/2 process in time plus measurement noise,
 \eqn{z_i(t) = \tau_b b_i + \tau_g g_i(t) + \sigma_e e_{it}}, with
 \eqn{\tau_b^2 + \tau_g^2 + \sigma_e^2 = 1} so that marginal scores are

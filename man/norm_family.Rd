@@ -6,32 +6,21 @@
 \alias{norm_shash}
 \title{Family constructors for reference models}
 \usage{
-norm_gaussian(
-  link_location = "identity",
-  link_scale = "logb",
-  min_scale = 0.01
-)
+norm_gaussian(min_scale = 0.01)
 
-norm_shash(
-  link_location = "identity",
-  link_scale = "logeb",
-  link_skew = "identity",
-  link_tail = "identity",
-  min_scale = 0.01
-)
+norm_shash(min_scale = 0.01)
 }
 \arguments{
-\item{link_location, link_scale, link_skew, link_tail}{Character link
-names. Defaults follow \code{mgcv} (\code{identity} location; \code{logb} /
-\code{logeb} scale; identity skew and tail).}
-
 \item{min_scale}{Minimum scale used by the \code{logb} / \code{logeb} links.}
 }
 \value{
-An object of class \code{norm_family}.
+An object of class \code{norm_family} with fields \code{name} and
+\code{min_scale}.
 }
 \description{
 These objects describe a conditional distribution family. They are not
 fitted models. Engines use them to choose a likelihood and to construct
-\link[=dist_shash]{distributional} vectors.
+\link[=dist_shash]{distributional} vectors. \code{norm_gaussian()} models location
+and scale; \code{norm_shash()} adds skew and tail (four parameters), with the
+\code{mgcv} link functions (\code{identity} location, \code{logb} / \code{logeb} scale).
 }

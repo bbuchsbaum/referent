@@ -17,17 +17,25 @@ ggplot2::autoplot
 #'   drawn over it.
 #' * `"support"`: where `newdata` falls relative to the reference support
 #'   (histogram of `x` coloured by [norm_support()] status).
-#' * `"visits"`: visits per subject in the reference sample (from the `id`
-#'   declared at fit time) or in `data`.
-#' * `"coverage"`: the distribution of `x` in `data` against the
-#'   reference range and the 2nd/98th-percentile edges of the fit.
-#' * `"composition"`: visits and coverage side by side (a patchwork when
-#'   that package is installed, otherwise a list of two plots).
 #' * `"adaptation"`: location offsets (with standard errors) estimated by
 #'   [norm_adapt()].
 #'
+#' For a `norm_assessment`, `"calibration"` plots observed against nominal
+#' coverage, `"conditional"` the largest fitted drift of `z` against each
+#' covariate, and `"qq"` / `"worm"` the ordered Z scores against their
+#' expected normal order statistics, raw or detrended (observed minus
+#' expected), inside the envelope a calibrated model implies. Under a
+#' correctly specified model the held-out centiles are iid uniform, so
+#' the i-th ordered centile is Beta(i, n - i + 1): the pointwise band is
+#' its normal transform in closed form, and the simultaneous band uses
+#' equal local levels (Aldor-Noiman et al. 2013, Am. Stat. 67:249) with
+#' the common local level calibrated by Monte Carlo so the whole ordered
+#' sample stays inside with probability `level`. The corner tally names
+#' both bands, since about `1 - level` of the points are expected outside
+#' the pointwise band even when the model is right.
+#'
 #' For a `norm_dynamics`, `"kernel"` draws the fitted process correlation
-#' against lag and `"calibration"` draws a normal Q-Q plot of held-out
+#' against lag and `"calibration"` draws the same Q-Q chart of held-out
 #' innovation Z from [norm_transition()] on `data`; the latter needs
 #' `data`, `id`, and `time`.
 #'
@@ -38,15 +46,14 @@ ggplot2::autoplot
 #' @param x Covariate mapped to the x-axis (default `age` if present).
 #' @param newdata Observations to overlay or to classify.
 #' @param by Optional grouping factor for faceted charts.
-#' @param data Visit-level data for composition, trajectory, and
-#'   dynamics-calibration plots.
+#' @param data Visit-level data for trajectory and dynamics-calibration
+#'   plots.
 #' @param id Subject identifier column.
 #' @param time Time column.
 #' @param centiles Probability levels for centile and fan charts.
-#' @param level Coverage of the simulation envelope on the QQ plot.
+#' @param level Coverage of the envelope on the Q-Q and worm plots.
 #' @param ... Unused.
-#' @return A ggplot, or a patchwork object when `type = "composition"`
-#'   and patchwork is installed.
+#' @return A ggplot.
 #' @examples
 #' ref <- norm_simulate(150, seed = 1)
 #' fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
@@ -56,11 +63,7 @@ ggplot2::autoplot
 #' @name autoplot.norm_fit
 #' @exportS3Method ggplot2::autoplot
 autoplot.norm_fit <- function(object,
-                              type = c(
-                                "centiles", "trajectories", "support",
-                                "visits", "coverage", "composition",
-                                "adaptation"
-                              ),
+                              type = c("centiles", "trajectories", "support", "adaptation"),
                               outcome = NULL,
                               x = NULL,
                               newdata = NULL,
@@ -72,21 +75,15 @@ autoplot.norm_fit <- function(object,
                               ...) {
   type <- match.arg(type)
   outcome <- outcome %||% object$outcomes[[1]]
-  by_quo <- rlang::enquo(by)
-  by_nm <- as_col_name(by_quo)
-  id_quo <- rlang::enquo(id)
-  time_quo <- rlang::enquo(time)
+  by_nm <- as_col_name(rlang::enquo(by))
   data <- data %||% newdata
   switch(
     type,
     centiles = plot_centiles(object, outcome, x, newdata, by_nm, centiles),
     trajectories = plot_trajectories(
-      object, data, outcome, x, id_quo, time_quo, by_nm, centiles
+      object, data, outcome, x, rlang::enquo(id), rlang::enquo(time), by_nm, centiles
     ),
     support = plot_support(object, data, x),
-    visits = plot_visits(object, data, id_quo),
-    coverage = plot_coverage(object, data, x, time_quo, by_quo),
-    composition = plot_composition(object, data, x, id_quo, time_quo, by_quo),
     adaptation = plot_adaptation(object)
   )
 }
@@ -101,7 +98,7 @@ autoplot.norm_assessment <- function(object,
   switch(
     type,
     calibration = plot_calibration(object),
-    worm = plot_worm(object),
+    worm = plot_qq(object, level = level, detrend = TRUE),
     qq = plot_qq(object, level = level),
     conditional = plot_conditional(object)
   )
@@ -144,12 +141,13 @@ autoplot.norm_dynamics <- function(object,
                                    data = NULL,
                                    id = NULL,
                                    time = NULL,
+                                   level = 0.95,
                                    ...) {
   type <- match.arg(type)
   if (identical(type, "kernel")) {
     return(plot_kernel(object))
   }
-  plot_dynamics_calibration(object, data, rlang::enquo(id), rlang::enquo(time))
+  plot_dynamics_calibration(object, data, rlang::enquo(id), rlang::enquo(time), level)
 }
 
 # --- shared centile geometry ----------------------------------------------
@@ -205,8 +203,10 @@ band_fills <- function(n) {
   }, character(1))
 }
 
-has_groups <- function(x) {
-  length(unique(x[!is.na(x)])) > 1L
+# Colour scale mapped to a grouping variable, with the legend dropped when
+# the variable has a single level.
+outcome_colour <- function(x, name = "Outcome") {
+  scale_colour_referent(name = name, guide = if (has_groups(x)) "legend" else "none")
 }
 
 # --- norm_fit -------------------------------------------------------------
@@ -296,7 +296,7 @@ plot_support <- function(fit, newdata, x) {
     ggplot2::geom_histogram(bins = 30, position = "stack", colour = NA) +
     support_scale(df$support, "fill") +
     pretty_x() + pretty_y()
-  single <- single_level_legend(df$support)
+  single <- !has_groups(df$support)
   p <- finish_plot(
     p,
     title = NULL,
@@ -308,100 +308,6 @@ plot_support <- function(fit, newdata, x) {
     p <- p + ggplot2::theme(legend.position = "none")
   }
   p
-}
-
-plot_visits <- function(fit, data, id_quo) {
-  id_given <- !(rlang::quo_is_null(id_quo) || rlang::quo_is_missing(id_quo))
-  if (is.null(data) || !id_given) {
-    if (is.null(fit$id_name)) {
-      cli::cli_abort(c(
-        "No subject identifier was declared at fit time.",
-        i = "Pass {.arg id} to {.fn norm_fit}, or supply {.arg data} and {.arg id}."
-      ))
-    }
-    ids <- fit$id
-    source <- "reference sample"
-  } else {
-    ids <- pull_column(tibble::as_tibble(data), id_quo)
-    source <- "supplied data"
-  }
-  tab <- visit_table(ids)
-  p <- ggplot2::ggplot(tab, ggplot2::aes(.data$n_visits, .data$n_subjects)) +
-    ggplot2::geom_col(fill = referent_cols()$band, width = 0.72) +
-    ggplot2::scale_x_continuous(breaks = tab$n_visits) +
-    pretty_y()
-  finish_plot(
-    p,
-    title = NULL,
-    subtitle = paste0(sum(tab$n_subjects), " subjects, ", source),
-    xlab = "Visits per subject",
-    ylab = "Subjects"
-  )
-}
-
-plot_coverage <- function(fit, data, x, time_quo, by_quo) {
-  if (is.null(data)) {
-    cli::cli_abort("{.arg data} is required for a coverage plot.")
-  }
-  data <- tibble::as_tibble(data)
-  x_nm <- as_col_name(time_quo, x %||% default_x(fit))
-  if (!x_nm %in% names(data)) {
-    cli::cli_abort("{.arg data} has no column {.field {x_nm}}.")
-  }
-  df <- coverage_frame(data, rlang::quo(.data[[x_nm]]), by_quo)
-  df$time <- as.numeric(data[[x_nm]])
-  r <- fit$support_ref$numeric[[x_nm]]
-  grp_lab <- df$.by[[1]] %||% "group"
-  n_g <- length(unique(df$.group))
-  p <- ggplot2::ggplot(df, ggplot2::aes(.data$time))
-  if (!is.null(r)) {
-    p <- p +
-      ggplot2::annotate(
-        "rect", xmin = r$edge_lo, xmax = r$edge_hi, ymin = -Inf, ymax = Inf,
-        fill = referent_cols()$band, alpha = 0.08
-      ) +
-      ggplot2::geom_vline(
-        xintercept = c(r$min, r$max), colour = referent_cols()$muted, linewidth = 0.4
-      )
-  }
-  if (n_g > 1L) {
-    p <- p +
-      ggplot2::geom_density(
-        ggplot2::aes(fill = .data$.group, colour = .data$.group),
-        alpha = 0.25, linewidth = 0.4
-      ) +
-      scale_fill_referent(name = grp_lab) +
-      scale_colour_referent(name = grp_lab)
-    if (n_g > 4L) {
-      p <- p + ggplot2::facet_wrap(~.group, ncol = 1, scales = "free_y")
-    }
-  } else {
-    p <- p + ggplot2::geom_density(
-      fill = referent_cols()$band, colour = referent_cols()$band,
-      alpha = 0.25, linewidth = 0.4
-    )
-  }
-  p <- finish_plot(
-    p + pretty_x(),
-    title = NULL,
-    subtitle = if (is.null(r)) NULL else "shaded: central 96% of the reference; lines: reference range",
-    xlab = x_nm,
-    ylab = "Density"
-  )
-  if (n_g > 4L) {
-    p <- p + ggplot2::theme(legend.position = "none")
-  }
-  p
-}
-
-plot_composition <- function(fit, data, x, id_quo, time_quo, by_quo) {
-  p_vis <- plot_visits(fit, data, id_quo)
-  p_cov <- plot_coverage(fit, data, x, time_quo, by_quo)
-  if (has_pkg("patchwork")) {
-    return(patchwork::wrap_plots(p_vis, p_cov, ncol = 2) +
-             patchwork::plot_annotation(tag_levels = "A"))
-  }
-  list(visits = p_vis, coverage = p_cov)
 }
 
 plot_adaptation <- function(object) {
@@ -428,33 +334,18 @@ plot_adaptation <- function(object) {
   }
   df$outcome <- factor(df$outcome, levels = unique(df$outcome))
   df$group <- factor(df$group, levels = unique(df$group))
-  multi <- !single_level_legend(df$outcome)
   dodge <- ggplot2::position_dodge(width = 0.6)
-  p <- ggplot2::ggplot(df, ggplot2::aes(.data$group, .data$location)) +
-    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted)
-  if (multi) {
-    p <- p +
-      ggplot2::geom_linerange(
-        ggplot2::aes(
-          ymin = .data$location - 2 * .data$location_se,
-          ymax = .data$location + 2 * .data$location_se,
-          colour = .data$outcome
-        ),
-        position = dodge, linewidth = 0.5, na.rm = TRUE
-      ) +
-      ggplot2::geom_point(ggplot2::aes(colour = .data$outcome), position = dodge, size = 2.4) +
-      scale_colour_referent(name = "Outcome")
-  } else {
-    p <- p +
-      ggplot2::geom_linerange(
-        ggplot2::aes(
-          ymin = .data$location - 2 * .data$location_se,
-          ymax = .data$location + 2 * .data$location_se
-        ),
-        colour = referent_cols()$band, linewidth = 0.5, na.rm = TRUE
-      ) +
-      ggplot2::geom_point(colour = referent_cols()$band, size = 2.4)
-  }
+  p <- ggplot2::ggplot(df, ggplot2::aes(.data$group, .data$location, colour = .data$outcome)) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted) +
+    ggplot2::geom_linerange(
+      ggplot2::aes(
+        ymin = .data$location - 2 * .data$location_se,
+        ymax = .data$location + 2 * .data$location_se
+      ),
+      position = dodge, linewidth = 0.5, na.rm = TRUE
+    ) +
+    ggplot2::geom_point(position = dodge, size = 2.4) +
+    outcome_colour(df$outcome)
   finish_plot(
     p + pretty_y(),
     title = NULL,
@@ -475,77 +366,26 @@ plot_calibration <- function(assessment) {
     observed = unlist(lapply(paste0("cover_", c("50", "80", "90", "95", "99")), function(cl) df[[cl]]))
   )
   long$outcome <- factor(long$outcome, levels = unique(df$.outcome))
-  multi <- !single_level_legend(long$outcome)
-  p <- ggplot2::ggplot(long, ggplot2::aes(.data$nominal, .data$observed)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = referent_cols()$muted)
-  if (multi) {
-    p <- p +
-      ggplot2::geom_line(ggplot2::aes(colour = .data$outcome, group = .data$outcome), linewidth = 0.5) +
-      ggplot2::geom_point(ggplot2::aes(colour = .data$outcome), size = 2) +
-      scale_colour_referent(name = "Outcome")
-  } else {
-    p <- p +
-      ggplot2::geom_line(colour = referent_cols()$band, linewidth = 0.5) +
-      ggplot2::geom_point(colour = referent_cols()$band, size = 2)
-  }
-  p <- p +
+  p <- ggplot2::ggplot(
+    long,
+    ggplot2::aes(.data$nominal, .data$observed, colour = .data$outcome, group = .data$outcome)
+  ) +
+    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = referent_cols()$muted) +
+    ggplot2::geom_line(linewidth = 0.5) +
+    ggplot2::geom_point(size = 2) +
+    outcome_colour(long$outcome) +
     ggplot2::coord_equal(xlim = c(0.45, 1), ylim = c(0.45, 1)) +
     pretty_x() + pretty_y()
   finish_plot(p, title = NULL, xlab = "Nominal coverage", ylab = "Observed coverage")
 }
 
-plot_worm <- function(assessment) {
-  sc <- assessment$scores
-  sc <- sc[is.finite(sc$z), , drop = FALSE]
-  pieces <- lapply(split(sc, sc$.outcome), function(one) {
-    one <- one[order(one$z), , drop = FALSE]
-    one$expected <- stats::qnorm(stats::ppoints(nrow(one)))
-    one$worm <- one$z - one$expected
-    one
-  })
-  sc <- dplyr_bind(pieces)
-  sc$.outcome <- factor(sc$.outcome, levels = unique(assessment$scores$.outcome))
-  multi <- !single_level_legend(sc$.outcome)
-  p <- ggplot2::ggplot(sc, ggplot2::aes(.data$expected, .data$worm)) +
-    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted)
-  if (multi) {
-    p <- p +
-      ggplot2::geom_point(ggplot2::aes(colour = .data$.outcome), alpha = 0.45, size = 1.2) +
-      ggplot2::geom_smooth(
-        ggplot2::aes(colour = .data$.outcome), se = FALSE, linewidth = 0.5,
-        method = "loess", formula = y ~ x, span = 0.7
-      ) +
-      scale_colour_referent(name = "Outcome")
-  } else {
-    p <- p +
-      ggplot2::geom_point(colour = referent_cols()$ink, alpha = 0.45, size = 1.2) +
-      ggplot2::geom_smooth(
-        colour = referent_cols()$band, se = FALSE, linewidth = 0.6,
-        method = "loess", formula = y ~ x, span = 0.7
-      )
-  }
-  finish_plot(
-    p + pretty_x() + pretty_y(),
-    title = NULL, xlab = "Expected Z", ylab = "Observed minus expected Z"
-  )
-}
-
-# Normal QQ plot of the Z scores with the envelope a calibrated model implies.
-#
-# The reference is exact rather than nominal. Under a correctly specified
-# reference model the held-out centiles are iid uniform, so the i-th ordered
-# centile is Beta(i, n - i + 1) and the i-th ordered Z is its normal
-# transform. That gives the pointwise band in closed form. The simultaneous
-# band uses equal local levels (Aldor-Noiman et al. 2013, Am. Stat. 67:249):
-# the common two-sided local level gamma is calibrated by Monte Carlo so that
-# the whole ordered sample stays inside with probability `level`.
-#
-# The corner tally reports both bands. Counting only the simultaneous band
-# would let a panel headline "0 outside" while a large share of points sit
-# outside the narrower pointwise band that the same panel draws -- the two
-# bands answer different questions, so the label names both and states what
-# the pointwise rate should be.
-plot_qq <- function(assessment, level = 0.95) {
+# Ordered Z scores against their expected normal order statistics, raw
+# (`detrend = FALSE`) or as observed minus expected (the worm), inside the
+# pointwise and simultaneous envelopes of a calibrated model (see
+# `qq_envelope()`). `scores` needs `.outcome` and `z`; `ylab` and `note`
+# let the dynamics calibration chart reuse the geometry for innovation Z.
+plot_qq <- function(assessment, level = 0.95, detrend = FALSE,
+                    ylab = "Observed Z", note = NULL) {
   if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
     level <= 0 || level >= 1) {
     cli::cli_abort("{.arg level} must be a single probability in (0, 1).")
@@ -559,15 +399,17 @@ plot_qq <- function(assessment, level = 0.95) {
   # The envelope depends only on n, so outcomes of equal size share one.
   sizes <- unique(vapply(by_out, nrow, integer(1)))
   envs <- stats::setNames(lapply(sizes, qq_envelope, level = level), sizes)
+  centre <- function(v, expected) if (detrend) v - expected else v
   pieces <- lapply(by_out, function(one) {
     one <- one[order(one$z), , drop = FALSE]
     env <- envs[[as.character(nrow(one))]]
     one$expected <- env$expected
-    one$point_lo <- env$point_lo
-    one$point_hi <- env$point_hi
-    one$sim_lo <- env$sim_lo
-    one$sim_hi <- env$sim_hi
-    one$outside <- one$z < env$sim_lo | one$z > env$sim_hi
+    one$y <- centre(one$z, env$expected)
+    one$point_lo <- centre(env$point_lo, env$expected)
+    one$point_hi <- centre(env$point_hi, env$expected)
+    one$sim_lo <- centre(env$sim_lo, env$expected)
+    one$sim_hi <- centre(env$sim_hi, env$expected)
+    one$outside <- one$y < one$sim_lo | one$y > one$sim_hi
     one
   })
   df <- dplyr_bind(pieces)
@@ -581,19 +423,18 @@ plot_qq <- function(assessment, level = 0.95) {
   # The bands are defined only on the expected quantiles, so the x view is set
   # by those; y follows the data, which can run past them in a heavy tail.
   xlim <- range(df$expected, finite = TRUE)
-  ylim <- range(c(df$expected, df$z), finite = TRUE)
+  ylim <- range(c(if (!detrend) df$expected, df$y, df$sim_lo, df$sim_hi), finite = TRUE)
   ylim <- ylim + c(-1, 1) * 0.06 * diff(ylim)
-  brk <- pretty(ylim, n = 7L)
 
   # One corner label per panel, naming the band each count belongs to.
   tally <- dplyr_bind(lapply(pieces, function(one) {
     n <- nrow(one)
-    k_sim <- sum(one$z < one$sim_lo | one$z > one$sim_hi, na.rm = TRUE)
-    k_pt <- sum(one$z < one$point_lo | one$z > one$point_hi, na.rm = TRUE)
+    k_sim <- sum(one$outside, na.rm = TRUE)
+    k_pt <- sum(one$y < one$point_lo | one$y > one$point_hi, na.rm = TRUE)
     tibble::tibble(
       .outcome = one$.outcome[[1L]],
       expected = xlim[[1L]] + 0.04 * diff(xlim),
-      z = ylim[[2L]] - 0.03 * diff(ylim),
+      y = ylim[[2L]] - 0.03 * diff(ylim),
       label = sprintf(
         "outside simultaneous: %d of %d\noutside pointwise: %d (%.1f%%)",
         k_sim, n, k_pt, 100 * k_pt / n
@@ -601,7 +442,7 @@ plot_qq <- function(assessment, level = 0.95) {
     )
   }))
 
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$expected, y = .data$z)) +
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$expected, y = .data$y)) +
     ggplot2::geom_ribbon(
       ggplot2::aes(ymin = .data$sim_lo, ymax = .data$sim_hi, fill = lab_sim),
       colour = NA
@@ -611,7 +452,7 @@ plot_qq <- function(assessment, level = 0.95) {
       colour = NA
     ) +
     ggplot2::geom_abline(
-      slope = 1, intercept = 0, linetype = "dashed",
+      slope = if (detrend) 0 else 1, intercept = 0, linetype = "dashed",
       colour = cols$muted, linewidth = 0.4
     ) +
     ggplot2::geom_point(
@@ -629,11 +470,17 @@ plot_qq <- function(assessment, level = 0.95) {
       values = c("FALSE" = cols$ink, "TRUE" = cols$accent), guide = "none"
     ) +
     ggplot2::scale_size_manual(values = c("FALSE" = 1.1, "TRUE" = 2.0), guide = "none") +
-    ggplot2::scale_alpha_manual(values = c("FALSE" = 0.45, "TRUE" = 0.95), guide = "none") +
+    ggplot2::scale_alpha_manual(values = c("FALSE" = 0.45, "TRUE" = 0.95), guide = "none")
+  if (detrend) {
+    p <- p + pretty_x() + pretty_y() +
+      ggplot2::coord_cartesian(xlim = xlim, ylim = ylim, expand = FALSE)
+  } else {
     # Both axes are Z, so they share one tick vector and one unit of length.
-    ggplot2::scale_x_continuous(breaks = brk) +
-    ggplot2::scale_y_continuous(breaks = brk) +
-    ggplot2::coord_fixed(ratio = 1, xlim = xlim, ylim = ylim, expand = FALSE)
+    brk <- pretty(ylim, n = 7L)
+    p <- p + ggplot2::scale_x_continuous(breaks = brk) +
+      ggplot2::scale_y_continuous(breaks = brk) +
+      ggplot2::coord_fixed(ratio = 1, xlim = xlim, ylim = ylim, expand = FALSE)
+  }
 
   multi <- has_groups(df$.outcome)
   if (multi) {
@@ -641,14 +488,15 @@ plot_qq <- function(assessment, level = 0.95) {
   }
   finish_plot(
     p,
-    title = if (multi) NULL else df$.outcome[[1L]],
+    title = if (multi) NULL else as.character(df$.outcome[[1L]]),
     subtitle = paste0(
+      if (!is.null(note)) paste0(note, "; "),
       pct, "% pointwise and simultaneous envelopes for a calibrated model; ",
       format(100 * (1 - level), trim = TRUE),
       "% of points are expected outside the pointwise band"
     ),
     xlab = "Expected Z",
-    ylab = "Observed Z"
+    ylab = if (detrend) paste(ylab, "minus expected") else ylab
   ) +
     ggplot2::labs(
       caption = if (isTRUE(assessment$in_sample)) {
@@ -658,14 +506,12 @@ plot_qq <- function(assessment, level = 0.95) {
 }
 
 # Expected order statistics of Z and the pointwise / simultaneous envelopes
-# implied by n iid uniform centiles. Monte Carlo draws calibrate the
-# equal-local-level gamma; `reps` follows a fixed work budget so the cost of
-# the chart does not grow with the cohort, and the seed keeps it reproducible.
-# At the default budget the realised simultaneous level is within about half a
-# percentage point of `level`.
-qq_envelope <- function(n, level = 0.95, reps = NULL, seed = 20240619L) {
+# implied by n iid uniform centiles. The pointwise band is the exact Beta
+# order-statistic band; the simultaneous band's common local level gamma is
+# calibrated by seeded Monte Carlo (2000 ordered uniform samples put the
+# realised simultaneous level within about a percentage point of `level`).
+qq_envelope <- function(n, level = 0.95, reps = 2000L, seed = 20240619L) {
   n <- as.integer(n)
-  reps <- as.integer(reps %||% min(10000L, max(1000L, as.integer(2e6 / n))))
   expected <- stats::qnorm(stats::ppoints(n))
   if (n < 2L) {
     na <- rep(NA_real_, n)
@@ -863,13 +709,9 @@ plot_transition <- function(object, type) {
       yintercept = c(-2, 2), linetype = "dotted", colour = referent_cols()$muted, linewidth = 0.4
     )
   }
-  if (single_level_legend(df$support)) {
-    p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.6, colour = referent_cols()$band)
-  } else {
-    p <- p +
-      ggplot2::geom_point(ggplot2::aes(colour = .data$support), alpha = 0.7, size = 1.6) +
-      support_scale(df$support, "colour")
-  }
+  p <- p +
+    ggplot2::geom_point(ggplot2::aes(colour = .data$support), alpha = 0.7, size = 1.6) +
+    support_scale(df$support, "colour", guide = if (has_groups(df$support)) "legend" else "none")
   if (length(unique(df$.outcome)) > 1L) {
     p <- p + ggplot2::facet_wrap(~.outcome)
   }
@@ -883,15 +725,10 @@ plot_kernel <- function(dyn) {
   missing <- unique(df$.outcome[!is.finite(df$correlation)])
   df <- df[is.finite(df$correlation), , drop = FALSE]
   df$.outcome <- factor(df$.outcome, levels = dyn$outcomes)
-  multi <- !single_level_legend(df$.outcome)
-  p <- ggplot2::ggplot(df, ggplot2::aes(.data$lag, .data$correlation)) +
-    ggplot2::geom_hline(yintercept = 0, colour = referent_cols()$muted, linewidth = 0.3)
-  if (multi) {
-    p <- p + ggplot2::geom_line(ggplot2::aes(colour = .data$.outcome), linewidth = 0.7) +
-      scale_colour_referent(name = "Outcome")
-  } else if (nrow(df)) {
-    p <- p + ggplot2::geom_line(colour = referent_cols()$band, linewidth = 0.8)
-  }
+  p <- ggplot2::ggplot(df, ggplot2::aes(.data$lag, .data$correlation, colour = .data$.outcome)) +
+    ggplot2::geom_hline(yintercept = 0, colour = referent_cols()$muted, linewidth = 0.3) +
+    ggplot2::geom_line(linewidth = 0.7) +
+    outcome_colour(df$.outcome)
   rng <- dyn$lag_range
   if (!is.null(rng) && all(is.finite(rng)) && rng[[2]] > rng[[1]]) {
     p <- p + ggplot2::annotate(
@@ -912,50 +749,25 @@ plot_kernel <- function(dyn) {
   )
 }
 
-plot_dynamics_calibration <- function(dyn, data, id_quo, time_quo) {
+plot_dynamics_calibration <- function(dyn, data, id_quo, time_quo, level = 0.95) {
   if (is.null(data)) {
     cli::cli_abort(c(
       "{.arg data} is required for a dynamics calibration plot.",
       i = "Supply held-out visits with {.arg id} and {.arg time}; innovation Z is computed with {.fn norm_transition}."
     ))
   }
-  if (rlang::quo_is_null(id_quo) || rlang::quo_is_missing(id_quo) ||
-      rlang::quo_is_null(time_quo) || rlang::quo_is_missing(time_quo)) {
+  if (is.null(as_col_name(id_quo)) || is.null(as_col_name(time_quo))) {
     cli::cli_abort("{.arg id} and {.arg time} are required for a dynamics calibration plot.")
   }
   tr <- norm_transition(dyn, data = data, id = !!id_quo, time = !!time_quo)
-  df <- tibble::as_tibble(tr)
-  df <- df[is.finite(df$innovation_z), , drop = FALSE]
+  df <- tibble::tibble(.outcome = tr$.outcome, z = tr$innovation_z)
+  df <- df[is.finite(df$z), , drop = FALSE]
   if (!nrow(df)) {
     cli::cli_abort("No finite innovation Z in {.arg data}; is the process identified?")
   }
-  pieces <- lapply(split(df, df$.outcome), function(one) {
-    one <- one[order(one$innovation_z), , drop = FALSE]
-    one$expected <- stats::qnorm(stats::ppoints(nrow(one)))
-    one
-  })
-  df <- dplyr_bind(pieces)
   df$.outcome <- factor(df$.outcome, levels = dyn$outcomes)
-  stats_txt <- vapply(split(df$innovation_z, df$.outcome), function(z) {
-    sprintf("mean %.2f, var %.2f, n = %d", mean(z), stats::var(z), length(z))
-  }, character(1))
-  stats_txt <- stats_txt[nzchar(stats_txt)]
-  multi <- !single_level_legend(df$.outcome)
-  p <- ggplot2::ggplot(df, ggplot2::aes(.data$expected, .data$innovation_z)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = referent_cols()$muted)
-  if (multi) {
-    p <- p + ggplot2::geom_point(ggplot2::aes(colour = .data$.outcome), alpha = 0.5, size = 1.2) +
-      scale_colour_referent(name = "Outcome")
-  } else {
-    p <- p + ggplot2::geom_point(colour = referent_cols()$ink, alpha = 0.5, size = 1.2)
-  }
-  finish_plot(
-    p + ggplot2::coord_equal() + pretty_x() + pretty_y(),
-    title = NULL,
-    subtitle = paste0("held-out innovation Z: ", paste(
-      if (multi) paste0(names(stats_txt), " ", stats_txt) else stats_txt, collapse = "; "
-    )),
-    xlab = "Expected N(0, 1) quantile",
-    ylab = "Innovation Z"
+  plot_qq(
+    list(scores = df, in_sample = FALSE), level = level,
+    ylab = "Innovation Z", note = "held-out innovation Z"
   )
 }

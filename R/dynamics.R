@@ -20,8 +20,7 @@
 #' @param data Longitudinal reference data.
 #' @param id Subject identifier.
 #' @param time Time variable (typically age).
-#' @param process A process constructor such as [norm_matern32()] or
-#'   [norm_process()].
+#' @param process A kernel from [norm_process()].
 #' @param crossfit Number of subject-level folds used to obtain
 #'   out-of-fold Z scores via [norm_crossfit()] (whole subjects stay in one
 #'   fold). `0` or `NULL` uses in-sample scores from `reference`.
@@ -33,19 +32,22 @@ norm_dynamics <- function(reference,
                           data,
                           id,
                           time,
-                          process = norm_matern32(),
+                          process = norm_process(),
                           crossfit = 5) {
   data <- tibble::as_tibble(data)
-  id_quo <- rlang::enquo(id)
-  id_vec <- pull_column(data, id_quo)
-  time_vec <- pull_column(data, rlang::enquo(time))
-  time_name <- tryCatch(rlang::as_name(rlang::enquo(time)), error = function(e) "time")
+  id_vec <- pull_column(data, rlang::enquo(id))
+  time_quo <- rlang::enquo(time)
+  time_vec <- pull_column(data, time_quo)
+  time_name <- as_col_name(time_quo, "time")
   if (!inherits(process, "norm_process")) {
-    cli::cli_abort("{.arg process} must be created by {.fn norm_matern32} or {.fn norm_process}.")
+    cli::cli_abort("{.arg process} must be created by {.fn norm_process}.")
   }
   crossfit <- as.integer(crossfit %||% 0L)
   scores <- if (crossfit >= 2L) {
-    dynamics_oof_scores(reference, data, id_vec, crossfit)
+    # Subject-level out-of-fold Z; `.row` indexes rows of `data`.
+    data$.dyn_id <- as.character(id_vec)
+    norm_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
+                  folds = crossfit, cluster = !!rlang::sym(".dyn_id"))
   } else {
     predict(reference, newdata = data, type = "scores",
             uncertainty = "conditional", allow_extrapolation = TRUE)
@@ -75,60 +77,34 @@ norm_dynamics <- function(reference,
   )
 }
 
-# Subject-level out-of-fold Z via norm_crossfit(cluster = id).
-dynamics_oof_scores <- function(reference, data, id_vec, folds) {
-  data$.dyn_id <- as.character(id_vec)
-  cf <- norm_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
-                      folds = folds, cluster = !!rlang::sym(".dyn_id"))
-  # norm_crossfit() already returns `.row` indexing rows of `data`.
-  cf
-}
-
-#' Longitudinal process constructors
+#' Longitudinal process kernel
 #'
 #' `norm_process()` builds the dependence kernel for [norm_dynamics()].
 #' `"matern32"` is stable rank + Matern-3/2 + nugget; `"stable"` is stable
 #' rank + nugget only (a single correlation shared by every positive lag),
-#' the right model when visits share one fixed lag. `norm_matern32()` is
-#' the historical constructor; `norm_matern32(ell = Inf)` is the stable
-#' model.
+#' the right model when visits share one fixed lag. `ell = Inf` also
+#' selects the stable kernel.
 #'
 #' @param kernel `"matern32"` or `"stable"`.
 #' @param stable_rank Include a subject-level intercept.
-#' @param measurement Optional formula for measurement-noise covariates
-#'   (currently recorded, not expanded).
 #' @param ell Initial length-scale (`Inf` selects the stable kernel).
 #' @return A `norm_process` object.
 #' @export
 norm_process <- function(kernel = c("matern32", "stable"),
                          stable_rank = TRUE,
-                         measurement = ~1,
                          ell = 5) {
   kernel <- match.arg(kernel)
   if (is.infinite(ell)) {
     kernel <- "stable"
   }
-  if (identical(kernel, "stable")) {
-    ell <- Inf
-  }
   structure(
     list(
       name = kernel,
       stable_rank = isTRUE(stable_rank),
-      measurement = measurement,
-      ell = ell
+      ell = if (identical(kernel, "stable")) Inf else ell
     ),
-    class = c(paste0("norm_process_", kernel), "norm_process")
+    class = "norm_process"
   )
-}
-
-#' @rdname norm_process
-#' @export
-norm_matern32 <- function(stable_rank = TRUE,
-                          measurement = ~1,
-                          ell = 5) {
-  norm_process(kernel = "matern32", stable_rank = stable_rank,
-               measurement = measurement, ell = ell)
 }
 
 matern32_kernel <- function(d, ell) {
@@ -139,24 +115,22 @@ matern32_kernel <- function(d, ell) {
   (1 + a) * exp(-a)
 }
 
-process_covariance <- function(times, psi, process) {
-  n <- length(times)
-  d <- abs(outer(times, times, `-`))
-  k <- matrix(0, n, n)
+# Process correlation at a lag (any array shape): the shared variance
+# fraction at that lag, plus the nugget at lag zero.
+process_kernel <- function(lag, psi, process) {
+  num <- 0
   if (isTRUE(process$stable_rank)) {
-    k <- k + psi$tau_b^2
+    num <- num + psi$tau_b^2
   }
-  if (identical(process$name, "matern32") && psi$tau_g > 0) {
-    k <- k + psi$tau_g^2 * matern32_kernel(d, psi$ell)
+  if (identical(process$name, "matern32")) {
+    num <- num + psi$tau_g^2 * matern32_kernel(lag, psi$ell)
   }
-  diag(k) <- diag(k) + psi$sigma_e^2
-  k
+  tot <- (if (isTRUE(process$stable_rank)) psi$tau_b^2 else 0) + psi$tau_g^2 + psi$sigma_e^2
+  num / tot + (lag == 0) * psi$sigma_e^2 / tot
 }
 
 process_correlation <- function(times, psi, process) {
-  k <- process_covariance(times, psi, process)
-  s <- sqrt(pmax(diag(k), .Machine$double.eps))
-  k / outer(s, s)
+  process_kernel(abs(outer(times, times, `-`)), psi, process)
 }
 
 # ---- estimator ------------------------------------------------------------
@@ -208,8 +182,7 @@ process_nll <- function(theta, process, pd) {
   psi <- process_par(theta, process)
   ll <- 0
   for (b in pd$batches) {
-    r <- correlation_at_lag(b$lag, psi, process)
-    ll <- ll + batched_loglik(b$z, r)
+    ll <- ll + batched_loglik(b$z, process_kernel(b$lag, psi, process))
   }
   if (!is.finite(ll)) {
     return(1e10)
@@ -255,18 +228,6 @@ batched_loglik <- function(z, r) {
   sum(-0.5 * (n * log(2 * pi) + 2 * ldet + rowSums(w^2)))
 }
 
-correlation_at_lag <- function(lag, psi, process) {
-  num <- 0
-  if (isTRUE(process$stable_rank)) {
-    num <- num + psi$tau_b^2
-  }
-  if (identical(process$name, "matern32")) {
-    num <- num + psi$tau_g^2 * matern32_kernel(lag, psi$ell)
-  }
-  tot <- (if (isTRUE(process$stable_rank)) psi$tau_b^2 else 0) + psi$tau_g^2 + psi$sigma_e^2
-  num / tot + (lag == 0) * psi$sigma_e^2 / tot
-}
-
 # Lags are "fixed" when their spread is small relative to their size; the
 # Matern length-scale is then unidentified and the stable kernel is used.
 lags_are_fixed <- function(lag_range, tol = 0.05) {
@@ -275,9 +236,9 @@ lags_are_fixed <- function(lag_range, tol = 0.05) {
 
 fit_process <- function(process, z, id, time, ident = NULL) {
   ident <- ident %||% process_identifiability(id, time)
-  unfit <- function(reason, proc = process) {
+  unfit <- function(reason) {
     list(
-      process = proc, psi = NULL, theta = NULL, se = NULL, vcov = NULL,
+      process = process, psi = NULL, theta = NULL, se = NULL, vcov = NULL,
       nll = NA_real_, identified = FALSE, ell_identified = FALSE,
       r_median = NA_real_, r_median_se = NA_real_, median_lag = NA_real_,
       reason = reason, components = c(stable = NA_real_, dynamic = NA_real_,
@@ -294,8 +255,7 @@ fit_process <- function(process, z, id, time, ident = NULL) {
   lag_range <- ident$lag_range
   reduced <- identical(process$name, "matern32") && lags_are_fixed(lag_range)
   if (reduced) {
-    process <- norm_process("stable", stable_rank = process$stable_rank,
-                            measurement = process$measurement)
+    process <- norm_process("stable", stable_rank = process$stable_rank)
   }
   stable <- identical(process$name, "stable")
   med_lag <- ident$median_lag
@@ -348,7 +308,7 @@ fit_process <- function(process, z, id, time, ident = NULL) {
   }
   se <- if (is.null(vc)) rep(NA_real_, length(theta)) else sqrt(diag(vc))
   psi <- process_par(theta, process)
-  r_fun <- function(th) correlation_at_lag(med_lag, process_par(th, process), process)
+  r_fun <- function(th) process_kernel(med_lag, process_par(th, process), process)
   r_med <- r_fun(theta)
   r_se <- NA_real_
   if (!is.null(vc)) {
@@ -393,11 +353,11 @@ process_components <- function(processes) {
       stable = unname(pr$components[["stable"]]),
       dynamic = unname(pr$components[["dynamic"]]),
       measurement = unname(pr$components[["measurement"]]),
-      ell = if (isTRUE(pr$identified) && isTRUE(pr$ell_identified)) pr$psi$ell else NA_real_,
+      ell = if (isTRUE(pr$ell_identified)) pr$psi$ell else NA_real_,
       ell_identified = isTRUE(pr$ell_identified),
-      median_lag = pr$median_lag %||% NA_real_,
-      r_median_lag = pr$r_median %||% NA_real_,
-      r_median_lag_se = pr$r_median_se %||% NA_real_
+      median_lag = pr$median_lag,
+      r_median_lag = pr$r_median,
+      r_median_lag_se = pr$r_median_se
     )
   }))
 }
@@ -441,23 +401,29 @@ process_identifiability <- function(id, time) {
 
 # ---- conditioning and support --------------------------------------------
 
-condition_z <- function(z_hist, t_hist, t_new, psi, process) {
+# Conditional mean and sd of the normal score at each `t_new` given the
+# history scores `z_hist` at `t_hist`, under a fitted process (a list with
+# `psi` and `process`). Without history, or without a fitted process, the
+# marginal N(0, 1) is returned.
+condition_history <- function(z_hist, t_hist, t_new, fitted) {
   n_h <- length(t_hist)
-  if (!n_h || is.null(psi)) {
-    return(list(m = 0, s = 1, r = NA_real_))
+  n_new <- length(t_new)
+  if (!n_h || is.null(fitted$psi)) {
+    return(list(m = rep(0, n_new), s = rep(1, n_new)))
   }
-  t_all <- c(t_hist, t_new)
-  r <- process_correlation(t_all, psi, process)
-  r_hh <- r[seq_len(n_h), seq_len(n_h), drop = FALSE]
-  r_hs <- r[seq_len(n_h), n_h + 1L, drop = FALSE]
-  r_hh <- r_hh + diag(1e-8, n_h)
+  psi <- fitted$psi
+  process <- fitted$process
+  r_hh <- process_correlation(t_hist, psi, process) + diag(1e-8, n_h)
   inv <- tryCatch(solve(r_hh), error = function(e) NULL)
   if (is.null(inv)) {
-    return(list(m = NA_real_, s = NA_real_, r = r[1, 2]))
+    return(list(m = rep(NA_real_, n_new), s = rep(NA_real_, n_new)))
   }
-  m <- drop(t(r_hs) %*% inv %*% z_hist)
-  s2 <- pmax(1 - drop(t(r_hs) %*% inv %*% r_hs), 1e-8)
-  list(m = m, s = sqrt(s2), r = if (n_h == 1L) r[1, 2] else NA_real_)
+  r_hs <- process_kernel(abs(outer(t_hist, t_new, `-`)), psi, process)
+  w <- inv %*% r_hs
+  list(
+    m = drop(crossprod(w, z_hist)),
+    s = sqrt(pmax(1 - colSums(r_hs * w), 1e-8))
+  )
 }
 
 # Lag support is always checked against the reference lag range: a lag-10
@@ -475,35 +441,18 @@ classify_temporal_support <- function(dyn, t_from, t_to, history_n) {
 
 #' @export
 print.norm_dynamics <- function(x, ...) {
-  cli::cli_text("{.cls norm_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}")
   cli::cli_text(
-    "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]; lag range [{signif(x$lag_range[1], 3)}, {signif(x$lag_range[2], 3)}]; Z: {x$z_source %||% 'in_sample'}"
+    "{.cls norm_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}; Z: {x$z_source}"
+  )
+  cli::cli_text(
+    "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]; lag range [{signif(x$lag_range[1], 3)}, {signif(x$lag_range[2], 3)}]"
   )
   ident <- x$identifiability
-  if (!is.null(ident) && !isTRUE(ident$change)) {
-    cli::cli_alert_warning("change not identified: {ident$reason %||% 'insufficient repeats'}")
-  } else if (!is.null(ident) && !isTRUE(ident$measurement)) {
-    cli::cli_alert_warning("measurement not separated: {ident$reason %||% ''}")
+  if (!isTRUE(ident$change)) {
+    cli::cli_alert_warning("change not identified: {ident$reason}")
+  } else if (!isTRUE(ident$measurement)) {
+    cli::cli_alert_warning("measurement not separated: {ident$reason}")
   }
-  comp <- x$components
-  if (!is.null(comp) && nrow(comp)) {
-    for (i in seq_len(nrow(comp))) {
-      if (!isTRUE(comp$identified[[i]])) {
-        cli::cli_text("  {comp$.outcome[[i]]}: not identified ({x$processes[[comp$.outcome[[i]]]]$reason %||% ''})")
-        next
-      }
-      ell_txt <- if (isTRUE(comp$ell_identified[[i]])) {
-        sprintf("ell = %.3g", comp$ell[[i]])
-      } else {
-        "ell not identified (stable kernel)"
-      }
-      cli::cli_text(sprintf(
-        "  %s [%s]: stable %.2f, dynamic %.2f, measurement %.2f; r(lag %.3g) = %.3f (SE %.3f); %s",
-        comp$.outcome[[i]], comp$process[[i]], comp$stable[[i]], comp$dynamic[[i]],
-        comp$measurement[[i]], comp$median_lag[[i]], comp$r_median_lag[[i]],
-        comp$r_median_lag_se[[i]], ell_txt
-      ))
-    }
-  }
+  print(x$components)
   invisible(x)
 }

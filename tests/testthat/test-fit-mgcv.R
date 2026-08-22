@@ -68,3 +68,18 @@ test_that("save/read round trip reproduces scores", {
   b <- predict(fit2, newdata = dat[1:10, ], uncertainty = "conditional")
   expect_equal(a$z, b$z, tolerance = 1e-10)
 })
+
+test_that("predict carries the declared subject id", {
+  dat <- norm_simulate(40, seed = 74)
+  dat$participant_id <- paste0("S", seq_len(nrow(dat)))
+  fit <- norm_fit(
+    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+    data = dat,
+    outcomes = "y",
+    id = participant_id
+  )
+  expect_equal(fit$id_name, "participant_id")
+  expect_false("participant_id" %in% fit$covariates)
+  sc <- predict(fit, newdata = dat[1:5, ], uncertainty = "conditional")
+  expect_equal(as.character(sc$.id), dat$participant_id[1:5])
+})

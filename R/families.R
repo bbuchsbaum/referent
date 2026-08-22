@@ -2,69 +2,31 @@
 #'
 #' These objects describe a conditional distribution family. They are not
 #' fitted models. Engines use them to choose a likelihood and to construct
-#' [distributional][dist_shash] vectors.
+#' [distributional][dist_shash] vectors. `norm_gaussian()` models location
+#' and scale; `norm_shash()` adds skew and tail (four parameters), with the
+#' `mgcv` link functions (`identity` location, `logb` / `logeb` scale).
 #'
-#' @param link_location,link_scale,link_skew,link_tail Character link
-#'   names. Defaults follow `mgcv` (`identity` location; `logb` /
-#'   `logeb` scale; identity skew and tail).
 #' @param min_scale Minimum scale used by the `logb` / `logeb` links.
-#' @return An object of class `norm_family`.
+#' @return An object of class `norm_family` with fields `name` and
+#'   `min_scale`.
 #' @name norm_family
 NULL
 
-new_norm_family <- function(name, n_parameter, parameter_names, links,
-                            extra = list()) {
-  structure(
-    c(
-      list(
-        name = name,
-        n_parameter = n_parameter,
-        parameter_names = parameter_names,
-        links = links
-      ),
-      extra
-    ),
-    class = c(paste0("norm_family_", name), "norm_family")
-  )
+#' @rdname norm_family
+#' @export
+norm_gaussian <- function(min_scale = 0.01) {
+  structure(list(name = "gaussian", min_scale = min_scale), class = "norm_family")
 }
 
 #' @rdname norm_family
 #' @export
-norm_gaussian <- function(link_location = "identity",
-                          link_scale = "logb",
-                          min_scale = 0.01) {
-  new_norm_family(
-    name = "gaussian",
-    n_parameter = 2L,
-    parameter_names = c("location", "scale"),
-    links = c(location = link_location, scale = link_scale),
-    extra = list(min_scale = min_scale)
-  )
-}
-
-#' @rdname norm_family
-#' @export
-norm_shash <- function(link_location = "identity",
-                       link_scale = "logeb",
-                       link_skew = "identity",
-                       link_tail = "identity",
-                       min_scale = 1e-2) {
-  new_norm_family(
-    name = "shash",
-    n_parameter = 4L,
-    parameter_names = c("location", "scale", "skew", "tail"),
-    links = c(
-      location = link_location,
-      scale = link_scale,
-      skew = link_skew,
-      tail = link_tail
-    ),
-    extra = list(min_scale = min_scale)
-  )
+norm_shash <- function(min_scale = 0.01) {
+  structure(list(name = "shash", min_scale = min_scale), class = "norm_family")
 }
 
 #' @export
 print.norm_family <- function(x, ...) {
-  cli::cli_text("{.cls norm_family} {x$name} ({x$n_parameter} parameter{?s})")
+  n_par <- if (identical(x$name, "shash")) 4L else 2L
+  cli::cli_text("{.cls norm_family} {x$name} ({n_par} parameter{?s})")
   invisible(x)
 }

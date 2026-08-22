@@ -10,7 +10,8 @@
 #' * `"shash"`: `y` is sinh-arcsinh with the same location and scale and
 #'   constant skew and tail.
 #' * `"longitudinal"`: subjects have 2 to `visits + 1` visits with
-#'   irregular lags. The normal score of `y` follows a stable subject
+#'   irregular lags (or exactly two visits a fixed `lag` apart when `lag`
+#'   is given). The normal score of `y` follows a stable subject
 #'   component plus a Matern-3/2 process in time plus measurement noise,
 #'   \eqn{z_i(t) = \tau_b b_i + \tau_g g_i(t) + \sigma_e e_{it}}, with
 #'   \eqn{\tau_b^2 + \tau_g^2 + \sigma_e^2 = 1} so that marginal scores are
@@ -30,6 +31,9 @@
 #'   rescaled to sum to unit variance.
 #' @param ell Matern-3/2 length-scale in time units (`"longitudinal"`
 #'   only).
+#' @param lag Optional fixed lag (`"longitudinal"` only): every subject
+#'   then has exactly two visits this far apart, the design under which
+#'   the Matern length-scale is not identified.
 #' @param seed Optional seed; the global RNG state is restored afterwards.
 #' @return A data frame with a `truth` attribute listing the generative
 #'   parameters. For `"longitudinal"`, `truth$correlation(lag)` gives the
@@ -53,18 +57,15 @@ norm_simulate <- function(n = 400,
                           tau_g = sqrt(0.35),
                           sigma_e = sqrt(0.15),
                           ell = 5,
+                          lag = NULL,
                           seed = NULL) {
   kind <- match.arg(kind)
   scale <- match.arg(scale)
-  if (is.null(seed)) {
-    return(simulate_impl(n, kind, sites, site_shift, site_log_scale, scale,
-                         skew, tail, visits, tau_b, tau_g, sigma_e, ell))
-  }
-  withr::with_seed(
-    seed,
+  run <- function() {
     simulate_impl(n, kind, sites, site_shift, site_log_scale, scale,
-                  skew, tail, visits, tau_b, tau_g, sigma_e, ell)
-  )
+                  skew, tail, visits, tau_b, tau_g, sigma_e, ell, lag)
+  }
+  if (is.null(seed)) run() else withr::with_seed(seed, run())
 }
 
 sim_location <- function(age, sex) {
@@ -87,7 +88,7 @@ sim_markers <- function(age, z) {
 }
 
 simulate_impl <- function(n, kind, sites, site_shift, site_log_scale, scale,
-                          skew, tail, visits, tau_b, tau_g, sigma_e, ell) {
+                          skew, tail, visits, tau_b, tau_g, sigma_e, ell, lag = NULL) {
   site_levels <- LETTERS[seq_len(sites)]
   site_shift <- rep_len(site_shift, sites)
   site_log_scale <- rep_len(site_log_scale, sites)
@@ -100,13 +101,14 @@ simulate_impl <- function(n, kind, sites, site_shift, site_log_scale, scale,
     site_log_scale = site_log_scale
   )
   if (identical(kind, "longitudinal")) {
-    n_subject <- max(ceiling(n / visits), 2L)
-    n_visit <- sample(2:(visits + 1L), n_subject, replace = TRUE)
+    fixed <- !is.null(lag)
+    n_subject <- max(ceiling(n / if (fixed) 2 else visits), 2L)
+    n_visit <- if (fixed) rep(2L, n_subject) else sample(2:(visits + 1L), n_subject, replace = TRUE)
     id <- rep(seq_len(n_subject), n_visit)
     age0 <- stats::runif(n_subject, 20, 72)
-    lags <- stats::runif(length(id), 0.5, 3)
+    lags <- if (fixed) rep(lag, length(id)) else stats::runif(length(id), 0.5, 3)
     age <- age0[id] + stats::ave(lags, id, FUN = function(l) cumsum(l) - l[[1L]])
-    age <- pmin(age, 80)
+    age <- if (fixed) age else pmin(age, 80)
     sex <- factor(sample(c("F", "M"), n_subject, replace = TRUE))[id]
     site <- factor(sample(site_levels, n_subject, replace = TRUE), levels = site_levels)[id]
     tot <- sqrt(tau_b^2 + tau_g^2 + sigma_e^2)

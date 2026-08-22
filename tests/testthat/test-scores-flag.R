@@ -19,14 +19,6 @@ test_that("norm_flag reports exceedances and FDR rather than abnormalities", {
   expect_warning(norm_flag(sc_in), "in-sample")
 })
 
-test_that("flag() is a deprecated alias for norm_flag()", {
-  sc <- as_scores(distributional::dist_normal(0, 1), c(0, 3))
-  sc$.in_sample <- FALSE
-  rlang::reset_warning_verbosity("referent_flag_deprecated")
-  expect_warning(fl <- flag(sc, threshold = 2), "deprecated")
-  expect_equal(fl$exceedance, norm_flag(sc, threshold = 2)$exceedance)
-})
-
 test_that("scores_matrix pivots a long table and keeps ids", {
   d <- distributional::dist_normal(c(0, 0), 1)
   sc <- as_scores(d, c(1, -1))

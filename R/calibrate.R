@@ -17,15 +17,13 @@
 #'
 #' @param fit A [norm_fit].
 #' @param data Calibration reference data, not reused for evaluation.
-#' @param method `"rank"` (rank-interpolated empirical CDF).
 #' @param by Optional grouping column (e.g. site). Groups absent from the
 #'   calibration data fall back to the pooled map.
 #' @return The fit with a `calibration` slot; [predict.norm_fit()] applies
 #'   the map to `centile`, `z`, and the tail columns and sets
 #'   `calibrated = TRUE`.
 #' @export
-norm_calibrate <- function(fit, data, method = c("rank"), by = NULL) {
-  method <- match.arg(method)
+norm_calibrate <- function(fit, data, by = NULL) {
   data <- tibble::as_tibble(data)
   by_quo <- rlang::enquo(by)
   by_vec <- pull_column(data, by_quo, default = NULL)
@@ -45,8 +43,8 @@ norm_calibrate <- function(fit, data, method = c("rank"), by = NULL) {
   })
   fit$calibration <- structure(
     list(
-      method = method,
-      by = if (is.null(by_vec)) NULL else rlang::as_name(by_quo),
+      method = "rank",
+      by = if (is.null(by_vec)) NULL else as_col_name(by_quo),
       maps = maps,
       n = nrow(data),
       pre = pre

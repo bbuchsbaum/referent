@@ -4,7 +4,7 @@
 \alias{norm_transition}
 \title{Transitions, change, and velocity}
 \usage{
-norm_transition(dynamic, data, id, time, conditioning = c("all", "last"))
+norm_transition(dynamic, data, id, time)
 }
 \arguments{
 \item{dynamic}{A \link{norm_dynamics} object.}
@@ -13,9 +13,8 @@ norm_transition(dynamic, data, id, time, conditioning = c("all", "last"))
 
 \item{id}{Subject identifier.}
 
-\item{time}{Time variable.}
-
-\item{conditioning}{\code{"all"} uses the full prior history.}
+\item{time}{Time variable. Every transition is conditioned on the
+subject's full prior history.}
 }
 \value{
 A \code{norm_transition} tibble, one row per consecutive visit pair

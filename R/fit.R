@@ -6,8 +6,8 @@
 #' @param data A data frame of reference observations.
 #' @param outcomes Tidyselect specification or character vector of outcome
 #'   columns. The covariate frame is kept wide.
-#' @param id Optional subject identifier (column name or vector). It is
-#'   carried on scores but is never a covariate.
+#' @param id Optional subject identifier column. It is carried on scores
+#'   but is never a covariate.
 #' @param ... Passed to the engine fitter.
 #' @details
 #' Covariates are the variables named in the spec's `location`, `scale`,
@@ -32,11 +32,10 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
   data <- tibble::as_tibble(data)
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
   id_quo <- rlang::enquo(id)
-  ids <- pull_column(data, id_quo, default = seq_len(nrow(data)))
-  id_name <- tryCatch({
-    nm <- rlang::as_name(id_quo)
-    if (nm %in% names(data)) nm else NULL
-  }, error = function(e) NULL)
+  id_name <- as_col_name(id_quo)
+  if (!is.null(id_name) && !id_name %in% names(data)) {
+    id_name <- NULL
+  }
   covariate_names <- spec_covariates(spec)
   missing_cov <- setdiff(covariate_names, names(data))
   if (length(missing_cov)) {
@@ -63,7 +62,7 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
         "{.field {nm}}: dropped {n_drop} row{?s} with missing outcome or covariate values."
       )
     }
-    fit_engine(spec, data[cc, , drop = FALSE], nm, ...)
+    fit_engine_mgcv(spec, data[cc, , drop = FALSE], nm, ...)
   }
   models <- outcome_lapply(outcome_names, fit_one)
   names(models) <- outcome_names
@@ -73,15 +72,12 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       spec = spec,
       outcomes = outcome_names,
       models = models,
-      id = ids,
       id_name = id_name,
       data_hash = digest_data(data[, c(covariate_names, outcome_names), drop = FALSE]),
       reference_baseline = reference_baseline(data, outcome_names),
       n = nrow(data),
       covariates = covariate_names,
-      support_ref = support_ref,
-      in_sample_rows = nrow(data),
-      package_version = as.character(utils::packageVersion("referent"))
+      support_ref = support_ref
     ),
     class = "norm_fit"
   )
@@ -96,7 +92,7 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
 # model depending on how the held-out sample happens to be spread.
 # (PCNtoolkit does exactly that, which is why its MSLL is not directly
 # comparable with this column.) Outcomes with fewer than two finite
-# values, or no spread, get NULL and fall back to the held-out baseline.
+# values, or no spread, get NULL and an NA standardised log score.
 reference_baseline <- function(data, outcomes) {
   out <- lapply(outcomes, function(nm) {
     y <- data[[nm]]
@@ -255,8 +251,7 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
     if (!fit_ok(m)) {
       return(NULL)
     }
-    predict_engine_dist(m, newdata, uncertainty = uncertainty,
-                        n_draw = n_draw, seed = seed)
+    predict_mgcv_dist(m, newdata, uncertainty, n_draw, seed)
   })
   names(dists) <- nms
   if (!is.null(object$adaptation)) {
@@ -318,34 +313,7 @@ scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE
       .in_sample = logical(), status = character()
     )
   }
-  structure(out, class = c("norm_scores", class(out)), in_sample = in_sample)
-}
-
-# `newdata` with `.z_<outcome>`, `.centile_<outcome>`, and `.support`
-# columns, built directly from the distributions (no long table).
-predict_wide <- function(object, newdata, uncertainty = "total", outcomes = NULL,
-                         allow_extrapolation = FALSE, n_draw = NULL, ...) {
-  newdata <- tibble::as_tibble(newdata)
-  dists <- predict_dists(object, newdata, uncertainty, outcomes, n_draw)
-  n <- nrow(newdata)
-  support <- classify_support(object$support_ref, newdata)$support
-  cal_group <- calibration_groups(object$calibration, newdata)
-  out <- newdata
-  for (nm in names(dists)) {
-    d <- dists[[nm]]
-    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
-    sc <- as_scores(d %||% distributional::dist_missing(n), y)
-    if (!is.null(cal_group) && !is.null(d)) {
-      sc <- calibrate_scores(object$calibration, nm, cal_group, sc)
-    }
-    if (!isTRUE(allow_extrapolation)) {
-      sc$z[support %in% "out"] <- NA_real_
-    }
-    out[[paste0(".z_", nm)]] <- sc$z
-    out[[paste0(".centile_", nm)]] <- sc$centile
-  }
-  out$.support <- support
-  out
+  structure(out, class = c("norm_scores", class(out)))
 }
 
 score_ids <- function(object, newdata) {
@@ -369,18 +337,6 @@ is_in_sample_data <- function(fit, newdata) {
     return(FALSE)
   }
   identical(digest_data(newdata[, cols, drop = FALSE]), fit$data_hash)
-}
-
-#' @export
-`[.norm_scores` <- function(x, i, j, drop = FALSE) {
-  cl <- class(x)
-  out <- NextMethod("[")
-  keep <- is.data.frame(out) && all(c("z", ".in_sample") %in% names(out))
-  if (keep) {
-    class(out) <- cl
-    attr(out, "in_sample") <- attr(x, "in_sample")
-  }
-  out
 }
 
 #' @export

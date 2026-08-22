@@ -1,20 +1,3 @@
-fit_engine <- function(spec, data, outcome, ...) {
-  switch(
-    spec$engine,
-    mgcv = fit_engine_mgcv(spec, data, outcome, ...),
-    cli::cli_abort("Unknown engine {.val {spec$engine}}.")
-  )
-}
-
-predict_engine_dist <- function(fit_one, newdata, uncertainty = "conditional",
-                                n_draw = 200L, seed = 1L) {
-  switch(
-    fit_one$engine,
-    mgcv = predict_mgcv_dist(fit_one, newdata, uncertainty, n_draw, seed),
-    cli::cli_abort("Unknown engine {.val {fit_one$engine}}.")
-  )
-}
-
 # The mgcv family is chosen from the referent family and the scale
 # formula: a Gaussian with constant scale is a plain `gam()` (or `bam()`
 # for large n, see below); a Gaussian with a modelled scale is `gaulss()`;
@@ -42,7 +25,6 @@ mgcv_family <- function(fit_one) {
 }
 
 fit_engine_mgcv <- function(spec, data, outcome, ...) {
-  fam_name <- spec$family$name
   mgcv_fam <- mgcv_family_name(spec)
   n <- nrow(data)
   # `bam()` is used only for the constant-scale Gaussian (a single linear
@@ -74,10 +56,6 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
     engine = "mgcv", family = spec$family, outcome = outcome, spec = spec,
     mgcv_family = mgcv_fam, y_name = outcome, n_obs = n
   )
-  if (fam_name != "gaussian" && fam_name != "shash") {
-    return(c(stub, list(status = "unsupported_family", model = NULL,
-                        message = "unsupported_family")))
-  }
   family <- mgcv_family(stub)
   model <- tryCatch(
     switch(
@@ -119,9 +97,8 @@ thaw_model <- function(fit_one) {
   model
 }
 
-predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "total"),
+predict_mgcv_dist <- function(fit_one, newdata, uncertainty = "conditional",
                               n_draw = 200L, seed = 1L) {
-  uncertainty <- match.arg(uncertainty)
   if (is.null(fit_one$model)) {
     cli::cli_abort("Cannot predict from a failed fit.")
   }
@@ -263,7 +240,7 @@ mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1
     }
   )
   par <- params_from_eta(eta_from_lp(lp, t(draws)), model, fam, fit_one, cond)
-  dist_shash_mc(par$location, par$scale, par$skew, par$tail)
+  dist_shash_draws(par$location, par$scale, par$skew, par$tail)
 }
 
 # Linear predictors for a coefficient vector, or an n x K matrix of them

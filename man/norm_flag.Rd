@@ -2,12 +2,9 @@
 % Please edit documentation in R/scores.R
 \name{norm_flag}
 \alias{norm_flag}
-\alias{flag}
 \title{Flag threshold exceedances}
 \usage{
 norm_flag(scores, threshold = 2)
-
-flag(scores, threshold = 2)
 }
 \arguments{
 \item{scores}{A \code{norm_scores} table.}
@@ -24,10 +21,6 @@ and the observed count.
 These are threshold exceedances, not abnormalities. With many
 well-calibrated independent outcomes, about \code{0.0455 * p} rows are
 expected to exceed \verb{|z| > 2} by chance.
-}
-\details{
-\code{flag()} is a deprecated alias for \code{norm_flag()} and will be
-removed in the next release.
 }
 \examples{
 sc <- as_scores(distributional::dist_normal(0, 1), c(0.2, 2.6, -3.1))

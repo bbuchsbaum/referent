@@ -12,9 +12,5 @@
 #' @keywords internal
 #' @importFrom rlang .data :=
 #' @importFrom ggplot2 autoplot
-#' @importFrom stats pnorm qnorm dnorm rnorm ppoints median sd var density
-#'   quantile predict coef vcov model.matrix complete.cases setNames
-#'   as.formula terms delete.response na.omit pchisq p.adjust
-#'   ave dist
-#' @importFrom utils packageVersion head
+#' @importFrom stats density quantile predict
 "_PACKAGE"

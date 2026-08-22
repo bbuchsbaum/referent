@@ -137,7 +137,7 @@ test_that("total-uncertainty adaptation propagates the offset SE exactly for a d
   new <- dat[241:260, ]
   d_base <- predict(fit, newdata = new, type = "distribution", uncertainty = "total")$y
   d_ad <- predict(ad, newdata = new, type = "distribution", uncertainty = "total")$y
-  expect_s3_class(vctrs::vec_data(d_ad)[[1]], "dist_shash_mc")
+  expect_s3_class(vctrs::vec_data(d_ad)[[1]], "dist_shash_draws")
   expect_equal(mean(d_ad), mean(d_base) + off$location, tolerance = 1e-10)
   # additive up to the chance covariance of the jitter with each row's draws
   expect_equal(variance(d_ad), variance(d_base) + off$location_se^2, tolerance = 0.02)

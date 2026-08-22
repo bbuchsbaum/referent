@@ -11,7 +11,7 @@ test_that("paper-reduction law: innovation_z equals Z-gain", {
   psi <- list(tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), ell = Inf)
   R <- process_correlation(c(0, 1), psi, process)
   expect_equal(R[1, 2], r, tolerance = 1e-8)
-  cond <- condition_z(z1, 0, 1, psi, process)
+  cond <- condition_history(z1, 0, 1, list(psi = psi, process = process))
   innov <- (z2 - cond$m) / cond$s
   expect_equal(innov, expect_gain, tolerance = 1e-8)
 })
@@ -21,26 +21,32 @@ test_that("difference-reduction law: change_z equals standardized difference", {
   z1 <- 0.8
   z2 <- -0.2
   expect_d <- (z2 - z1) / sqrt(2 * (1 - r))
-  process <- norm_matern32(ell = Inf)
+  process <- norm_process(ell = Inf)
   expect_identical(process$name, "stable")
   psi <- list(tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), ell = Inf)
-  r12 <- correlation_at_lag(1, psi, process)
+  r12 <- process_kernel(1, psi, process)
   expect_equal((z2 - z1) / sqrt(2 * (1 - r12)), expect_d, tolerance = 1e-8)
 })
 
 test_that("history law: added history cannot increase conditional variance", {
-  process <- norm_matern32(ell = 4)
-  psi <- list(tau_b = 0.5, tau_g = 0.4, sigma_e = 0.2, ell = 4)
-  s1 <- condition_z(0.3, 10, 12, psi, process)$s
-  s2 <- condition_z(c(0.1, 0.3), c(8, 10), 12, psi, process)$s
+  fitted <- list(process = norm_process(ell = 4),
+                 psi = list(tau_b = 0.5, tau_g = 0.4, sigma_e = 0.2, ell = 4))
+  s1 <- condition_history(0.3, 10, 12, fitted)$s
+  s2 <- condition_history(c(0.1, 0.3), c(8, 10), 12, fitted)$s
   expect_lte(s2, s1 + 1e-10)
+  # vectorised over forecast times
+  both <- condition_history(c(0.1, 0.3), c(8, 10), c(12, 15), fitted)
+  expect_equal(both$s[[1]], s2)
+  expect_equal(both$m[[1]], condition_history(c(0.1, 0.3), c(8, 10), 12, fitted)$m)
+  expect_gt(both$s[[2]], both$s[[1]])
 })
 
-test_that("covariance matrices are positive semidefinite", {
-  process <- norm_matern32(ell = 3)
+test_that("correlation matrices are positive semidefinite", {
+  process <- norm_process(ell = 3)
   psi <- list(tau_b = 0.4, tau_g = 0.5, sigma_e = 0.2, ell = 3)
   times <- c(0, 0.4, 1.7, 6)
-  k <- process_covariance(times, psi, process)
+  k <- process_correlation(times, psi, process)
+  expect_equal(diag(k), rep(1, 4))
   ev <- eigen(k, symmetric = TRUE, only.values = TRUE)$values
   expect_true(all(ev >= -1e-10))
 })
@@ -65,7 +71,7 @@ test_that("batched likelihood equals the per-subject Gaussian likelihood", {
 })
 
 test_that("simplex parameterisation gives unit total variance", {
-  psi <- process_par(c(0.3, -1.2, 0.5), norm_matern32())
+  psi <- process_par(c(0.3, -1.2, 0.5), norm_process())
   expect_equal(psi$tau_b^2 + psi$tau_g^2 + psi$sigma_e^2, 1, tolerance = 1e-12)
   psi_s <- process_par(0.7, norm_process("stable"))
   expect_equal(psi_s$tau_b^2 + psi_s$sigma_e^2, 1, tolerance = 1e-12)
@@ -90,7 +96,7 @@ test_that("kernel recovery: r(lag) at the median lag within 0.08 of truth on irr
   expect_lt(abs(pr$r_median - r_true), 0.08)
   comp <- dyn$components
   expect_equal(comp$r_median_lag, pr$r_median)
-  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "matern32")
+  expect_match(print_text(dyn), "matern32")
 })
 
 test_that("out-of-sample calibration of innovation_z and change_z on irregular 3-visit data", {
@@ -118,9 +124,8 @@ test_that("out-of-sample calibration of innovation_z and change_z on irregular 3
 
 test_that("stable model on fixed-lag two-visit data recovers r with ell unidentified", {
   skip_on_cran()
-  dat <- simulate_two_visit(600, r = 0.6, lag = 2, sigma_e = 0, seed = 5)
-  fit <- norm_fit(norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
-                  data = dat, outcomes = "y")
+  dat <- simulate_two_visit(600, r = 0.6, lag = 2, seed = 5)
+  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age)
   pr <- dyn$processes$y
   expect_true(dyn$identifiability$fixed_lag)
@@ -129,27 +134,27 @@ test_that("stable model on fixed-lag two-visit data recovers r with ell unidenti
   expect_identical(pr$process$name, "stable")
   expect_true(is.na(dyn$components$ell))
   expect_lt(abs(pr$r_median - 0.6), 0.05)
-  expect_lt(abs(correlation_at_lag(2, pr$psi, pr$process) - 0.6), 0.05)
+  expect_lt(abs(process_kernel(2, pr$psi, pr$process) - 0.6), 0.05)
   expect_true(is.finite(pr$r_median_se))
-  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "ell not identified")
+  expect_false(dyn$components$ell_identified)
+  expect_match(print_text(dyn), "stable")
 })
 
 test_that("stable and Matern kernels agree on r(lag) for near-fixed lags", {
   skip_on_cran()
-  dat <- simulate_two_visit(600, r = 0.55, lag = 2, sigma_e = 0, seed = 6)
+  dat <- simulate_two_visit(600, r = 0.55, lag = 2, seed = 6)
   set.seed(61)
   jitter <- stats::runif(nrow(dat) / 2, -0.4, 0.4)
   dat$age[seq(2, nrow(dat), by = 2)] <- dat$age[seq(2, nrow(dat), by = 2)] + jitter
-  fit <- norm_fit(norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
-                  data = dat, outcomes = "y")
+  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
   dyn_m <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   dyn_s <- norm_dynamics(fit, data = dat, id = participant_id, time = age,
                          process = norm_process("stable"), crossfit = 0)
   expect_identical(dyn_m$processes$y$process$name, "matern32")
   expect_identical(dyn_s$processes$y$process$name, "stable")
   expect_identical(dyn_m$z_source, "in_sample")
-  r_m <- correlation_at_lag(2, dyn_m$processes$y$psi, dyn_m$processes$y$process)
-  r_s <- correlation_at_lag(2, dyn_s$processes$y$psi, dyn_s$processes$y$process)
+  r_m <- process_kernel(2, dyn_m$processes$y$psi, dyn_m$processes$y$process)
+  r_s <- process_kernel(2, dyn_s$processes$y$psi, dyn_s$processes$y$process)
   expect_lt(abs(r_m - r_s), 0.03)
   expect_lt(abs(r_s - 0.55), 0.06)
 })
@@ -179,7 +184,7 @@ test_that("unidentified dynamics give NA history-conditioned quantities and no f
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
   expect_error(norm_forecast(dyn, history = hist, times = max(hist$age) + 1), "not identified")
   expect_true(all(is.na(fortify_kernel(dyn)$correlation)))
-  expect_match(paste(cli::cli_fmt(print(dyn)), collapse = "\n"), "not identified")
+  expect_match(print_text(dyn), "not identified")
 })
 
 test_that("norm_transition handles no transitions and duplicate visit times", {
@@ -190,7 +195,7 @@ test_that("norm_transition handles no transitions and duplicate visit times", {
   tr0 <- norm_transition(dyn, data = single, id = participant_id, time = age)
   expect_s3_class(tr0, "norm_transition")
   expect_equal(nrow(tr0), 0L)
-  expect_identical(names(tr0), transition_columns)
+  expect_identical(names(tr0), names(transition_template()))
   dup <- dat[dat$participant_id %in% dat$participant_id[1:2], ]
   dup$age[2] <- dup$age[1]
   expect_warning(
@@ -205,15 +210,15 @@ test_that("norm_transition handles no transitions and duplicate visit times", {
 })
 
 test_that("temporal support flags extrapolated lags under a fixed-lag reference", {
-  dat <- simulate_two_visit(200, r = 0.6, lag = 2, sigma_e = 0, seed = 8)
-  fit <- norm_fit(norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
-                  data = dat, outcomes = "y")
+  dat <- simulate_two_visit(200, r = 0.6, lag = 2, seed = 8)
+  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
   dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   expect_identical(classify_temporal_support(dyn, 40, 42, 1), "in")
   expect_identical(classify_temporal_support(dyn, 40, 50, 1), "extrapolated_lag")
   expect_identical(classify_temporal_support(dyn, 40, 40.5, 1), "extrapolated_lag")
   hist <- dat[dat$participant_id == 1, ]
   fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + c(2, 10))
+  expect_equal(fc$history_n, 2L)
   expect_identical(fc$lag_support, c("in", "extrapolated_lag"))
   expect_identical(fc$summary$support, fc$lag_support)
 })

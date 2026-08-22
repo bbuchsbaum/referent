@@ -74,7 +74,7 @@
        .outcome mean_log_score standardized_log_score crps mae rmse smse
        <chr> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
       1 marker_01 # # # # # #
-      2 marker_bad NaN NaN NA NaN NaN NA 
+      2 marker_bad NaN NA NA NaN NaN NA 
       3 y # # # # # #
       # i 2 more variables: ev <dbl>, cor <dbl>
 
@@ -83,22 +83,32 @@
     Code
       print(dyn)
     Message
-      <norm_dynamics> 1 outcome; requested kernel: matern32
-      subjects: 200; time range [#, #]; lag range [2, 2]; Z: in_sample
+      <norm_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      subjects: 200; time range [#, #]; lag range [2, 2]
       ! measurement not separated: no short-interval repeats; measurement noise is not separated from rank dynamics
-      y [stable]: stable #, dynamic #, measurement #; r(lag 2) = # (SE
-      #); ell not identified (stable kernel)
+    Output
+      # A tibble: 1 x 11
+       .outcome process identified stable dynamic measurement ell ell_identified
+       <chr> <chr> <lgl> <dbl> <dbl> <dbl> <dbl> <lgl> 
+      1 y stable TRUE # 0 # NA FALSE 
+      # i 3 more variables: median_lag <dbl>, r_median_lag <dbl>,
+      # r_median_lag_se <dbl>
 
 ---
 
     Code
       print(dyn0)
     Message
-      <norm_dynamics> 1 outcome; requested kernel: matern32
-      subjects: 200; time range [#, #]; lag range [0, 0]; Z: in_sample
+      <norm_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      subjects: 200; time range [#, #]; lag range [0, 0]
       ! change not identified: too few repeated observations to identify within-person dependence
-      y: not identified (too few repeated observations to identify within-person
-      dependence)
+    Output
+      # A tibble: 1 x 11
+       .outcome process identified stable dynamic measurement ell ell_identified
+       <chr> <chr> <lgl> <dbl> <dbl> <dbl> <dbl> <lgl> 
+      1 y matern32 FALSE NA NA NA NA FALSE 
+      # i 3 more variables: median_lag <dbl>, r_median_lag <dbl>,
+      # r_median_lag_se <dbl>
 
 # remaining print methods use cli and return invisibly
 
@@ -124,5 +134,5 @@
     Code
       print(jt)
     Message
-      <norm_joint> gaussian_copula, 1 outcome, n = 49 reference subjects
+      <norm_joint> gaussian copula, 1 outcome, n = 49 reference subjects
 

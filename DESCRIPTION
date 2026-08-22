@@ -35,11 +35,8 @@ Suggests:
     future,
     ggdist,
     future.apply,
-    ggridges,
     knitr,
-    patchwork,
     rmarkdown,
-    scoringRules,
     testthat (>= 3.0.0),
     vdiffr
 Encoding: UTF-8

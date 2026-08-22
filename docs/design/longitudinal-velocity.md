@@ -479,11 +479,10 @@ dynamic_process_variance
 measurement_variance
 ```
 
-The measurement component may depend on:
-
-```r
-measurement = ~ site + device + quality
-```
+The measurement component may eventually depend on covariates
+(`measurement = ~ site + device + quality`); that is future work. The
+current `norm_process()` fits a single measurement nugget and accepts no
+measurement formula.
 
 At a new site, adaptation should be separable:
 
@@ -569,10 +568,7 @@ dynamic <- norm_dynamics(
   data = longitudinal_reference,
   id = participant_id,
   time = age,
-  process = norm_matern32(
-    stable_rank = TRUE,
-    measurement = ~ site + quality
-  ),
+  process = norm_process("matern32", stable_rank = TRUE),
   crossfit = 5
 )
 ```
