@@ -32,8 +32,12 @@ norm_assess <- function(fit, newdata, by = NULL) {
   }
   newdata <- tibble::as_tibble(newdata)
   by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
-  scores <- predict(fit, newdata = newdata, type = "scores", uncertainty = "conditional")
   dists <- predict_dists(fit, newdata, uncertainty = "conditional")
+  scores <- scores_from_dists(fit, dists, newdata, allow_extrapolation = FALSE)
+  assess_from_scores(fit, scores, dists, newdata, by_vec)
+}
+
+assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
   overall <- assess_overall(scores, dists, newdata)
   marginal <- if (is.null(by_vec)) {
     assess_marginal(scores)
@@ -45,14 +49,12 @@ norm_assess <- function(fit, newdata, by = NULL) {
     })
     dplyr_bind(parts)
   }
-  conditional <- assess_conditional(scores, newdata, fit)
-  tail <- assess_tail(scores)
   structure(
     list(
       overall = overall,
       marginal = marginal,
-      conditional = conditional,
-      tail = tail,
+      conditional = assess_conditional(scores, newdata, fit),
+      tail = assess_tail(scores),
       scores = scores,
       n = nrow(newdata),
       in_sample = isTRUE(attr(scores, "in_sample"))
@@ -68,7 +70,11 @@ assess_overall <- function(scores, dists, newdata) {
     ok <- is.finite(sc$log_density) & is.finite(sc$observed)
     log_score <- mean(sc$log_density[ok])
     naive <- naive_log_score(sc$observed[ok])
-    crps <- mean_crps(dists[[nm]], sc$observed)
+    crps <- if (is.null(dists[[nm]])) {
+      NA_real_
+    } else {
+      mean(crps_from_dist(dists[[nm]], sc$observed), na.rm = TRUE)
+    }
     var_y <- if (sum(ok) > 1) stats::var(sc$observed[ok]) else NA_real_
     tibble::tibble(
       .outcome = nm,
@@ -92,13 +98,6 @@ naive_log_score <- function(y) {
     s <- 1
   }
   mean(stats::dnorm(y, mu, s, log = TRUE), na.rm = TRUE)
-}
-
-mean_crps <- function(dist, y) {
-  if (is.null(dist)) {
-    return(NA_real_)
-  }
-  mean(crps_from_dist(dist, y), na.rm = TRUE)
 }
 
 # Per-observation CRPS: closed form for a Gaussian predictive, otherwise

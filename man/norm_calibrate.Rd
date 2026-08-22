@@ -25,8 +25,8 @@ the map to \code{centile}, \code{z}, and the tail columns and sets
 Maps PIT values through a monotone map estimated on a calibration
 sample: \eqn{F^\star(y\mid x)=G(F_0(y\mid x))}. This targets global
 (or group-specific) calibration. It does not create full conditional
-calibration, so pre-calibration diagnostics are kept in
-\code{fit$calibration$pre}.
+calibration, so pre-calibration diagnostics (the assessment tables,
+without the per-row scores) are kept in \code{fit$calibration$pre}.
 }
 \details{
 With calibration PITs \eqn{u_{(1)} \le \dots \le u_{(n)}}, the map

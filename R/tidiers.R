@@ -44,7 +44,7 @@ tidy.norm_fit <- function(x, ...) {
       outcome = nm,
       family = x$spec$family$name,
       status = m$status %||% "ok",
-      n = if (is.null(model)) NA_integer_ else length(model$y),
+      n = if (is.null(model)) NA_integer_ else as.integer(m$n_obs %||% length(model$y)),
       edf = if (is.null(model)) NA_real_ else sum(model$edf),
       !!!edf,
       message = m$message %||% NA_character_
@@ -100,14 +100,5 @@ glance.norm_assessment <- function(x, ...) {
 #' @export
 augment.norm_fit <- function(x, newdata, uncertainty = c("total", "conditional"), ...) {
   uncertainty <- match.arg(uncertainty)
-  newdata <- tibble::as_tibble(newdata)
-  sc <- predict(x, newdata = newdata, type = "scores", uncertainty = uncertainty, ...)
-  out <- newdata
-  for (nm in x$outcomes) {
-    rows <- sc[sc$.outcome == nm, , drop = FALSE]
-    out[[paste0(".z_", nm)]] <- rows$z[match(seq_len(nrow(newdata)), rows$.row)]
-    out[[paste0(".centile_", nm)]] <- rows$centile[match(seq_len(nrow(newdata)), rows$.row)]
-  }
-  out$.support <- classify_support(x$support_ref, newdata)$support
-  out
+  predict_wide(x, newdata, uncertainty = uncertainty, ...)
 }

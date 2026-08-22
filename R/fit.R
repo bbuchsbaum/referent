@@ -208,14 +208,7 @@ predict.norm_fit <- function(object,
     cols <- lapply(dists, function(d) d %||% distributional::dist_missing(n))
     return(tibble::tibble(.id = score_ids(object, newdata), !!!cols))
   }
-  scores <- scores_from_dists(object, dists, newdata)
-  if (!is.null(object$calibration)) {
-    scores <- apply_calibration(object, scores, newdata)
-  }
-  if (!isTRUE(allow_extrapolation)) {
-    scores$z[scores$support %in% "out"] <- NA_real_
-  }
-  scores
+  scores_from_dists(object, dists, newdata, allow_extrapolation)
 }
 
 # Named list of per-outcome distribution vectors (NULL for failed fits),
@@ -245,8 +238,9 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
   dists
 }
 
-# Assemble the long score table from per-outcome distributions.
-scores_from_dists <- function(object, dists, newdata) {
+# Assemble the long score table from per-outcome distributions, then
+# apply the calibration map and the extrapolation mask.
+scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE) {
   n <- nrow(newdata)
   support <- classify_support(object$support_ref, newdata)$support
   in_sample <- is_in_sample_data(object, newdata)
@@ -257,6 +251,7 @@ scores_from_dists <- function(object, dists, newdata) {
   } else {
     rep(FALSE, n)
   }
+  cal_group <- calibration_groups(object$calibration, newdata)
   rows <- lapply(names(dists), function(nm) {
     d <- dists[[nm]]
     y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
@@ -267,13 +262,21 @@ scores_from_dists <- function(object, dists, newdata) {
       sc <- as_scores(d, y)
       status <- ifelse(missing_cov, "missing_predictor", "ok")
     }
+    calibrated <- FALSE
+    if (!is.null(cal_group) && !is.null(d)) {
+      sc <- calibrate_scores(object$calibration, nm, cal_group, sc)
+      calibrated <- TRUE
+    }
+    if (!isTRUE(allow_extrapolation)) {
+      sc$z[support %in% "out"] <- NA_real_
+    }
     tibble::tibble(
       .row = seq_len(n),
       .id = ids,
       .outcome = nm,
       sc,
       support = support,
-      calibrated = FALSE,
+      calibrated = calibrated,
       .in_sample = in_sample,
       status = status
     )
@@ -290,6 +293,33 @@ scores_from_dists <- function(object, dists, newdata) {
   structure(out, class = c("norm_scores", class(out)), in_sample = in_sample)
 }
 
+# `newdata` with `.z_<outcome>`, `.centile_<outcome>`, and `.support`
+# columns, built directly from the distributions (no long table).
+predict_wide <- function(object, newdata, uncertainty = "total", outcomes = NULL,
+                         allow_extrapolation = FALSE, n_draw = NULL, ...) {
+  newdata <- tibble::as_tibble(newdata)
+  dists <- predict_dists(object, newdata, uncertainty, outcomes, n_draw)
+  n <- nrow(newdata)
+  support <- classify_support(object$support_ref, newdata)$support
+  cal_group <- calibration_groups(object$calibration, newdata)
+  out <- newdata
+  for (nm in names(dists)) {
+    d <- dists[[nm]]
+    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
+    sc <- as_scores(d %||% distributional::dist_missing(n), y)
+    if (!is.null(cal_group) && !is.null(d)) {
+      sc <- calibrate_scores(object$calibration, nm, cal_group, sc)
+    }
+    if (!isTRUE(allow_extrapolation)) {
+      sc$z[support %in% "out"] <- NA_real_
+    }
+    out[[paste0(".z_", nm)]] <- sc$z
+    out[[paste0(".centile_", nm)]] <- sc$centile
+  }
+  out$.support <- support
+  out
+}
+
 score_ids <- function(object, newdata) {
   if (".id" %in% names(newdata)) {
     return(newdata[[".id"]])
@@ -302,7 +332,7 @@ score_ids <- function(object, newdata) {
 }
 
 dplyr_bind <- function(xs) {
-  tibble::as_tibble(do.call(rbind, lapply(xs, as.data.frame)))
+  vctrs::vec_rbind(!!!lapply(xs, tibble::as_tibble))
 }
 
 is_in_sample_data <- function(fit, newdata) {

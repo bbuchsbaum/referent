@@ -20,7 +20,13 @@ norm_reference(
 An object of class \code{norm_reference} (also a \code{norm_fit}).
 }
 \description{
-The bundle omits raw training observations. It keeps what is required
-for prediction, support checks, adaptation, calibration, and
-provenance. Printing a \code{norm_reference} shows the model card.
+The bundle omits raw training observations. Each fitted model is
+reduced to what prediction needs (coefficients, their covariance, the
+smooth constructions, terms, and factor levels): the model frame,
+fitted values, residuals, weights, and the mgcv family object (rebuilt
+when predicting) are dropped, so the bundle is a small fraction of the
+fit's size. Predictions from the bundle reproduce those of the fit
+exactly. The bundle keeps what is required for support checks,
+adaptation, calibration, and provenance. Printing a \code{norm_reference}
+shows the model card.
 }

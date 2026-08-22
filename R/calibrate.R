@@ -3,8 +3,8 @@
 #' Maps PIT values through a monotone map estimated on a calibration
 #' sample: \eqn{F^\star(y\mid x)=G(F_0(y\mid x))}. This targets global
 #' (or group-specific) calibration. It does not create full conditional
-#' calibration, so pre-calibration diagnostics are kept in
-#' `fit$calibration$pre`.
+#' calibration, so pre-calibration diagnostics (the assessment tables,
+#' without the per-row scores) are kept in `fit$calibration$pre`.
 #'
 #' @details
 #' With calibration PITs \eqn{u_{(1)} \le \dots \le u_{(n)}}, the map
@@ -31,9 +31,10 @@ norm_calibrate <- function(fit, data, method = c("rank"), by = NULL) {
   by_vec <- pull_column(data, by_quo, default = NULL)
   base <- fit
   base$calibration <- NULL
-  scores <- predict(base, newdata = data, type = "scores",
-                    uncertainty = "conditional", allow_extrapolation = TRUE)
-  pre <- norm_assess(base, newdata = data)
+  dists <- predict_dists(base, data, uncertainty = "conditional")
+  scores <- scores_from_dists(base, dists, data)
+  pre <- assess_from_scores(base, scores, dists, data, by_vec = NULL)
+  pre$scores <- NULL
   maps <- lapply(split(scores, scores$.outcome), function(sc) {
     out <- list(.global = pit_map(sc$centile))
     if (!is.null(by_vec)) {
@@ -93,41 +94,44 @@ apply_pit_map <- function(map, log_lower, log_upper) {
   list(lower = lower, upper = upper)
 }
 
-apply_calibration <- function(fit, scores, newdata = NULL) {
-  cal <- fit$calibration
-  if (is.null(cal) || !nrow(scores)) {
-    return(scores)
+# Calibration group of every row of `newdata` (".global" when the map is
+# pooled or the group is missing), or NULL when the fit is not calibrated.
+calibration_groups <- function(cal, newdata) {
+  if (is.null(cal)) {
+    return(NULL)
   }
   by_nm <- cal$by
-  grp <- if (!is.null(by_nm) && !is.null(newdata) && by_nm %in% names(newdata)) {
-    as.character(newdata[[by_nm]])[scores$.row]
+  grp <- if (!is.null(by_nm) && by_nm %in% names(newdata)) {
+    as.character(newdata[[by_nm]])
   } else {
-    rep(".global", nrow(scores))
+    rep(".global", nrow(newdata))
   }
   grp[is.na(grp)] <- ".global"
-  tails <- log_tails_from_z(scores$z)
+  grp
+}
+
+# Map the tails of one outcome's score table through its PIT maps, one
+# vectorised pass per group. Groups without a map use the pooled map.
+calibrate_scores <- function(cal, outcome, grp, sc) {
+  maps <- cal$maps[[outcome]]
+  if (is.null(maps)) {
+    return(sc)
+  }
+  tails <- log_tails_from_z(sc$z)
   lower <- tails$lower
   upper <- tails$upper
-  key <- paste(scores$.outcome, grp)
-  for (k in unique(key)) {
-    idx <- which(key == k)
-    nm <- scores$.outcome[[idx[[1L]]]]
-    maps <- cal$maps[[nm]]
-    if (is.null(maps)) {
-      next
-    }
-    map <- maps[[grp[[idx[[1L]]]]]] %||% maps$.global
-    mapped <- apply_pit_map(map, lower[idx], upper[idx])
+  for (g in unique(grp)) {
+    idx <- which(grp == g)
+    mapped <- apply_pit_map(maps[[g]] %||% maps$.global, lower[idx], upper[idx])
     lower[idx] <- mapped$lower
     upper[idx] <- mapped$upper
   }
   out <- scores_from_log_tails(lower, upper)
-  scores$centile <- out$centile
-  scores$z <- out$z
-  scores$tail_prob <- out$tail_prob
-  scores$tail_surprisal <- out$tail_surprisal
-  scores$calibrated <- TRUE
-  scores
+  sc$centile <- out$centile
+  sc$z <- out$z
+  sc$tail_prob <- out$tail_prob
+  sc$tail_surprisal <- out$tail_surprisal
+  sc
 }
 
 #' @export

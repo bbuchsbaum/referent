@@ -462,15 +462,17 @@ dist_unpack <- function(d) {
 }
 
 # Apply an element function pairwise to a distribution vector and a vector
-# `arg` (recycled to a common length).
-dist_eval <- function(d, fun, arg, ...) {
+# `arg` (recycled to a common length). `unpacked` may supply
+# `dist_unpack(d)` when the caller evaluates several functions on the
+# same vector.
+dist_eval <- function(d, fun, arg, ..., unpacked = NULL) {
   n <- max(length(d), length(arg))
   if (!n) {
     return(numeric())
   }
   d <- vctrs::vec_recycle(d, n)
   arg <- rep_len(as.numeric(arg), n)
-  u <- dist_unpack(d)
+  u <- unpacked %||% dist_unpack(d)
   if (!is.null(u)) {
     return(as.numeric(fun(u, arg, ...)))
   }
@@ -521,11 +523,13 @@ dist_generate <- function(d, times) {
 as_scores <- function(distribution, y) {
   n <- max(length(distribution), length(y))
   y <- rep_len(as.numeric(y), n)
+  distribution <- vctrs::vec_recycle(distribution, n)
+  u <- dist_unpack(distribution)
   tails <- scores_from_log_tails(
-    dist_log_tail(distribution, y, lower.tail = TRUE),
-    dist_log_tail(distribution, y, lower.tail = FALSE)
+    dist_eval(distribution, log_tail, y, lower.tail = TRUE, unpacked = u),
+    dist_eval(distribution, log_tail, y, lower.tail = FALSE, unpacked = u)
   )
-  med <- dist_quantile(distribution, rep(0.5, n))
+  med <- dist_eval(distribution, quantile, rep(0.5, n), unpacked = u)
   tibble::tibble(
     observed = y,
     median = med,
@@ -534,7 +538,7 @@ as_scores <- function(distribution, y) {
     tail_prob = tails$tail_prob,
     tail_surprisal = tails$tail_surprisal,
     residual = y - med,
-    log_density = dist_log_density(distribution, y)
+    log_density = dist_eval(distribution, log_dens, y, unpacked = u)
   )
 }
 

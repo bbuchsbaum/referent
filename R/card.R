@@ -1,8 +1,14 @@
 #' Frozen reference bundle and model card
 #'
-#' The bundle omits raw training observations. It keeps what is required
-#' for prediction, support checks, adaptation, calibration, and
-#' provenance. Printing a `norm_reference` shows the model card.
+#' The bundle omits raw training observations. Each fitted model is
+#' reduced to what prediction needs (coefficients, their covariance, the
+#' smooth constructions, terms, and factor levels): the model frame,
+#' fitted values, residuals, weights, and the mgcv family object (rebuilt
+#' when predicting) are dropped, so the bundle is a small fraction of the
+#' fit's size. Predictions from the bundle reproduce those of the fit
+#' exactly. The bundle keeps what is required for support checks,
+#' adaptation, calibration, and provenance. Printing a `norm_reference`
+#' shows the model card.
 #'
 #' @param fit A [norm_fit].
 #' @param criteria,units,missing_policy Optional provenance fields.
@@ -16,7 +22,7 @@ norm_reference <- function(fit,
     list(
       spec = fit$spec,
       outcomes = fit$outcomes,
-      models = fit$models,
+      models = lapply(fit$models, strip_fit_one),
       covariates = fit$covariates,
       support_ref = fit$support_ref,
       calibration = fit$calibration,
@@ -45,6 +51,13 @@ norm_reference <- function(fit,
     ),
     class = c("norm_reference", "norm_fit")
   )
+}
+
+strip_fit_one <- function(fit_one) {
+  if (!is.null(fit_one$model) && identical(fit_one$engine, "mgcv")) {
+    fit_one$model <- strip_gam(fit_one$model)
+  }
+  fit_one
 }
 
 #' @export

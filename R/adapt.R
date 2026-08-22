@@ -102,19 +102,22 @@ norm_adapt <- function(fit,
 estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) {
   ok <- is.finite(y)
   n <- sum(ok)
-  s_bar <- sqrt(mean(variance(d[ok])))
   empty <- list(location = 0, scale = 0, n = n, location_se = NA_real_,
                 scale_se = NA_real_, parameters = parameters)
-  if (n < 2L || !is.finite(s_bar) || s_bar <= 0) {
+  u <- if (n >= 2L) dist_unpack(d[ok]) else NULL
+  if (is.null(u)) {
     return(empty)
   }
-  d <- d[ok]
+  s_bar <- sqrt(mean(variance(d[ok])))
+  if (!is.finite(s_bar) || s_bar <= 0) {
+    return(empty)
+  }
   y <- y[ok]
   fit_scale <- "scale" %in% parameters
   objective <- function(theta) {
     loc <- theta[[1L]] * s_bar
     log_s <- if (fit_scale) theta[[2L]] else 0
-    ll <- sum(dist_log_density(shift_params(d, loc, log_s), y))
+    ll <- sum(shifted_log_density(u, y, loc, log_s))
     if (!is.finite(ll)) {
       return(1e100)
     }
@@ -138,6 +141,24 @@ estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) 
     scale_se = if (fit_scale) se[[2L]] else NA_real_,
     parameters = parameters
   )
+}
+
+# Log density of `y` under an unpacked distribution vector whose location
+# is shifted by `loc` and scale multiplied by exp(`log_s`), without
+# rebuilding the vector (the optimiser calls this many times).
+shifted_log_density <- function(u, y, loc, log_s) {
+  mu <- u$mu + loc
+  sigma <- u$sigma * exp(log_s)
+  if (inherits(u, "dist_normal")) {
+    return(stats::dnorm(y, mu, sigma, log = TRUE))
+  }
+  if (inherits(u, "dist_shash")) {
+    return(shash_log_density(y, mu, sigma, u$eps, u$delta))
+  }
+  if (inherits(u, "dist_shash_mc")) {
+    return(mc_log_density(list(q = y, mu = mu, sigma = sigma, eps = u$eps, delta = u$delta)))
+  }
+  cli::cli_abort("Cannot adapt a {.cls {class(u)[[1L]]}} distribution.")
 }
 
 # Shift the location of every element of a distribution vector by `loc`
@@ -189,13 +210,15 @@ apply_adaptation <- function(adaptation, dists, newdata, total = FALSE, seed = 1
     if (is.null(d) || is.null(offs) || !length(d)) {
       return(d)
     }
-    pick <- function(g, what) {
-      off <- offs[[g]] %||% offs[[".all"]]
-      off[[what]] %||% 0
+    groups <- unique(grp)
+    pick <- function(what) {
+      v <- vapply(groups, function(g) (offs[[g]] %||% offs[[".all"]])[[what]] %||% 0,
+                  numeric(1))
+      unname(v[match(grp, groups)])
     }
-    loc <- vapply(grp, pick, numeric(1), what = "location")
-    log_s <- vapply(grp, pick, numeric(1), what = "scale")
-    loc_se <- vapply(grp, pick, numeric(1), what = "location_se")
+    loc <- pick("location")
+    log_s <- pick("scale")
+    loc_se <- pick("location_se")
     loc_se[!is.finite(loc_se) | !total] <- 0
     shift_params(d, loc, log_s, loc_se, seed = seed)
   })

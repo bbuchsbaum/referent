@@ -39,7 +39,7 @@ norm_crossfit <- function(spec,
     }
     fit <- norm_fit(spec, data = train, outcomes = outcome_names, ...)
     dists <- predict_dists(fit, test, uncertainty = "conditional")
-    sc <- predict(fit, newdata = test, type = "scores", uncertainty = "conditional")
+    sc <- scores_from_dists(fit, dists, test, allow_extrapolation = FALSE)
     sc$crps <- NA_real_
     for (nm in names(dists)) {
       if (!is.null(dists[[nm]]) && nm %in% names(test)) {

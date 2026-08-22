@@ -15,11 +15,40 @@ predict_engine_dist <- function(fit_one, newdata, uncertainty = "conditional",
   )
 }
 
+# The mgcv family is chosen from the referent family and the scale
+# formula: a Gaussian with constant scale is a plain `gam()` (or `bam()`
+# for large n, see below); a Gaussian with a modelled scale is `gaulss()`;
+# SHASH is `shash()`. `mgcv_family()` rebuilds the family object from this
+# name and the minimum scale, so a frozen bundle need not carry mgcv's
+# family closures.
+mgcv_family_name <- function(spec) {
+  if (spec$family$name == "shash") {
+    "shash"
+  } else if (formula_is_intercept_only(spec$scale)) {
+    "gaussian"
+  } else {
+    "gaulss"
+  }
+}
+
+mgcv_family <- function(fit_one) {
+  b <- fit_one$family$min_scale %||% 0.01
+  switch(
+    fit_one$mgcv_family,
+    gaussian = stats::gaussian(),
+    gaulss = mgcv::gaulss(b = b),
+    shash = mgcv::shash(b = b)
+  )
+}
+
 fit_engine_mgcv <- function(spec, data, outcome, ...) {
   fam_name <- spec$family$name
+  mgcv_fam <- mgcv_family_name(spec)
   n <- nrow(data)
-  use_bam <- isTRUE(spec$use_bam) && n >= spec$bam_min_n &&
-    fam_name == "gaussian" && formula_is_intercept_only(spec$scale)
+  # `bam()` is used only for the constant-scale Gaussian (a single linear
+  # predictor, no general family) when n >= spec$bam_min_n; every other
+  # model goes through `gam()`.
+  use_bam <- isTRUE(spec$use_bam) && n >= spec$bam_min_n && mgcv_fam == "gaussian"
   fitter0 <- if (use_bam) mgcv::bam else mgcv::gam
   # mgcv step-failure warnings are recorded on the fit rather than raised;
   # `status` reflects convergence.
@@ -34,99 +63,83 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
     )
   }
   # The outcome is copied to a syntactic temporary column so that names
-  # such as "brain volume" fit; `y_name` keeps the real name.
+  # such as "brain volume" fit; `y_name` keeps the real name. The formula
+  # keeps the spec's environment: a formula created here would capture
+  # this frame (and with it `data`) and serialise it with every gam.
   data$.referent_y <- data[[outcome]]
   rhs_loc <- spec$location[[length(spec$location)]]
-  loc_f <- stats::as.formula(eval(bquote(.referent_y ~ .(rhs_loc))))
+  loc_f <- eval(bquote(.referent_y ~ .(rhs_loc)))
+  environment(loc_f) <- environment(spec$location) %||% globalenv()
+  stub <- list(
+    engine = "mgcv", family = spec$family, outcome = outcome, spec = spec,
+    mgcv_family = mgcv_fam, y_name = outcome, n_obs = n
+  )
+  if (fam_name != "gaussian" && fam_name != "shash") {
+    return(c(stub, list(status = "unsupported_family", model = NULL,
+                        message = "unsupported_family")))
+  }
+  family <- mgcv_family(stub)
   model <- tryCatch(
-    {
-      if (fam_name == "gaussian" && formula_is_intercept_only(spec$scale)) {
-        fitter(loc_f, data = data, method = spec$method, ...)
-      } else if (fam_name == "gaussian") {
-        fitter(
-          list(loc_f, spec$scale),
-          data = data,
-          family = mgcv::gaulss(b = spec$family$min_scale %||% 0.01),
-          method = spec$method,
-          ...
-        )
-      } else if (fam_name == "shash") {
-        fitter(
-          list(loc_f, spec$scale, spec$skew, spec$tail),
-          data = data,
-          family = mgcv::shash(b = spec$family$min_scale %||% 1e-2),
-          method = spec$method,
-          ...
-        )
-      } else {
-        stop("unsupported_family", call. = FALSE)
-      }
-    },
+    switch(
+      mgcv_fam,
+      gaussian = fitter(loc_f, data = data, method = spec$method, ...),
+      gaulss = fitter(list(loc_f, spec$scale), data = data, family = family,
+                      method = spec$method, ...),
+      shash = fitter(list(loc_f, spec$scale, spec$skew, spec$tail), data = data,
+                     family = family, method = spec$method, ...)
+    ),
     error = function(e) e
   )
   if (inherits(model, "error")) {
-    msg <- conditionMessage(model)
-    status <- if (grepl("unsupported_family", msg)) {
-      "unsupported_family"
-    } else {
-      "nonconverged"
-    }
-    return(list(
-      engine = "mgcv",
-      family = spec$family,
-      outcome = outcome,
-      status = status,
-      message = msg,
-      model = NULL,
-      spec = spec
-    ))
+    return(c(stub, list(status = "nonconverged", message = conditionMessage(model),
+                        model = NULL)))
   }
-  conv <- mgcv_converged(model)
-  status <- if (conv) "ok" else "nonconverged"
-  list(
-    engine = "mgcv",
-    family = spec$family,
-    outcome = outcome,
-    status = status,
+  # Random-effect smooths keep a model formula whose environment is
+  # mgcv's construction frame; give it the spec's environment as well.
+  model$smooth <- lapply(model$smooth, function(sm) {
+    if (!is.null(sm$form)) {
+      environment(sm$form) <- environment(loc_f)
+    }
+    sm
+  })
+  c(stub, list(
+    status = if (isTRUE(model$converged %||% TRUE)) "ok" else "nonconverged",
     message = if (length(warnings)) paste(unique(warnings), collapse = "; ") else NULL,
-    model = model,
-    spec = spec,
-    y_name = outcome
-  )
+    model = model
+  ))
 }
 
-mgcv_converged <- function(model) {
-  if (is.null(model)) {
-    return(FALSE)
+# Frozen bundles drop the family from each gam (see `strip_gam()`); the
+# model must carry one for `predict.gam()` to take the right branch.
+thaw_model <- function(fit_one) {
+  model <- fit_one$model
+  if (is.null(model$family)) {
+    model$family <- mgcv_family(fit_one)
   }
-  conv <- model$converged
-  if (is.null(conv)) {
-    return(TRUE)
-  }
-  isTRUE(conv)
+  model
 }
 
 predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "total"),
                               n_draw = 200L, seed = 1L) {
   uncertainty <- match.arg(uncertainty)
-  model <- fit_one$model
-  fam <- fit_one$family$name
-  if (is.null(model)) {
+  if (is.null(fit_one$model)) {
     cli::cli_abort("Cannot predict from a failed fit.")
   }
   if (is.null(newdata) || !nrow(newdata)) {
     return(distributional::dist_normal(numeric(), numeric()))
   }
+  model <- thaw_model(fit_one)
+  fam <- fit_one$family$name
   pars <- mgcv_parameters(model, newdata, fam, fit_one)
   if (identical(uncertainty, "total") && !is.null(model$Vp)) {
-    if (is_plain_gaussian(model, fam)) {
+    if (identical(fit_one$mgcv_family, "gaussian")) {
       # identity location, constant scale: the total predictive is exactly
       # N(mu, sigma^2 + se^2), so no draws are needed.
       return(distributional::dist_normal(
         pars$location, sqrt(pars$scale^2 + pars$epistemic_sd^2)
       ))
     }
-    return(mgcv_dist_total(model, newdata, fam, fit_one, n_draw, seed))
+    return(mgcv_dist_total(model, newdata, fam, fit_one, pars, n_draw, seed))
   }
   make_dist(fam, pars)
 }
@@ -152,92 +165,59 @@ predict_gam_quiet <- function(model, newdata, ...) {
   )
 }
 
-is_plain_gaussian <- function(model, fam) {
-  fam == "gaussian" && is.null(model$family$n.theta) &&
-    !inherits(model$family, "general.family")
+# One `predict(type = "link", se.fit = TRUE)` call: a list of linear
+# predictors (one vector per lp) and the standard error of the first.
+mgcv_link <- function(model, newdata) {
+  pr <- tryCatch(
+    predict_gam_quiet(model, newdata, type = "link", se.fit = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(pr)) {
+    return(NULL)
+  }
+  eta <- as.matrix(pr$fit)
+  se <- as.matrix(pr$se.fit)
+  list(eta = lapply(seq_len(ncol(eta)), function(k) eta[, k]),
+       se = as.numeric(se[, 1L]))
 }
 
 mgcv_parameters <- function(model, newdata, fam, fit_one) {
   n <- nrow(newdata)
-  pr <- tryCatch(
-    predict_gam_quiet(model, newdata, type = "response"),
-    error = function(e) NULL
-  )
-  if (is.null(pr)) {
-    return(list(
-      location = rep(NA_real_, n),
-      scale = rep(NA_real_, n),
-      skew = 0,
-      tail = 1,
-      epistemic_sd = 0
-    ))
+  link <- mgcv_link(model, newdata)
+  if (is.null(link)) {
+    return(list(location = rep(NA_real_, n), scale = rep(NA_real_, n),
+                skew = rep(0, n), tail = rep(1, n), epistemic_sd = rep(0, n)))
   }
-  se <- tryCatch(
-    predict_gam_quiet(model, newdata, type = "link", se.fit = TRUE),
-    error = function(e) NULL
-  )
-  epistemic <- 0
-  if (fam == "gaussian" && is.null(model$family$n.theta) &&
-      !inherits(model$family, "general.family")) {
-    mu <- as.numeric(pr)
-    sigma <- residual_scale(model)
-    if (!is.null(se) && !is.null(se$se.fit)) {
-      epistemic <- as.numeric(se$se.fit)
-    }
-    return(list(location = mu, scale = rep(sigma, length(mu)), skew = 0, tail = 1,
-                epistemic_sd = epistemic))
-  }
-  pr <- as.matrix(pr)
-  if (fam == "gaussian") {
-    mu <- pr[, 1]
-    prec <- pr[, 2]
-    sigma <- 1 / pmax(prec, .Machine$double.eps)
-    return(list(location = mu, scale = sigma, skew = 0, tail = 1,
-                epistemic_sd = epistemic_from_se(se)))
-  }
-  if (fam == "shash") {
-    eta <- tryCatch(
-      as.matrix(predict_gam_quiet(model, newdata, type = "link")),
-      error = function(e) as.matrix(pr)
-    )
-    mu <- eta[, 1]
-    linfo <- model$family$linfo
-    if (is.list(linfo) && length(linfo) >= 2 && !is.null(linfo[[2]]$linkinv)) {
-      tau <- linfo[[2]]$linkinv(eta[, 2])
-      sigma <- exp(tau)
-    } else {
-      sigma <- exp(pr[, 2])
-    }
-    eps <- if (ncol(eta) >= 3) eta[, 3] else 0
-    phi <- if (ncol(eta) >= 4) eta[, 4] else 0
-    delta <- exp(phi)
-    return(list(
-      location = as.numeric(mu),
-      scale = pmax(as.numeric(sigma), 1e-6),
-      skew = as.numeric(eps),
-      tail = pmax(as.numeric(delta), 1e-3),
-      epistemic_sd = epistemic_from_se(se)
-    ))
-  }
-  mu <- as.numeric(pr)
-  list(
-    location = mu,
-    scale = rep(residual_scale(model), length(mu)),
-    skew = 0,
-    tail = 1,
-    epistemic_sd = epistemic
-  )
+  c(params_from_eta(link$eta, model, fam, fit_one), list(epistemic_sd = link$se))
 }
 
-epistemic_from_se <- function(se) {
-  if (is.null(se) || is.null(se$se.fit)) {
-    return(0)
+# Distribution parameters from the linear predictors, through the mgcv
+# link functions. Every element of `etas` may be a vector or an n x K
+# matrix of draws; the result has the same shape. `fallback` supplies
+# the scale when a Gaussian has a single linear predictor.
+params_from_eta <- function(etas, model, fam, fit_one, fallback = NULL) {
+  loc <- etas[[1L]]
+  full <- function(v) if (is.matrix(loc)) array(v, dim(loc)) else rep_len(v, length(loc))
+  lp <- function(k) if (length(etas) >= k) etas[[k]] else NULL
+  if (fam == "gaussian" && length(etas) == 1L) {
+    scale <- if (is.null(fallback)) residual_scale(model) else fallback$scale
+    return(list(location = loc, scale = full(scale), skew = full(0), tail = full(1)))
   }
-  sf <- se$se.fit
-  if (is.matrix(sf)) {
-    return(as.numeric(sf[, 1]))
+  linfo <- (model$family %||% mgcv_family(fit_one))$linfo
+  if (fam == "gaussian") {
+    # gaulss: the second link inverse returns the precision 1 / sigma.
+    sigma <- 1 / pmax(linfo[[2L]]$linkinv(lp(2L)), .Machine$double.eps)
+    return(list(location = loc, scale = sigma, skew = full(0), tail = full(1)))
   }
-  as.numeric(sf)
+  # shash: the second link inverse returns log sigma; the fourth lp is
+  # log delta.
+  sigma <- exp(linfo[[2L]]$linkinv(lp(2L)))
+  list(
+    location = loc,
+    scale = pmax(sigma, 1e-6),
+    skew = lp(3L) %||% full(0),
+    tail = pmax(exp(lp(4L) %||% full(0)), 1e-3)
+  )
 }
 
 residual_scale <- function(model) {
@@ -248,10 +228,9 @@ residual_scale <- function(model) {
   sqrt(max(s, .Machine$double.eps))
 }
 
-# Equal-weight mixture over coefficient draws from N(beta_hat, Vp).
-mgcv_dist_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1L) {
-  cond <- mgcv_parameters(model, newdata, fam, fit_one)
-  n <- length(cond$location)
+# Equal-weight mixture over coefficient draws from N(beta_hat, Vp). Each
+# linear predictor is one product of the lp matrix with the draw matrix.
+mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1L) {
   lp <- tryCatch(
     predict_gam_quiet(model, newdata, type = "lpmatrix"),
     error = function(e) NULL
@@ -283,74 +262,26 @@ mgcv_dist_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1L) {
       matrix(beta_hat, nrow = n_draw, ncol = length(beta_hat), byrow = TRUE)
     }
   )
-  loc_mat <- matrix(cond$location, n, n_draw)
-  scale_mat <- matrix(cond$scale, n, n_draw)
-  skew_mat <- matrix(cond$skew, n, n_draw)
-  tail_mat <- matrix(cond$tail, n, n_draw)
-  for (j in seq_len(n_draw)) {
-    etas <- eta_from_lp(lp, draws[j, ])
-    par_j <- params_from_eta(etas, model, fam, fit_one, cond)
-    loc_mat[, j] <- par_j$location
-    scale_mat[, j] <- par_j$scale
-    skew_mat[, j] <- par_j$skew
-    tail_mat[, j] <- par_j$tail
-  }
-  dist_shash_mc(loc_mat, scale_mat, skew_mat, tail_mat)
+  par <- params_from_eta(eta_from_lp(lp, t(draws)), model, fam, fit_one, cond)
+  dist_shash_mc(par$location, par$scale, par$skew, par$tail)
 }
 
+# Linear predictors for a coefficient vector, or an n x K matrix of them
+# for a p x K matrix of coefficient draws.
 eta_from_lp <- function(lp, beta) {
+  beta <- as.matrix(beta)
+  shape <- function(m) if (ncol(beta) == 1L) as.numeric(m) else unname(m)
   lpi <- attr(lp, "lpi")
   if (is.null(lpi)) {
-    return(list(as.numeric(as.matrix(lp) %*% beta)))
+    return(list(shape(as.matrix(lp) %*% beta)))
   }
   lapply(lpi, function(cols) {
-    cols <- cols[is.finite(cols) & cols >= 1L & cols <= length(beta)]
+    cols <- cols[is.finite(cols) & cols >= 1L & cols <= nrow(beta)]
     if (!length(cols)) {
-      return(rep(NA_real_, nrow(lp)))
+      return(shape(array(NA_real_, c(nrow(lp), ncol(beta)))))
     }
-    as.numeric(lp[, cols, drop = FALSE] %*% beta[cols])
+    shape(lp[, cols, drop = FALSE] %*% beta[cols, , drop = FALSE])
   })
-}
-
-params_from_eta <- function(etas, model, fam, fit_one, fallback) {
-  n <- length(fallback$location)
-  loc <- rep_len(etas[[1]] %||% fallback$location, n)
-  if (fam == "gaussian" && length(etas) == 1L) {
-    return(list(
-      location = loc,
-      scale = rep_len(fallback$scale, n),
-      skew = rep(0, n),
-      tail = rep(1, n)
-    ))
-  }
-  if (fam == "gaussian" && length(etas) >= 2L) {
-    min_s <- fit_one$family$min_scale %||% 0.01
-    sigma <- min_s + exp(etas[[2]])
-    return(list(
-      location = loc,
-      scale = pmax(sigma, 1e-6),
-      skew = rep(0, n),
-      tail = rep(1, n)
-    ))
-  }
-  if (fam == "shash") {
-    linfo <- model$family$linfo
-    if (is.list(linfo) && length(linfo) >= 2 && !is.null(linfo[[2]]$linkinv)) {
-      tau <- linfo[[2]]$linkinv(etas[[2]])
-      sigma <- exp(tau)
-    } else {
-      sigma <- exp(etas[[2]])
-    }
-    eps <- if (length(etas) >= 3L) etas[[3]] else fallback$skew
-    phi <- if (length(etas) >= 4L) etas[[4]] else 0
-    return(list(
-      location = loc,
-      scale = pmax(as.numeric(sigma), 1e-6),
-      skew = rep_len(eps, n),
-      tail = pmax(rep_len(exp(phi), n), 1e-3)
-    ))
-  }
-  fallback
 }
 
 mvtnorm_draw <- function(n, mean, sigma) {
@@ -359,4 +290,45 @@ mvtnorm_draw <- function(n, mean, sigma) {
   a <- ev$vectors %*% diag(sqrt(ev$values), nrow = length(ev$values))
   z <- matrix(stats::rnorm(n * length(mean)), n, length(mean))
   sweep(z %*% t(a), 2, mean, "+")
+}
+
+# Reduce a fitted gam to what prediction needs: coefficients and their
+# covariance, the smooth constructions, the formula and terms objects,
+# factor levels, and a few scalars. The model frame, fitted values,
+# residuals, weights, and the family (rebuilt by `thaw_model()`) are
+# dropped, and the formula environments are replaced by an empty child of
+# the global environment so no enclosing frame is serialised.
+strip_gam <- function(model) {
+  keep <- c(
+    "coefficients", "Vp", "nsdf", "smooth", "formula", "pred.formula", "terms",
+    "pterms", "xlevels", "contrasts", "cmX", "assign", "paraPen", "rank", "sp",
+    "sig2", "edf", "converged", "df.residual", "var.summary", "lpi"
+  )
+  out <- model[intersect(names(model), keep)]
+  env <- new.env(parent = globalenv())
+  reset_env <- function(f) {
+    if (is.list(f)) {
+      f <- lapply(f, reset_env)
+    } else if (!is.null(f) && (inherits(f, "formula") || inherits(f, "terms"))) {
+      environment(f) <- env
+    }
+    f
+  }
+  for (nm in c("formula", "pred.formula", "terms", "pterms")) {
+    if (!is.null(out[[nm]])) {
+      attrs <- attributes(out[[nm]])
+      out[[nm]] <- reset_env(out[[nm]])
+      if (is.list(out[[nm]])) {
+        attributes(out[[nm]]) <- attrs
+      }
+    }
+  }
+  out$smooth <- lapply(out$smooth, function(s) {
+    if (!is.null(s$form)) {
+      environment(s$form) <- env
+    }
+    s
+  })
+  class(out) <- class(model)
+  out
 }
