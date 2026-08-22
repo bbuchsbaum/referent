@@ -21,3 +21,12 @@ inst/doc
 .beads-credential-key
 issues.jsonl
 Rplots.pdf
+
+# Starlight build products and starlightdown-generated content
+starlight/.astro/
+starlight/.starlightdown/
+starlight/dist/
+starlight/node_modules/
+starlight/src/content/docs/
+starlight/public/articles/
+starlight/public/reference/

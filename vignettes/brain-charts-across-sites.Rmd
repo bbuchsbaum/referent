@@ -1,5 +1,6 @@
 ---
 title: "Brain charts across sites"
+description: "Build multi-site brain charts, transport them to a new scanner, and report calibrated deviation scores."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Brain charts across sites}
@@ -29,7 +30,7 @@ compares the three ways of scoring a new site.
 library(referent)
 ```
 
-## A multi-site reference panel
+# A multi-site reference panel
 
 Five sites, with site-specific level shifts and one site with a wider
 spread. The outcome `y` plays the role of a regional volume; the three
@@ -65,11 +66,11 @@ fit
 tidy(fit)[, c("outcome", "status", "n", "edf_s(age)", "edf_s(site)")]
 ```
 
-```{r centiles}
+```{r centiles, fig.alt="Reference centile bands for one simulated brain region across age, split by sex."}
 autoplot(fit, type = "centiles", outcome = "y", by = sex)
 ```
 
-## Out-of-fold reference scores
+# Out-of-fold reference scores
 
 Scoring the reference rows with the model that was fit to them
 understates their deviations. `ref_crossfit()` gives every reference
@@ -99,7 +100,7 @@ A few rows have no out-of-fold `z`: their age lies outside the range of
 the fold that scored them, so `support` is `"out"` and `z` is masked.
 That is the extrapolation rule doing its job, not a failure.
 
-## Scoring a new site
+# Scoring a new site
 
 A sixth scanner arrives with 200 participants. Its level differs from
 every reference site. Thirty of its participants are known controls; the
@@ -119,7 +120,7 @@ held_out <- new_site[31:200, ]
 table(ref_support(fit, held_out)$support)
 ```
 
-There are three options, and they answer different questions.
+There are four options, and they answer different questions.
 
 1. **Score against the population curve.** Use the fit as it is. The
    random effect for site F is zero, so the scores are relative to the
@@ -146,6 +147,13 @@ refit <- ref_fit(spec, data = rbind(ref, controls), outcomes = all_of(regions),
 adapted$adaptation
 ```
 
+The first three objects still record site F as `support == "new_group"`
+because the original reference contained no site-F rows. Adaptation or
+calibration estimates a transport map; it does not rewrite that provenance.
+The calls below therefore set `allow_extrapolation = TRUE` deliberately after
+estimating the map from known controls. Without that explicit opt-in,
+`referent` masks the scores.
+
 Each strategy is judged on the 170 held-out site-F rows. Because site F
 was simulated from the same generator as the reference, a correct
 strategy must return calibrated scores there: `mean_z` near 0, `var_z`
@@ -155,26 +163,41 @@ about 0.18, and the controls themselves sit where chance put them
 relative to the rest of site F.
 
 ```{r control-anchor}
-ctrl_scores <- predict(fit, newdata = controls, type = "scores", outcomes = "y")
+ctrl_scores <- predict(fit, newdata = controls, type = "scores", outcomes = "y",
+                       allow_extrapolation = TRUE)
 c(controls_mean_z = round(mean(ctrl_scores$z), 2),
   held_out_mean_z = round(mean(predict(fit, newdata = held_out, type = "scores",
-                                       outcomes = "y")$z), 2))
+                                       outcomes = "y",
+                                       allow_extrapolation = TRUE)$z), 2))
 ```
 
 ```{r compare}
 strategies <- list(population = fit, adapted = adapted, calibrated = calibrated, refit = refit)
-comparison <- do.call(rbind, lapply(names(strategies), function(nm) {
-  a <- ref_assess(strategies[[nm]], newdata = held_out)
-  m <- a$marginal[a$marginal$.outcome == "y", ]
+strategy_scores <- lapply(strategies, function(model) {
+  predict(model, newdata = held_out, type = "scores", outcomes = "y",
+          allow_extrapolation = TRUE)
+})
+comparison <- do.call(rbind, lapply(names(strategy_scores), function(nm) {
+  sc <- strategy_scores[[nm]]
+  ok <- is.finite(sc$z) & is.finite(sc$log_density)
   data.frame(
     strategy = nm,
-    mean_z = round(m$mean_z, 2),
-    var_z = round(m$var_z, 2),
-    cover_95 = round(m$cover_95, 3),
-    log_score = round(a$overall$mean_log_score[a$overall$.outcome == "y"], 3)
+    mean_z = round(mean(sc$z[ok]), 2),
+    var_z = round(var(sc$z[ok]), 2),
+    cover_95 = round(mean(sc$centile[ok] > 0.025 & sc$centile[ok] < 0.975), 3),
+    log_score = round(mean(sc$log_density[ok]), 3)
   )
 }))
 comparison
+```
+
+```{r compare-checks, include = FALSE}
+stopifnot(
+  all(vapply(strategy_scores, function(sc) all(is.finite(sc$z)), logical(1))),
+  all(is.finite(comparison$mean_z)),
+  all(is.finite(comparison$var_z) & comparison$var_z > 0),
+  all(comparison$cover_95 > 0 & comparison$cover_95 <= 1)
+)
 ```
 
 The population-curve scores carry the scanner's level shift into
@@ -188,16 +211,17 @@ Calibration by site re-maps probabilities through a 30-knot rank map;
 its centre is as good as the controls' mean, but its spread and tails
 are noisy at this sample size. The refit lets the controls move the
 shared smooth and the random-effect variance as well as the site level,
-and it changes the reference for every other site. With 20-50 local
-controls, adaptation is the default recommendation; calibration earns
-its place when the distributional family, not the level, is wrong at
-the new site, and then needs a few hundred local rows.
+and it changes the reference for every other site. In this simulation with 30
+controls, adaptation spends the local information on two parameters and is
+more stable than the rank map or refit. That is an illustration, not a general
+sample-size rule: choose and validate a transport strategy with held-out local
+controls whenever the design permits it.
 
-```{r adaptplot}
+```{r adaptplot, fig.alt="Estimated location and scale offsets for the transported site with uncertainty intervals."}
 autoplot(adapted, type = "adaptation")
 ```
 
-## Joint deviation across regions
+# Joint deviation across regions
 
 Per-region Z-scores are correlated; a participant who is low on every
 region is more unusual than four independent `z = -1.5` values suggest.
@@ -210,13 +234,22 @@ submatrix.
 ```{r joint}
 joint <- ref_joint(cf)
 joint
-new_scores <- predict(adapted, newdata = held_out, type = "scores")
+new_scores <- predict(adapted, newdata = held_out, type = "scores",
+                      allow_extrapolation = TRUE)
 joint_scores <- predict(joint, new_scores)
 head(joint_scores)
 mean(joint_scores$joint_centile > 0.95, na.rm = TRUE)
 ```
 
-## Flags, and how many to expect
+```{r joint-checks, include = FALSE}
+stopifnot(
+  all(joint_scores$n_observed > 0),
+  all(is.finite(joint_scores$joint_centile)),
+  all(joint_scores$joint_centile > 0 & joint_scores$joint_centile < 1)
+)
+```
+
+# Flags, and how many to expect
 
 `ref_flag()` marks `|z| > 2` per region and adds FDR-adjusted two-sided
 tail probabilities across all region-by-person tests. Under calibration
@@ -228,10 +261,20 @@ flags <- ref_flag(new_scores, threshold = 2)
 c(observed = attr(flags, "observed_exceedances"),
   expected = round(attr(flags, "expected_exceedances"), 1))
 sum(flags$fdr < 0.05, na.rm = TRUE)
+```
+
+```{r heatmap, fig.alt="Deviation-score heatmap for fifteen held-out participants across four correlated simulated brain regions."}
 autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
 ```
 
-## What to report
+```{r flag-checks, include = FALSE}
+stopifnot(
+  attr(flags, "expected_exceedances") > 0,
+  all(is.finite(flags$tail_prob))
+)
+```
+
+# What to report
 
 * The reference: `ref_freeze(fit)` prints a model card with the
   family, formulas, covariate ranges, site levels, and software
@@ -248,3 +291,7 @@ autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
 ```{r card}
 ref_freeze(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
 ```
+
+Continue with [Longitudinal change](/articles/longitudinal-change/), or use
+[Troubleshooting reference models](/articles/troubleshooting/) when transported
+scores remain masked or unstable.

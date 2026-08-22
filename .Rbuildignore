@@ -25,3 +25,4 @@
 ^issues\.jsonl$
 ^\.ruff_cache$
 ^Rplots\.pdf$
+^starlight$

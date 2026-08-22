@@ -1,0 +1,400 @@
+---
+title: "Troubleshooting reference-model workflows"
+description: "Diagnose missing scores, transport boundaries, partial fits, weak local corrections, and unidentified dynamics."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Troubleshooting reference-model workflows}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup-options, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+This article starts where [Getting started with referent](/articles/getting-started/)
+ends. You have a
+fitted reference model, but a score is missing, a transported site behaves
+unexpectedly, or a longitudinal extension refuses to make a claim. Each
+section follows the same path: recognize the symptom, identify the cause,
+and make the smallest defensible fix.
+
+```{r fit-reference}
+library(referent)
+
+reference <- ref_simulate(240, seed = 10)
+held_out <- ref_simulate(100, seed = 11)
+spec <- ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex)
+fit <- ref_fit(spec, data = reference, outcomes = "y")
+```
+
+# Why is a score missing for an ordinary-looking row?
+
+## Symptom
+
+A used covariate is missing, or the row lies outside the range represented by
+the reference data. `referent` keeps the fitted median where it can, but masks
+the probability-scale quantities that would otherwise look more trustworthy
+than they are.
+
+```{r missing-covariate}
+in_rows <- which(ref_support(fit, held_out)$support == "in")[1:4]
+incomplete <- held_out[in_rows, ]
+incomplete$age[2] <- NA_real_
+
+missing_scores <- predict(fit, incomplete, uncertainty = "conditional")
+missing_scores[, c(".row", "z", "support", "status")]
+```
+
+```{r check-missing-covariate, include = FALSE}
+stopifnot(
+  is.na(missing_scores$z[2]),
+  missing_scores$support[2] == "unknown",
+  missing_scores$status[2] == "missing_predictor",
+  all(is.finite(missing_scores$z[-2]))
+)
+```
+
+An out-of-range covariate is different from a missing one, but it receives the
+same conservative treatment on the score scale.
+
+```{r outside-support}
+outside <- held_out[in_rows[1:3], ]
+outside$age[1] <- max(reference$age) + 20
+
+outside_scores <- predict(fit, outside, uncertainty = "conditional")
+outside_scores[, c(".row", "median", "z", "support")]
+```
+
+```{r check-outside-support, include = FALSE}
+stopifnot(
+  outside_scores$support[1] == "out",
+  is.finite(outside_scores$median[1]),
+  is.na(outside_scores$z[1])
+)
+```
+
+## Cause
+
+The formulas in `ref_spec()` define the covariates the model actually needs.
+An `NA` in one of those columns gives `status == "missing_predictor"` and
+`support == "unknown"`. A finite value beyond the observed reference range
+gives `support == "out"`. Neither condition is repaired by imputing or
+silently extending the fitted curve.
+
+## Fix
+
+Supply the missing predictor from a defensible data source, or restrict the
+analysis to the declared reference domain. Use `ref_support(fit, newdata)`
+before a large scoring run to audit support without fitting or scoring again.
+Do not use `allow_extrapolation = TRUE` merely to turn an unsupported age into
+a number.
+
+# Why is a transported site's score still marked `new_group`?
+
+## Symptom
+
+The shared model was fitted on sites A-D. Site E has local reference controls,
+and `ref_adapt()` estimates a site-E offset, but the original support record
+still says that E was absent from the training reference.
+
+```{r fit-site-reference}
+site_spec <- ref_spec(
+  ref_gaussian(),
+  location = ~ s(age, k = 5) + sex + s(site, bs = "re")
+)
+site_fit <- ref_fit(site_spec, reference, outcomes = "y")
+
+site_e <- ref_simulate(
+  600, sites = 5,
+  site_shift = c(0, 0, 0, 0, 1),
+  seed = 12
+)
+site_e <- site_e[site_e$site == "E", ]
+local_controls <- site_e[1:20, ]
+site_e_target <- site_e[21:50, ]
+adapted <- ref_adapt(site_fit, local_controls, by = site)
+```
+
+By default, unseen-group probability columns remain masked. After fitting an
+explicit transport model from local controls, you can deliberately request the
+transported scores while retaining `support == "new_group"` as provenance.
+
+```{r score-transported-site}
+masked <- predict(adapted, site_e_target, uncertainty = "conditional")
+transported <- predict(
+  adapted,
+  site_e_target,
+  uncertainty = "conditional",
+  allow_extrapolation = TRUE
+)
+
+data.frame(
+  default_z = head(masked$z, 3),
+  transported_z = head(transported$z, 3),
+  support = head(transported$support, 3)
+)
+```
+
+```{r check-transported-site, include = FALSE}
+stopifnot(
+  all(is.na(masked$z)),
+  all(is.finite(transported$z)),
+  all(transported$support == "new_group")
+)
+```
+
+## Cause
+
+Adaptation changes the predictive location or scale; it does not rewrite the
+historical fact that site E was outside the original site's factor levels.
+`allow_extrapolation = TRUE` exposes the adapted distribution, while the
+support column preserves that boundary.
+
+## Fix
+
+Use this override only after fitting a deliberate transport step from an
+appropriate local reference sample. Keep `support` in every exported score
+table, report how many local controls estimated the transport, and validate on
+different local observations. See
+[Brain charts across sites](/articles/brain-charts-across-sites/) for the full
+comparison among population scoring, adaptation, calibration, and refitting.
+
+# Why does a small local correction look weak or fail to calibrate?
+
+## Symptom
+
+An adaptation offset is smaller than the raw local mean difference, or a
+calibration object built from a tiny sample leaves `calibrated == FALSE`.
+
+```{r inspect-small-adaptation}
+site_e_offset <- adapted$adaptation$offsets$y$E
+data.frame(
+  n = site_e_offset$n,
+  location = site_e_offset$location,
+  location_se = site_e_offset$location_se
+)
+```
+
+A single probability value cannot define the package's monotone calibration
+map, so no row is reported as calibrated.
+
+```{r tiny-calibration}
+tiny_calibration <- ref_calibrate(
+  site_fit,
+  data = local_controls[1, , drop = FALSE],
+  by = site
+)
+tiny_scores <- predict(
+  tiny_calibration,
+  site_e_target,
+  uncertainty = "conditional",
+  allow_extrapolation = TRUE
+)
+
+data.frame(
+  calibration_n = tiny_calibration$calibration$n,
+  any_mapped = any(tiny_scores$calibrated)
+)
+```
+
+```{r check-small-local-sets, include = FALSE}
+stopifnot(
+  site_e_offset$n == nrow(local_controls),
+  is.finite(site_e_offset$location),
+  is.finite(site_e_offset$location_se),
+  !any(tiny_scores$calibrated)
+)
+```
+
+## Cause
+
+`ref_adapt()` deliberately shrinks local offsets toward the shared reference;
+the amount depends on the local sample size and the prior strength.
+`ref_calibrate()` instead estimates an empirical probability map. With fewer
+than two finite calibration values there is no map, and with only a modest
+number its tail resolution is necessarily coarse.
+
+## Fix
+
+Choose the correction that matches the failure. Adapt when a scanner or domain
+plausibly shifts location or scale while preserving the shared trajectory.
+Calibrate when held-out diagnostics show probability miscalibration that a
+location/scale shift cannot repair. Reserve separate local rows for evaluation,
+report the local sample size, and inspect centre, spread, coverage, and tails;
+do not judge a correction on the rows that estimated it.
+
+# Why did one outcome fail while the rest of the panel fitted?
+
+## Symptom
+
+`ref_fit()` returns a panel object, but `tidy()` reports
+`unsupported_type` for one outcome.
+
+```{r failed-outcome}
+panel <- reference
+panel$group_label <- factor(ifelse(panel$y > median(panel$y), "high", "low"))
+
+panel_fit <- ref_fit(
+  spec,
+  data = panel,
+  outcomes = c("y", "group_label")
+)
+tidy(panel_fit)[, c("outcome", "status", "message")]
+```
+
+```{r check-failed-outcome, include = FALSE}
+panel_status <- tidy(panel_fit)
+stopifnot(
+  panel_status$status[panel_status$outcome == "y"] == "ok",
+  panel_status$status[panel_status$outcome == "group_label"] == "unsupported_type"
+)
+```
+
+## Cause
+
+The current model families define continuous predictive distributions for
+numeric outcomes. A factor, character, or logical outcome is recorded as a
+failed panel member instead of aborting every other outcome.
+
+## Fix
+
+Select the intended numeric measurements explicitly. Convert an encoded
+numeric column only when its scale has a defensible quantitative meaning; do
+not turn categories into arbitrary integer codes to make the status disappear.
+Inspect `tidy(fit)` before deployment and decide whether any partial panel is
+acceptable for the study.
+
+# Why is an assessment too optimistic?
+
+## Symptom
+
+The model looks well calibrated when assessed on the same rows used to fit it.
+The assessment object records this reuse rather than treating it as validation.
+
+```{r compare-assessment-sources}
+training_assessment <- ref_assess(fit, newdata = reference)
+held_out_assessment <- ref_assess(fit, newdata = held_out)
+
+data.frame(
+  sample = c("training", "held out"),
+  in_sample = c(training_assessment$in_sample, held_out_assessment$in_sample),
+  var_z = c(training_assessment$marginal$var_z, held_out_assessment$marginal$var_z),
+  cover_95 = c(training_assessment$marginal$cover_95,
+               held_out_assessment$marginal$cover_95)
+)
+```
+
+```{r check-assessment-sources, include = FALSE}
+stopifnot(
+  isTRUE(training_assessment$in_sample),
+  !isTRUE(held_out_assessment$in_sample),
+  all(is.finite(held_out_assessment$marginal$var_z)),
+  all(is.finite(held_out_assessment$marginal$cover_95))
+)
+```
+
+## Cause
+
+The fitted rows influenced the curve against which they are being scored.
+Smoothness selection and parameter estimation can make their deviations look
+smaller than deviations for genuinely new observations.
+
+## Fix
+
+Pass a held-out reference sample to `ref_assess()`. When a separate sample is
+not available, use out-of-fold scores from `ref_crossfit()` and keep whole
+subjects together with `cluster =` when rows repeat within person.
+
+```{r crossfit-reference}
+oof <- ref_crossfit(spec, reference, outcomes = "y", folds = 3)
+table(oof$.in_sample)
+```
+
+```{r check-crossfit-reference, include = FALSE}
+stopifnot(nrow(oof) == nrow(reference), !any(oof$.in_sample))
+```
+
+# Why are longitudinal change scores all `NA`?
+
+## Symptom
+
+The marginal model fits, but `ref_dynamics()` reports an unidentified process
+and `ref_transition()` returns no innovation or change Z-scores.
+
+```{r sparse-longitudinal-design}
+sparse <- ref_simulate(80, seed = 20)
+sparse$participant_id <- seq_len(nrow(sparse))
+sparse$participant_id[1:3] <- sparse$participant_id[4:6]
+
+sparse_fit <- ref_fit(
+  spec,
+  data = sparse,
+  outcomes = "y",
+  id = participant_id
+)
+sparse_dynamics <- ref_dynamics(
+  sparse_fit,
+  data = sparse,
+  id = participant_id,
+  time = age,
+  crossfit = 0
+)
+sparse_dynamics$components[, c("identified", "stable", "dynamic", "measurement")]
+```
+
+```{r unidentified-transitions}
+sparse_transitions <- ref_transition(
+  sparse_dynamics,
+  data = sparse,
+  id = participant_id,
+  time = age
+)
+sparse_transitions[, c(".id", "innovation_z", "change_z", "support")]
+```
+
+```{r check-unidentified-dynamics, include = FALSE}
+stopifnot(
+  !sparse_dynamics$processes$y$identified,
+  nrow(sparse_transitions) == 3,
+  all(is.na(sparse_transitions$innovation_z)),
+  all(is.na(sparse_transitions$change_z)),
+  all(sparse_transitions$support == "unidentified")
+)
+```
+
+## Cause
+
+Only three subjects have repeat observations here. That is not enough to
+identify within-person dependence, so the package fails closed instead of
+turning starting values into longitudinal evidence. Even when change is
+identifiable, separating stable rank, dynamic variation, and measurement noise
+requires informative visit timing, such as three or more visits for some
+subjects or short-interval repeats.
+
+## Fix
+
+Treat visit design as part of the estimand. Collect repeated observations from
+enough subjects, include varied lags when estimating a time-decaying process,
+and inspect `components`, `identified`, `ell_identified`, and support before
+interpreting change. [Longitudinal change](/articles/longitudinal-change/) explains
+the stable fixed-lag fallback, innovation Z, change Z, velocity, and
+forecasting.
+
+# Where should you go next?
+
+Return to [Getting started with referent](/articles/getting-started/) for the ordinary
+fit-score-assess path. Use
+[Brain charts across sites](/articles/brain-charts-across-sites/) for site transport,
+joint scores, and reporting; use
+[Longitudinal change](/articles/longitudinal-change/) for repeated visits; and use
+[Coming from PCNtoolkit](/articles/pcntoolkit/) when translating an existing
+PCNtoolkit workflow.
+The function reference for `predict.ref_fit()`, `ref_support()`,
+`ref_assess()`, and `ref_dynamics()` gives the exact status and return-value
+contracts used here.

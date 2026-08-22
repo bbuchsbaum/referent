@@ -12,6 +12,17 @@ a threshold exceedance with a known chance rate, not an abnormality.
 The package is CDF-first: a Z-score is one representation of a centile, not a
 raw standardized residual.
 
+> **Development status:** `referent` is an early development package
+> (`0.0.0.9000`). The current fitting surface supports numeric outcomes with
+> Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
+> are reported as unsupported instead of being silently coerced.
+
+Browse the [documentation site](https://bbuchsbaum.github.io/referent/), or
+start directly with [Getting started](vignettes/getting-started.Rmd). Keep
+[Troubleshooting reference-model workflows](vignettes/troubleshooting.Rmd)
+nearby for support, transport, calibration, panel-fit, and longitudinal
+failure modes. The complete article map is below.
+
 ## Installation
 
 ```r
@@ -59,10 +70,9 @@ tidy(fit)
 augment(fit, target[1:3, ])   # target + .z_y, .centile_y, .support
 ```
 
-Gaussian fits return `dist_normal()`; SHASH fits return `dist_shash()`;
-`uncertainty = "total"` returns an equal-weight mixture over coefficient
-draws (an internal `dist_shash_draws` class); forecasts return
-`dist_conditioned()`.
+Gaussian and SHASH fits, coefficient uncertainty, and history-conditioned
+forecasts all share this public `<distribution>` contract. Code should use the
+generics above rather than depend on an internal representation.
 
 ## Workflow
 
@@ -89,7 +99,9 @@ velocity centiles, and conditional forecasts off the same process.
 ## Articles
 
 - [Getting started](vignettes/getting-started.Rmd): fit, model ladder,
-  calibration, scoring, tidiers.
+  scoring, support, predictive distributions, and interpretation.
+- [Validate and choose a reference model](vignettes/validate-reference.Rmd):
+  out-of-fold model selection, held-out calibration, and conditional drift.
 - [Brain charts across sites](vignettes/brain-charts-across-sites.Rmd):
   random site effects, out-of-fold reference scores, scoring a new site
   (population curve vs adapt vs calibrate vs refit), joint deviation, FDR
@@ -99,8 +111,11 @@ velocity centiles, and conditional forecasts off the same process.
   forecasts.
 - [Coming from PCNtoolkit](vignettes/pcntoolkit.Rmd): concept and metric
   mapping.
+- [Troubleshooting reference-model workflows](vignettes/troubleshooting.Rmd):
+  missing and unsupported covariates, transported unseen sites, small local
+  samples, partial panel fits, honest assessment, and unidentified dynamics.
 
-Design source of truth:
+Contributor design notes:
 
 - [A design for an R normative-modeling library](docs/design/distributional-reference-models.md)
 - [Velocity should be a core consequence of the model, not a bolt-on](docs/design/longitudinal-velocity.md)

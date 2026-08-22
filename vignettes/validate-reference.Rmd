@@ -1,0 +1,151 @@
+---
+title: "Validate and choose a reference model"
+description: "Choose distributional flexibility out of sample and diagnose marginal, conditional, and tail calibration."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Validate and choose a reference model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+library(referent)
+reference <- ref_simulate(400, kind = "gaussian", scale = "age", seed = 1)
+validation <- ref_simulate(300, kind = "gaussian", scale = "age", seed = 8)
+```
+
+The first model that converges is not necessarily a trustworthy reference.
+You need to decide how much distributional flexibility the data support and
+then test the chosen model on people who did not fit it. This page keeps those
+two jobs separate: cross-fitting chooses a candidate within the reference
+cohort; a held-out validation cohort checks the final fit.
+
+# Which distributional model earns its complexity?
+
+Order candidates from the simplest plausible model to more flexible ones.
+Every `ref_select()` criterion is computed from out-of-fold predictions, so a
+candidate cannot win by explaining the same rows that fitted it.
+
+```{r ladder}
+ladder <- list(
+  gaussian_constant = ref_spec(
+    ref_gaussian(), location = ~ s(age, k = 8) + sex
+  ),
+  gaussian_varying_scale = ref_spec(
+    ref_gaussian(), location = ~ s(age, k = 8) + sex,
+    scale = ~ s(age, k = 5)
+  ),
+  shash_varying_scale = ref_spec(
+    ref_shash(), location = ~ s(age, k = 8) + sex,
+    scale = ~ s(age, k = 5)
+  )
+)
+selection <- ref_select(ladder, reference, outcomes = "y", folds = 4)
+selection$comparison[, c(
+  "model", "mean_log_score", "crps", "mean_z", "var_z",
+  "cover_95", "calibrated", "selected"
+)]
+```
+
+```{r ladder-checks, include = FALSE}
+tab <- selection$comparison
+finite_oof_z <- selection$crossfit$z[is.finite(selection$crossfit$z)]
+stopifnot(
+  sum(tab$selected) == 1,
+  all(is.finite(tab$mean_log_score[tab$status %in% c("ok", "partial")])),
+  length(finite_oof_z) > 0.8 * nrow(selection$crossfit),
+  stats::sd(finite_oof_z) > 0.5
+)
+```
+
+Read the table as a sequence of gates. Failed or unstable fits leave first.
+Calibration is checked before log score and CRPS. The paired one-standard-error
+rule then keeps candidates whose predictive performance is not distinguishable
+from the best, and the simplest survivor wins. A selected model is the most
+defensible member of this ladder, not proof that the ladder contained truth.
+Fold-specific support checks can mask a few boundary rows when one fold's
+training range is narrower than the full reference range; the comparison
+reports the finite out-of-fold scoring set rather than filling those values.
+
+# How do you validate the selected model honestly?
+
+Fit the selected specification to all reference rows, then assess a separate
+cohort. Declare the uncertainty regime explicitly so the reported diagnostics
+can be reproduced from `predict()`.
+
+```{r held-out}
+fit <- ref_fit(selection$selected, reference, outcomes = "y")
+assessment <- ref_assess(fit, validation, uncertainty = "total")
+assessment$overall[, c(
+  "mean_log_score", "standardized_log_score", "crps", "smse", "ev", "rmse"
+)]
+assessment$marginal[, c(
+  "n", "mean_z", "var_z", "cover_50", "cover_80", "cover_95", "cover_99"
+)]
+```
+
+```{r held-out-checks, include = FALSE}
+marginal <- assessment$marginal
+stopifnot(
+  !assessment$in_sample,
+  all(is.finite(marginal$mean_z)),
+  all(is.finite(marginal$var_z) & marginal$var_z > 0),
+  all(is.finite(assessment$overall$mean_log_score))
+)
+```
+
+`mean_z` and `var_z` diagnose location and spread on the normal-score scale.
+Coverage checks several central intervals. Log score and CRPS assess the full
+distribution rather than only its median. Compare models on the same held-out
+rows and uncertainty regime.
+
+# Where is the distribution wrong?
+
+```{r calibration-plot, fig.alt="Observed coverage versus nominal coverage for the held-out validation cohort."}
+autoplot(assessment, type = "calibration")
+```
+
+Points near the diagonal indicate marginal coverage. Departures identify
+which interval widths miss their nominal rates, but they do not reveal whether
+the error changes with age, sex, or site.
+
+```{r worm-plot, fig.alt="Worm plot of held-out normal-score quantile departures from the standard normal reference."}
+autoplot(assessment, type = "worm")
+```
+
+A tilted worm suggests a scale error; curvature suggests skew or tail
+misfit. Treat that shape as a diagnosis to test, not automatic permission to
+add a more flexible family.
+
+# Does calibration drift across covariates or groups?
+
+The conditional table checks every covariate used by the fit. Numeric
+covariates receive light diagnostic smooths; factors receive one row per
+level. The p-values test no drift, while the drift columns describe its size.
+
+```{r conditional}
+assessment$conditional[, c(
+  ".outcome", "covariate", "level", "n",
+  "location_drift", "location_p", "scale_drift", "scale_p"
+)]
+```
+
+If you ask for `by = site`, the marginal table is also split by site. Do this
+only when each group has enough held-out rows to estimate coverage and tails.
+
+```{r by-site}
+by_site <- ref_assess(fit, validation, by = site, uncertainty = "total")
+by_site$marginal[, c(".group", "n", "mean_z", "var_z", "cover_95")]
+```
+
+# What should happen after a failed check?
+
+Do not tune and validate on the same rows. Revise the candidate ladder or
+covariates using reference-only cross-fitting, then return once to an untouched
+validation cohort. If failure is concentrated at a new scanner, use a
+transport analysis instead of bending the shared trajectory to that scanner.
+If scores are missing, diagnose support before model complexity.
+
+Continue with [Brain charts across sites](/articles/brain-charts-across-sites/), or
+use [Troubleshooting reference models](/articles/troubleshooting/) when a fit or
+score does not behave as expected.
