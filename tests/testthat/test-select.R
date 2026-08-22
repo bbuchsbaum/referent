@@ -1,22 +1,22 @@
 ladder_specs <- function() {
   list(
-    gaussian_const = norm_spec(norm_gaussian(), location = ~ s(age, k = 5) + sex),
-    gaussian_scale = norm_spec(norm_gaussian(), location = ~ s(age, k = 5) + sex,
+    gaussian_const = ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex),
+    gaussian_scale = ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex,
                                scale = ~ s(age, k = 4)),
-    shash_const = norm_spec(norm_shash(), location = ~ s(age, k = 5) + sex,
+    shash_const = ref_spec(ref_shash(), location = ~ s(age, k = 5) + sex,
                             scale = ~ s(age, k = 4)),
-    shash_shape = norm_spec(norm_shash(), location = ~ s(age, k = 5) + sex,
+    shash_shape = ref_spec(ref_shash(), location = ~ s(age, k = 5) + sex,
                             scale = ~ s(age, k = 4), skew = ~ s(age, k = 4))
   )
 }
 
 test_that("the ladder picks a Gaussian level on Gaussian constant-scale data", {
   skip_on_cran()
-  dat <- norm_simulate(400, seed = 61)
+  dat <- ref_simulate(400, seed = 61)
   withr::with_seed(61, {
-    sel <- norm_select(ladder_specs(), data = dat, outcomes = "y", folds = 3)
+    sel <- ref_select(ladder_specs(), data = dat, outcomes = "y", folds = 3)
   })
-  expect_s3_class(sel, "norm_selection")
+  expect_s3_class(sel, "ref_selection")
   expect_true(sel$selected_name %in% c("gaussian_const", "gaussian_scale"))
   tab <- sel$comparison
   expect_true(all(c("crps", "mean_z", "var_z", "cover_95", "tail_05", "shape") %in% names(tab)))
@@ -24,7 +24,7 @@ test_that("the ladder picks a Gaussian level on Gaussian constant-scale data", {
   expect_true(all(is.finite(tab$crps[tab$status == "ok"])))
   # gate values are out-of-fold: they differ from the in-sample assessment
   fit <- attr(sel$crossfit, "deployment")
-  ins <- norm_assess(fit, newdata = dat)
+  ins <- ref_assess(fit, newdata = dat)
   oof <- tab[tab$selected, ]
   expect_false(isTRUE(all.equal(oof$var_z, ins$marginal$var_z)))
   expect_equal(oof$var_z, stats::var(sel$crossfit$z, na.rm = TRUE))
@@ -38,7 +38,7 @@ test_that("the ladder picks SHASH on strongly skewed data", {
   skip_on_cran()
   dat <- simulate_skewed(500, seed = 62, skew = 1.4, tail = 0.7)
   withr::with_seed(62, {
-    sel <- norm_select(ladder_specs(), data = dat, outcomes = "y", folds = 3)
+    sel <- ref_select(ladder_specs(), data = dat, outcomes = "y", folds = 3)
   })
   expect_true(grepl("^shash", sel$selected_name))
   tab <- sel$comparison
@@ -66,13 +66,13 @@ test_that("acceptable_calibration scales its tolerance with n", {
 })
 
 test_that("the comparison table carries the paired standard errors the one-SE rule uses", {
-  dat <- norm_simulate(200, seed = 15)
+  dat <- ref_simulate(200, seed = 15)
   specs <- list(
-    linear = norm_spec(norm_gaussian(), ~ age + sex),
-    smooth = norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex)
+    linear = ref_spec(ref_gaussian(), ~ age + sex),
+    smooth = ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex)
   )
   set.seed(1)
-  sel <- norm_select(specs, dat, "y", folds = 3)
+  sel <- ref_select(specs, dat, "y", folds = 3)
   tab <- sel$comparison
   expect_false("se_log_score" %in% names(tab))
   expect_true(all(c("se_log_score_paired", "se_crps_paired") %in% names(tab)))

@@ -1,9 +1,9 @@
-# print.norm_fit shows family, formulas, and status counts
+# print.ref_fit shows family, formulas, and status counts
 
     Code
       print(fit)
     Message
-      <norm_fit> gaussian via mgcv
+      <ref_fit> gaussian via mgcv
       3 outcomes, n = 120
       covariates: age and sex
       status: ok=2, insufficient_variation=1
@@ -14,23 +14,23 @@
     Code
       print(fit$spec)
     Message
-      <norm_spec> gaussian via mgcv
+      <ref_spec> gaussian via mgcv
       location: ~s(age, k = 5) + sex
       scale: ~1
 
 ---
 
     Code
-      print(norm_shash())
+      print(ref_shash())
     Message
-      <norm_family> shash (4 parameters)
+      <ref_family> shash (4 parameters)
 
-# print.norm_scores counts rows and warns about in-sample scores
+# print.ref_scores counts rows and warns about in-sample scores
 
     Code
       print(sc[, c(".row", ".outcome", "z", "support", "status")])
     Message
-      <norm_scores> 9 rows
+      <ref_scores> 9 rows
     Output
       # A tibble: 9 x 5
          .row .outcome         z support status                
@@ -45,7 +45,7 @@
       8     2 marker_bad NA      in      insufficient_variation
       9     3 marker_bad NA      in      insufficient_variation
 
-# print.norm_reference prints the model card
+# print.ref_reference prints the model card
 
     Code
       print(ref)
@@ -63,12 +63,12 @@
       Covariate ranges
       age: [20.21, 79.85]
 
-# print.norm_assessment shows the overall table
+# print.ref_assessment shows the overall table
 
     Code
       print(a)
     Message
-      <norm_assessment> n = 60
+      <ref_assessment> n = 60
     Output
       # A tibble: 3 x 9
        .outcome mean_log_score standardized_log_score crps mae rmse smse
@@ -78,12 +78,12 @@
       3 y # # # # # #
       # i 2 more variables: ev <dbl>, cor <dbl>
 
-# print.norm_dynamics reports components, identifiability, and the kernel
+# print.ref_dynamics reports components, identifiability, and the kernel
 
     Code
       print(dyn)
     Message
-      <norm_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
       subjects: 200; time range [#, #]; lag range [2, 2]
       ! measurement not separated: no short-interval repeats; measurement noise is not separated from rank dynamics
     Output
@@ -99,7 +99,7 @@
     Code
       print(dyn0)
     Message
-      <norm_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
       subjects: 200; time range [#, #]; lag range [0, 0]
       ! change not identified: too few repeated observations to identify within-person dependence
     Output
@@ -115,7 +115,7 @@
     Code
       print(ad$adaptation)
     Message
-      <norm_adaptation> parameters: location
+      <ref_adaptation> parameters: location
       local n = 30
       y / A: location #, scale x1 (n = 10)
       y / B: location #, scale x1 (n = 8)
@@ -127,12 +127,12 @@
     Code
       print(cal$calibration)
     Message
-      <norm_calibration> method = rank, n = 50, by site
+      <ref_calibration> method = rank, n = 50, by site
 
 ---
 
     Code
       print(jt)
     Message
-      <norm_joint> gaussian copula, 1 outcome, n = 49 reference subjects
+      <ref_joint> gaussian copula, 1 outcome, n = 49 reference subjects
 

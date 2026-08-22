@@ -8,7 +8,7 @@
 #' `standardized_log_score` is the negative MSLL: the mean log score
 #' minus the log score of a Gaussian with the *reference* sample's mean
 #' and population standard deviation (`fit$reference_baseline`, recorded
-#' by [norm_fit()]). The baseline never uses the held-out sample's own
+#' by [ref_fit()]). The baseline never uses the held-out sample's own
 #' moments.
 #'
 #' Note that this is *not* the same baseline PCNtoolkit uses. PCNtoolkit
@@ -37,22 +37,22 @@
 #' \eqn{z} and the excess of \eqn{\mathrm{var}(z)} over 1, their standard
 #' errors, and two-sided p-values.
 #'
-#' @param fit A [norm_fit].
+#' @param fit A [ref_fit].
 #' @param newdata Held-out validation data (required; training data are
 #'   not stored on the fit). For out-of-fold evaluation use
-#'   [norm_crossfit()].
+#'   [ref_crossfit()].
 #' @param by Optional grouping column; the marginal calibration table is
 #'   then reported per group (column `.group`).
-#' @param uncertainty Passed to [predict.norm_fit()]. `"conditional"`
+#' @param uncertainty Passed to [predict.ref_fit()]. `"conditional"`
 #'   (the default, and the historical behaviour) scores the point-estimate
 #'   predictive; `"total"` integrates over the coefficient draws, matching
-#'   what [predict.norm_fit()] itself returns by default. Without this
+#'   what [predict.ref_fit()] itself returns by default. Without this
 #'   argument the scores in `overall` cannot be reproduced from
 #'   `predict()`.
-#' @return An object of class `norm_assessment` with `overall`,
+#' @return An object of class `ref_assessment` with `overall`,
 #'   `marginal`, `conditional`, and `tail` tibbles plus the scores.
 #' @export
-norm_assess <- function(fit, newdata, by = NULL,
+ref_assess <- function(fit, newdata, by = NULL,
                         uncertainty = c("conditional", "total")) {
   if (missing(newdata) || is.null(newdata)) {
     cli::cli_abort("Supply {.arg newdata}: held-out data or a cross-fitted frame.")
@@ -87,7 +87,7 @@ assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
       n = nrow(newdata),
       in_sample = nrow(scores) > 0 && all(scores$.in_sample)
     ),
-    class = "norm_assessment"
+    class = "ref_assessment"
   )
 }
 
@@ -271,8 +271,8 @@ assess_tail <- function(scores) {
 }
 
 #' @export
-print.norm_assessment <- function(x, ...) {
-  cli::cli_text("{.cls norm_assessment} n = {x$n}")
+print.ref_assessment <- function(x, ...) {
+  cli::cli_text("{.cls ref_assessment} n = {x$n}")
   print(x$overall)
   invisible(x)
 }

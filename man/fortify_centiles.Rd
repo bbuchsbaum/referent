@@ -14,7 +14,7 @@ fortify_centiles(
 )
 }
 \arguments{
-\item{fit}{A \link{norm_fit}.}
+\item{fit}{A \link{ref_fit}.}
 
 \item{outcome}{Outcome name.}
 
@@ -28,7 +28,7 @@ per level; other covariates stay at their reference value.}
 \item{n}{Grid length along \code{x}.}
 }
 \value{
-A list of class \code{norm_centile_data} with \code{lines} and \code{ribbons} tibbles.
+A list of class \code{ref_centile_data} with \code{lines} and \code{ribbons} tibbles.
 }
 \description{
 These helpers return tibbles. \code{autoplot()} consumes them; users can

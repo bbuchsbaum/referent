@@ -38,18 +38,18 @@ support_reference <- function(data, covariate_names) {
 #' `"new_group"` (unseen factor level), and `"unknown"` (a covariate is
 #' `NA`).
 #'
-#' @param fit A [norm_fit].
+#' @param fit A [ref_fit].
 #' @param newdata Target data.
 #' @return A tibble with `.row`, `support`, and the squared Mahalanobis
 #'   distance `d2` (`NA` when there are fewer than two numeric covariates
 #'   or the row has a missing covariate).
 #' @examples
-#' ref <- norm_simulate(80, seed = 1)
-#' spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
-#' fit <- norm_fit(spec, data = ref, outcomes = "y")
-#' norm_support(fit, ref[1:3, ])
+#' ref <- ref_simulate(80, seed = 1)
+#' spec <- ref_spec(family = ref_gaussian(), location = ~ age + sex)
+#' fit <- ref_fit(spec, data = ref, outcomes = "y")
+#' ref_support(fit, ref[1:3, ])
 #' @export
-norm_support <- function(fit, newdata) {
+ref_support <- function(fit, newdata) {
   classify_support(fit$support_ref, tibble::as_tibble(newdata))
 }
 

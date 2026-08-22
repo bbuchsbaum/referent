@@ -9,18 +9,18 @@ ggplot2::autoplot
 #' the fitted geometry.
 #'
 #' @details
-#' For a [norm_fit]:
+#' For a [ref_fit]:
 #' * `"centiles"`: the fitted conditional distribution along `x`
 #'   (median, dashed outer centiles, and shaded bands), optionally faceted
 #'   by a factor covariate and with `newdata` overlaid as points.
 #' * `"trajectories"`: the centile chart with subject paths from `data`
 #'   drawn over it.
 #' * `"support"`: where `newdata` falls relative to the reference support
-#'   (histogram of `x` coloured by [norm_support()] status).
+#'   (histogram of `x` coloured by [ref_support()] status).
 #' * `"adaptation"`: location offsets (with standard errors) estimated by
-#'   [norm_adapt()].
+#'   [ref_adapt()].
 #'
-#' For a `norm_assessment`, `"calibration"` plots observed against nominal
+#' For a `ref_assessment`, `"calibration"` plots observed against nominal
 #' coverage, `"conditional"` the largest fitted drift of `z` against each
 #' numeric covariate (factor levels are in the table only), and `"qq"` / `"worm"` the ordered Z scores against their
 #' expected normal order statistics, raw or detrended (observed minus
@@ -34,9 +34,9 @@ ggplot2::autoplot
 #' both bands, since about `1 - level` of the points are expected outside
 #' the pointwise band even when the model is right.
 #'
-#' For a `norm_dynamics`, `"kernel"` draws the fitted process correlation
+#' For a `ref_dynamics`, `"kernel"` draws the fitted process correlation
 #' against lag and `"calibration"` draws the same Q-Q chart of held-out
-#' innovation Z from [norm_transition()] on `data`; the latter needs
+#' innovation Z from [ref_transition()] on `data`; the latter needs
 #' `data`, `id`, and `time`.
 #'
 #' @param object A fit, assessment, score table, forecast, transition,
@@ -55,14 +55,14 @@ ggplot2::autoplot
 #' @param ... Unused.
 #' @return A ggplot.
 #' @examples
-#' ref <- norm_simulate(150, seed = 1)
-#' fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+#' ref <- ref_simulate(150, seed = 1)
+#' fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 #' autoplot(fit, type = "centiles", by = sex, newdata = ref[1:20, ])
 #' sc <- predict(fit, newdata = ref[1:6, ], uncertainty = "conditional")
 #' autoplot(sc, type = "heatmap")
-#' @name autoplot.norm_fit
+#' @name autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_fit <- function(object,
+autoplot.ref_fit <- function(object,
                               type = c("centiles", "trajectories", "support", "adaptation"),
                               outcome = NULL,
                               x = NULL,
@@ -88,9 +88,9 @@ autoplot.norm_fit <- function(object,
   )
 }
 
-#' @rdname autoplot.norm_fit
+#' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_assessment <- function(object,
+autoplot.ref_assessment <- function(object,
                                      type = c("calibration", "worm", "qq", "conditional"),
                                      level = 0.95,
                                      ...) {
@@ -104,9 +104,9 @@ autoplot.norm_assessment <- function(object,
   )
 }
 
-#' @rdname autoplot.norm_fit
+#' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_scores <- function(object,
+autoplot.ref_scores <- function(object,
                                  type = c("profile", "heatmap"),
                                  id = NULL,
                                  ...) {
@@ -117,9 +117,9 @@ autoplot.norm_scores <- function(object,
   plot_heatmap(object)
 }
 
-#' @rdname autoplot.norm_fit
+#' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_forecast <- function(object,
+autoplot.ref_forecast <- function(object,
                                    type = c("fan"),
                                    centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                    ...) {
@@ -127,16 +127,16 @@ autoplot.norm_forecast <- function(object,
   plot_fan(object, centiles = centiles)
 }
 
-#' @rdname autoplot.norm_fit
+#' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_transition <- function(object, type = c("velocity", "innovation", "change"), ...) {
+autoplot.ref_transition <- function(object, type = c("velocity", "innovation", "change"), ...) {
   type <- match.arg(type)
   plot_transition(object, type)
 }
 
-#' @rdname autoplot.norm_fit
+#' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
-autoplot.norm_dynamics <- function(object,
+autoplot.ref_dynamics <- function(object,
                                    type = c("kernel", "calibration"),
                                    data = NULL,
                                    id = NULL,
@@ -209,7 +209,7 @@ outcome_colour <- function(x, name = "Outcome") {
   scale_colour_referent(name = name, guide = if (has_groups(x)) "legend" else "none")
 }
 
-# --- norm_fit -------------------------------------------------------------
+# --- ref_fit -------------------------------------------------------------
 
 plot_centiles <- function(fit, outcome, x, newdata, by_nm, centiles) {
   built <- fortify_centiles(fit, outcome, x, by_nm, centiles)
@@ -311,9 +311,9 @@ plot_support <- function(fit, newdata, x) {
 }
 
 plot_adaptation <- function(object) {
-  adapt <- if (inherits(object, "norm_adaptation")) object else object$adaptation
-  if (is.null(adapt) || !inherits(adapt, "norm_adaptation")) {
-    cli::cli_abort("No adaptation is attached; see {.fn norm_adapt}.")
+  adapt <- if (inherits(object, "ref_adaptation")) object else object$adaptation
+  if (is.null(adapt) || !inherits(adapt, "ref_adaptation")) {
+    cli::cli_abort("No adaptation is attached; see {.fn ref_adapt}.")
   }
   rows <- list()
   for (nm in names(adapt$offsets)) {
@@ -355,7 +355,7 @@ plot_adaptation <- function(object) {
   )
 }
 
-# --- norm_assessment --------------------------------------------------------
+# --- ref_assessment --------------------------------------------------------
 
 plot_calibration <- function(assessment) {
   df <- assessment$marginal
@@ -567,7 +567,7 @@ plot_conditional <- function(assessment) {
   )
 }
 
-# --- norm_scores ------------------------------------------------------------
+# --- ref_scores ------------------------------------------------------------
 
 plot_profile <- function(scores, id = NULL) {
   if (!".id" %in% names(scores) || !".outcome" %in% names(scores)) {
@@ -629,7 +629,7 @@ plot_heatmap <- function(scores) {
                    axis.line = ggplot2::element_blank())
 }
 
-# --- norm_forecast ----------------------------------------------------------
+# --- ref_forecast ----------------------------------------------------------
 
 plot_fan <- function(forecast, centiles) {
   centiles <- sort(unique(as.numeric(centiles)))
@@ -688,7 +688,7 @@ plot_fan <- function(forecast, centiles) {
   )
 }
 
-# --- norm_transition --------------------------------------------------------
+# --- ref_transition --------------------------------------------------------
 
 plot_transition <- function(object, type) {
   y_nm <- switch(
@@ -721,7 +721,7 @@ plot_transition <- function(object, type) {
   finish_plot(p + pretty_x() + pretty_y(), title = NULL, xlab = "Elapsed time", ylab = ylab)
 }
 
-# --- norm_dynamics ----------------------------------------------------------
+# --- ref_dynamics ----------------------------------------------------------
 
 plot_kernel <- function(dyn) {
   df <- fortify_kernel(dyn)
@@ -756,13 +756,13 @@ plot_dynamics_calibration <- function(dyn, data, id_quo, time_quo, level = 0.95)
   if (is.null(data)) {
     cli::cli_abort(c(
       "{.arg data} is required for a dynamics calibration plot.",
-      i = "Supply held-out visits with {.arg id} and {.arg time}; innovation Z is computed with {.fn norm_transition}."
+      i = "Supply held-out visits with {.arg id} and {.arg time}; innovation Z is computed with {.fn ref_transition}."
     ))
   }
   if (is.null(as_col_name(id_quo)) || is.null(as_col_name(time_quo))) {
     cli::cli_abort("{.arg id} and {.arg time} are required for a dynamics calibration plot.")
   }
-  tr <- norm_transition(dyn, data = data, id = !!id_quo, time = !!time_quo)
+  tr <- ref_transition(dyn, data = data, id = !!id_quo, time = !!time_quo)
   df <- tibble::tibble(.outcome = tr$.outcome, z = tr$innovation_z)
   df <- df[is.finite(df$z), , drop = FALSE]
   if (!nrow(df)) {

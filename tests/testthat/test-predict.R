@@ -1,8 +1,8 @@
 test_that("empty newdata returns an empty distribution", {
   set.seed(40)
-  dat <- norm_simulate(60, seed = 40)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+  dat <- ref_simulate(60, seed = 40)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
     outcomes = "y"
   )
@@ -15,10 +15,10 @@ test_that("empty newdata returns an empty distribution", {
 
 test_that("total uncertainty works for one row and gaulss", {
   set.seed(41)
-  dat <- norm_simulate(80, kind = "gaussian", scale = "age", seed = 41)
-  fit <- norm_fit(
-    norm_spec(
-      family = norm_gaussian(),
+  dat <- ref_simulate(80, kind = "gaussian", scale = "age", seed = 41)
+  fit <- ref_fit(
+    ref_spec(
+      family = ref_gaussian(),
       location = ~ s(age, k = 5) + sex,
       scale = ~ s(age, k = 4)
     ),
@@ -35,9 +35,9 @@ test_that("total uncertainty works for one row and gaulss", {
 
 test_that("unseen groups do not abort prediction", {
   set.seed(42)
-  dat <- norm_simulate(50, seed = 42)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+  dat <- ref_simulate(50, seed = 42)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
     outcomes = "y"
   )
@@ -49,10 +49,10 @@ test_that("unseen groups do not abort prediction", {
 })
 
 test_that("NA predictors give NA scores with status missing_predictor (gaulss and shash)", {
-  dat <- norm_simulate(150, kind = "gaussian", scale = "age", seed = 51)
-  spec <- norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex,
+  dat <- ref_simulate(150, kind = "gaussian", scale = "age", seed = 51)
+  spec <- ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex,
                     scale = ~ s(age, k = 4))
-  fit <- norm_fit(spec, data = dat, outcomes = "y")
+  fit <- ref_fit(spec, data = dat, outcomes = "y")
   new <- dat[1:4, ]
   new$age[2] <- NA
   new$sex[3] <- NA
@@ -64,17 +64,17 @@ test_that("NA predictors give NA scores with status missing_predictor (gaulss an
     expect_true(all(is.finite(sc$z[c(1, 4)])))
     expect_equal(sc$support[2:3], c("unknown", "unknown"))
   }
-  sfit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
+  sfit <- ref_fit(simple_spec("shash"), data = dat, outcomes = "y")
   ssc <- predict(sfit, newdata = new, uncertainty = "conditional")
   expect_equal(ssc$status[2], "missing_predictor")
   expect_true(is.na(ssc$z[[2]]))
 })
 
 test_that("total uncertainty is deterministic and the returned distribution is the mixture", {
-  dat <- norm_simulate(150, kind = "gaussian", scale = "age", seed = 52)
-  spec <- norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex,
+  dat <- ref_simulate(150, kind = "gaussian", scale = "age", seed = 52)
+  spec <- ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex,
                     scale = ~ s(age, k = 4))
-  fit <- norm_fit(spec, data = dat, outcomes = "y")
+  fit <- ref_fit(spec, data = dat, outcomes = "y")
   new <- dat[1:12, ]
   a <- predict(fit, newdata = new, uncertainty = "total")
   b <- predict(fit, newdata = new, uncertainty = "total")
@@ -106,23 +106,23 @@ test_that("total uncertainty is deterministic and the returned distribution is t
 })
 
 test_that("non-syntactic outcome names fit and predict", {
-  dat <- norm_simulate(120, seed = 53)
+  dat <- ref_simulate(120, seed = 53)
   dat[["brain volume"]] <- dat$y
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "brain volume")
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "brain volume")
   expect_equal(fit$models[["brain volume"]]$status, "ok")
   sc <- predict(fit, newdata = dat[1:5, ], uncertainty = "conditional")
-  ref <- predict(norm_fit(simple_spec(), data = dat, outcomes = "y"),
+  ref <- predict(ref_fit(simple_spec(), data = dat, outcomes = "y"),
                  newdata = dat[1:5, ], uncertainty = "conditional")
   expect_equal(sc$.outcome, rep("brain volume", 5))
   expect_equal(sc$z, ref$z)
 })
 
-test_that("norm_assess requires newdata, honours by=, checks every covariate, and reports ev/smse", {
-  train <- norm_simulate(300, seed = 54)
-  test <- norm_simulate(200, seed = 55)
-  fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
-  expect_error(norm_assess(fit), "newdata")
-  a <- norm_assess(fit, newdata = test, by = site)
+test_that("ref_assess requires newdata, honours by=, checks every covariate, and reports ev/smse", {
+  train <- ref_simulate(300, seed = 54)
+  test <- ref_simulate(200, seed = 55)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
+  expect_error(ref_assess(fit), "newdata")
+  a <- ref_assess(fit, newdata = test, by = site)
   expect_true(".group" %in% names(a$marginal))
   expect_setequal(a$marginal$.group, levels(test$site))
   expect_equal(sum(a$marginal$n), nrow(test))
@@ -136,23 +136,23 @@ test_that("norm_assess requires newdata, honours by=, checks every covariate, an
   expect_gt(ov$ev, 0.3)
   expect_lt(ov$smse, 0.7)
   # two numeric covariates -> two conditional rows
-  spec2 <- norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + marker_01)
-  fit2 <- norm_fit(spec2, data = train, outcomes = "y")
-  a2 <- norm_assess(fit2, newdata = test)
+  spec2 <- ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + marker_01)
+  fit2 <- ref_fit(spec2, data = train, outcomes = "y")
+  a2 <- ref_assess(fit2, newdata = test)
   expect_setequal(a2$conditional$covariate, c("age", "marker_01"))
 })
 
-test_that("norm_support reports unknown for NA covariates", {
-  dat <- norm_simulate(80, seed = 56)
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
+test_that("ref_support reports unknown for NA covariates", {
+  dat <- ref_simulate(80, seed = 56)
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "y")
   new <- dat[1:3, ]
   new$age[2] <- NA
-  expect_equal(norm_support(fit, new)$support, c("in", "unknown", "in"))
+  expect_equal(ref_support(fit, new)$support, c("in", "unknown", "in"))
 })
 
 test_that("augment matches the long score table", {
   d <- perf_data()
-  fit <- norm_calibrate(norm_fit(perf_specs()$gaulss, d$ref, c("y", "marker_01")),
+  fit <- ref_calibrate(ref_fit(perf_specs()$gaulss, d$ref, c("y", "marker_01")),
                         d$new, by = site)
   long <- predict(fit, d$new, uncertainty = "conditional")
   wide <- augment(fit, d$new, uncertainty = "conditional")
@@ -166,7 +166,7 @@ test_that("augment matches the long score table", {
 
 test_that("draw parameters from the lp matrix match per-draw evaluation", {
   d <- perf_data()
-  fit <- norm_fit(perf_specs()$shash, d$ref, "y")
+  fit <- ref_fit(perf_specs()$shash, d$ref, "y")
   m <- fit$models$y
   lp <- predict(m$model, d$new[1:5, ], type = "lpmatrix")
   beta <- coef(m$model)
@@ -182,7 +182,7 @@ test_that("draw parameters from the lp matrix match per-draw evaluation", {
 
 test_that("shifted log density agrees with the distribution methods", {
   d <- perf_data()
-  fit <- norm_fit(perf_specs()$shash, d$ref, "y")
+  fit <- ref_fit(perf_specs()$shash, d$ref, "y")
   dist <- predict(fit, d$new, type = "distribution", uncertainty = "conditional")$y
   y <- d$new$y
   u <- dist_unpack(dist)
@@ -198,8 +198,8 @@ test_that("shifted log density agrees with the distribution methods", {
 })
 
 test_that("an unseen parametric factor level NAs only its own rows", {
-  dat <- norm_simulate(120, seed = 7)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), dat, "y")
+  dat <- ref_simulate(120, seed = 7)
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), dat, "y")
   new <- dat[1:6, ]
   new$sex <- as.character(new$sex)
   new$sex[2] <- "X"
@@ -218,8 +218,8 @@ test_that("an unseen parametric factor level NAs only its own rows", {
 })
 
 test_that("allow_extrapolation = FALSE masks every probability column and new groups", {
-  dat <- norm_simulate(120, seed = 8)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + s(site, bs = "re")), dat, "y")
+  dat <- ref_simulate(120, seed = 8)
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + s(site, bs = "re")), dat, "y")
   new <- dat[1:4, ]
   new$age[1] <- 200
   new$site <- as.character(new$site)
@@ -235,12 +235,12 @@ test_that("allow_extrapolation = FALSE masks every probability column and new gr
 })
 
 test_that("calibration leaves calibrated = FALSE where no map could be estimated", {
-  dat <- norm_simulate(200, seed = 9)
-  fit <- norm_fit(simple_spec(), data = dat[1:120, ], outcomes = "y")
+  dat <- ref_simulate(200, seed = 9)
+  fit <- ref_fit(simple_spec(), data = dat[1:120, ], outcomes = "y")
   cal <- dat[121:160, ]
   cal$site <- as.character(cal$site)
   cal$site[1] <- "solo" # one row: no map for this group, pooled map applies
-  fit_by <- norm_calibrate(fit, data = cal, by = site)
+  fit_by <- ref_calibrate(fit, data = cal, by = site)
   expect_null(fit_by$calibration$maps$y$solo)
   new <- dat[161:170, ]
   new$site <- as.character(new$site)
@@ -248,30 +248,30 @@ test_that("calibration leaves calibrated = FALSE where no map could be estimated
   sc <- predict(fit_by, new, uncertainty = "conditional")
   expect_true(all(sc$calibrated))
   # an outcome with a single calibration row has no map at all
-  fit1 <- norm_calibrate(fit, data = dat[121, ])
+  fit1 <- ref_calibrate(fit, data = dat[121, ])
   expect_null(fit1$calibration$maps$y$.global)
   sc1 <- predict(fit1, new, uncertainty = "conditional")
   expect_true(all(!sc1$calibrated))
   expect_equal(sc1$z, predict(fit, new, uncertainty = "conditional")$z)
 })
 
-test_that("norm_support gives NA d2 for rows with a missing covariate", {
-  dat <- norm_simulate(120, seed = 10)
+test_that("ref_support gives NA d2 for rows with a missing covariate", {
+  dat <- ref_simulate(120, seed = 10)
   dat$x2 <- dat$age / 2 + stats::rnorm(120)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ age + x2), dat, "y")
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ age + x2), dat, "y")
   new <- dat[1:3, ]
   new$x2[2] <- NA
-  st <- norm_support(fit, new)
+  st <- ref_support(fit, new)
   expect_equal(st$support[2], "unknown")
   expect_true(is.na(st$d2[2]))
   expect_true(all(is.finite(st$d2[-2])))
 })
 
 test_that("the conditional table tests drift properly and covers factor levels", {
-  dat <- norm_simulate(1500, seed = 12)
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
-  new <- norm_simulate(400, seed = 13)
-  a <- norm_assess(fit, new)
+  dat <- ref_simulate(1500, seed = 12)
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "y")
+  new <- ref_simulate(400, seed = 13)
+  a <- ref_assess(fit, new)
   cond <- a$conditional
   expect_true(all(c("level", "n", "location_p", "scale_p") %in% names(cond)))
   num <- cond[is.na(cond$level), ]
@@ -287,7 +287,7 @@ test_that("the conditional table tests drift properly and covers factor levels",
   # a shifted group is detected
   shifted <- new
   shifted$y[shifted$sex == "M"] <- shifted$y[shifted$sex == "M"] + 1
-  b <- norm_assess(fit, shifted)$conditional
+  b <- ref_assess(fit, shifted)$conditional
   expect_lt(b$location_p[b$level %in% "M"], 1e-4)
   g <- glance(a)
   expect_true(all(c("smse", "ev") %in% names(g)))

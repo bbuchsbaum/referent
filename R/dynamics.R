@@ -16,37 +16,37 @@
 #' converges the process is reported as `identified = FALSE` and every
 #' history-conditioned quantity downstream is `NA`.
 #'
-#' @param reference A [norm_fit].
+#' @param reference A [ref_fit].
 #' @param data Longitudinal reference data.
 #' @param id Subject identifier.
 #' @param time Time variable (typically age).
-#' @param process A kernel from [norm_process()].
+#' @param process A kernel from [ref_process()].
 #' @param crossfit Number of subject-level folds used to obtain
-#'   out-of-fold Z scores via [norm_crossfit()] (whole subjects stay in one
+#'   out-of-fold Z scores via [ref_crossfit()] (whole subjects stay in one
 #'   fold). `0` or `NULL` uses in-sample scores from `reference`.
-#' @return An object of class `norm_dynamics` with, per outcome, a fitted
+#' @return An object of class `ref_dynamics` with, per outcome, a fitted
 #'   process (`$processes`), and a `components` table of normalised
 #'   variance fractions with approximate standard errors.
 #' @export
-norm_dynamics <- function(reference,
+ref_dynamics <- function(reference,
                           data,
                           id,
                           time,
-                          process = norm_process(),
+                          process = ref_process(),
                           crossfit = 5) {
   data <- tibble::as_tibble(data)
   id_vec <- pull_column(data, rlang::enquo(id))
   time_quo <- rlang::enquo(time)
   time_vec <- pull_column(data, time_quo)
   time_name <- as_col_name(time_quo, "time")
-  if (!inherits(process, "norm_process")) {
-    cli::cli_abort("{.arg process} must be created by {.fn norm_process}.")
+  if (!inherits(process, "ref_process")) {
+    cli::cli_abort("{.arg process} must be created by {.fn ref_process}.")
   }
   crossfit <- as.integer(crossfit %||% 0L)
   scores <- if (crossfit >= 2L) {
     # Subject-level out-of-fold Z; `.row` indexes rows of `data`.
     data$.dyn_id <- as.character(id_vec)
-    norm_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
+    ref_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
                   folds = crossfit, cluster = !!rlang::sym(".dyn_id"))
   } else {
     predict(reference, newdata = data, type = "scores",
@@ -73,13 +73,13 @@ norm_dynamics <- function(reference,
       z_source = if (crossfit >= 2L) "out_of_fold" else "in_sample",
       components = process_components(processes)
     ),
-    class = "norm_dynamics"
+    class = "ref_dynamics"
   )
 }
 
 #' Longitudinal process kernel
 #'
-#' `norm_process()` builds the dependence kernel for [norm_dynamics()].
+#' `ref_process()` builds the dependence kernel for [ref_dynamics()].
 #' `"matern32"` is stable rank + Matern-3/2 + nugget; `"stable"` is stable
 #' rank + nugget only (a single correlation shared by every positive lag),
 #' the right model when visits share one fixed lag. `ell = Inf` also
@@ -88,9 +88,9 @@ norm_dynamics <- function(reference,
 #' @param kernel `"matern32"` or `"stable"`.
 #' @param stable_rank Include a subject-level intercept.
 #' @param ell Initial length-scale (`Inf` selects the stable kernel).
-#' @return A `norm_process` object.
+#' @return A `ref_process` object.
 #' @export
-norm_process <- function(kernel = c("matern32", "stable"),
+ref_process <- function(kernel = c("matern32", "stable"),
                          stable_rank = TRUE,
                          ell = 5) {
   kernel <- match.arg(kernel)
@@ -103,7 +103,7 @@ norm_process <- function(kernel = c("matern32", "stable"),
       stable_rank = isTRUE(stable_rank),
       ell = if (identical(kernel, "stable")) Inf else ell
     ),
-    class = "norm_process"
+    class = "ref_process"
   )
 }
 
@@ -255,7 +255,7 @@ fit_process <- function(process, z, id, time, ident = NULL) {
   lag_range <- ident$lag_range
   reduced <- identical(process$name, "matern32") && lags_are_fixed(lag_range)
   if (reduced) {
-    process <- norm_process("stable", stable_rank = process$stable_rank)
+    process <- ref_process("stable", stable_rank = process$stable_rank)
   }
   stable <- identical(process$name, "stable")
   med_lag <- ident$median_lag
@@ -456,9 +456,9 @@ classify_temporal_support <- function(dyn, t_from, t_to, history_n) {
 }
 
 #' @export
-print.norm_dynamics <- function(x, ...) {
+print.ref_dynamics <- function(x, ...) {
   cli::cli_text(
-    "{.cls norm_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}; Z: {x$z_source}"
+    "{.cls ref_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}; Z: {x$z_source}"
   )
   cli::cli_text(
     "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]; lag range [{signif(x$lag_range[1], 3)}, {signif(x$lag_range[2], 3)}]"

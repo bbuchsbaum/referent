@@ -29,25 +29,25 @@
 #' for noise alone. The `calibrated` column of `comparison` records the
 #' gate's verdict per model.
 #'
-#' @param specs A named list of [norm_spec] objects, simplest first.
+#' @param specs A named list of [ref_spec] objects, simplest first.
 #' @param data Reference data.
 #' @param outcomes Outcome selection.
 #' @param folds Cross-fit folds.
 #' @param shape_threshold Extra log-score gain required to accept a
 #'   covariate-dependent skew/tail model.
-#' @param ... Passed to [norm_crossfit()].
-#' @return A `norm_selection`: the selected spec and name, the selected
+#' @param ... Passed to [ref_crossfit()].
+#' @return A `ref_selection`: the selected spec and name, the selected
 #'   model's cross-fit scores, and a `comparison` table with the
 #'   out-of-fold log score, CRPS, the paired standard errors used by the
 #'   one-SE rule, and calibration gate values per model.
 #' @export
-norm_select <- function(specs,
+ref_select <- function(specs,
                         data,
                         outcomes,
                         folds = 5,
                         shape_threshold = 0.02,
                         ...) {
-  if (inherits(specs, "norm_spec")) {
+  if (inherits(specs, "ref_spec")) {
     specs <- list(model = specs)
   }
   if (is.null(names(specs))) {
@@ -56,7 +56,7 @@ norm_select <- function(specs,
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
   fits <- lapply(names(specs), function(nm) {
     tryCatch(
-      norm_crossfit(specs[[nm]], data = data, outcomes = outcome_names, folds = folds, ...),
+      ref_crossfit(specs[[nm]], data = data, outcomes = outcome_names, folds = folds, ...),
       error = function(e) e
     )
   })
@@ -129,7 +129,7 @@ norm_select <- function(specs,
       comparison = tab,
       crossfit = fits[[pick]]
     ),
-    class = "norm_selection"
+    class = "ref_selection"
   )
 }
 
@@ -154,7 +154,7 @@ paired_se <- function(fits, best, models) {
   list(log_density = se_ld, crps = se_crps)
 }
 
-# Calibration gate of the ladder; see the details of norm_select().
+# Calibration gate of the ladder; see the details of ref_select().
 acceptable_calibration <- function(assessment) {
   m <- assessment$marginal
   if (!nrow(m)) {
@@ -178,8 +178,8 @@ acceptable_calibration <- function(assessment) {
 }
 
 #' @export
-print.norm_selection <- function(x, ...) {
-  cli::cli_text("{.cls norm_selection} selected {x$selected_name}")
+print.ref_selection <- function(x, ...) {
+  cli::cli_text("{.cls ref_selection} selected {x$selected_name}")
   print(x$comparison[, c("model", "level", "status", "mean_log_score", "crps",
                          "mean_z", "var_z", "cover_95", "calibrated", "selected")])
   invisible(x)

@@ -2,7 +2,7 @@
 #'
 #' Freezes the shared trajectory and estimates shrunk location (and
 #' optionally scale) offsets per group. This is not recalibration (see
-#' [norm_calibrate()]) and not a refit of the shared trajectory.
+#' [ref_calibrate()]) and not a refit of the shared trajectory.
 #'
 #' @details
 #' Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
@@ -26,7 +26,7 @@
 #' the default priors a large true offset is recovered only as its
 #' shrunk value.
 #'
-#' Adaptation is applied inside [predict.norm_fit()]: the location of
+#' Adaptation is applied inside [predict.ref_fit()]: the location of
 #' every predictive distribution (including coefficient draws under
 #' `uncertainty = "total"`) is shifted and the scale multiplied by
 #' \eqn{e^{\delta_\sigma}}. Under `uncertainty = "total"` the standard
@@ -34,7 +34,7 @@
 #' Gaussian predictive and as an extra seeded location perturbation per
 #' coefficient draw for a draw mixture.
 #'
-#' @param fit A [norm_fit] or [norm_dynamics] object.
+#' @param fit A [ref_fit] or [ref_dynamics] object.
 #' @param data Local reference observations.
 #' @param by Grouping column (typically site). Rows whose group is not in
 #'   the adaptation data (or when `by` is `NULL`) use the pooled offset.
@@ -42,10 +42,10 @@
 #'   `"scale"`.
 #' @param location_prior_n Ridge strength in observation units.
 #' @param scale_prior_n Stronger default shrinkage for scale.
-#' @return The fit with an `adaptation` slot (class `norm_adaptation`)
+#' @return The fit with an `adaptation` slot (class `ref_adaptation`)
 #'   recording the offsets, their standard errors, and local sample sizes.
 #' @export
-norm_adapt <- function(fit,
+ref_adapt <- function(fit,
                        data,
                        by = NULL,
                        parameters = c("location"),
@@ -56,8 +56,8 @@ norm_adapt <- function(fit,
   by_quo <- rlang::enquo(by)
   by_vec <- pull_column(data, by_quo, default = rep(".all", nrow(data)))
   by_name <- as_col_name(by_quo)
-  if (inherits(fit, "norm_dynamics")) {
-    fit$reference <- norm_adapt(
+  if (inherits(fit, "ref_dynamics")) {
+    fit$reference <- ref_adapt(
       fit$reference, data = data, by = !!by_quo, parameters = parameters,
       location_prior_n = location_prior_n, scale_prior_n = scale_prior_n
     )
@@ -91,7 +91,7 @@ norm_adapt <- function(fit,
       location_prior_n = location_prior_n,
       scale_prior_n = scale_prior_n
     ),
-    class = "norm_adaptation"
+    class = "ref_adaptation"
   )
   fit
 }
@@ -243,8 +243,8 @@ apply_adaptation <- function(adaptation, dists, newdata, total = FALSE, seed = 1
 }
 
 #' @export
-print.norm_adaptation <- function(x, ...) {
-  cli::cli_text("{.cls norm_adaptation} parameters: {paste(x$parameters, collapse = ', ')}")
+print.ref_adaptation <- function(x, ...) {
+  cli::cli_text("{.cls ref_adaptation} parameters: {paste(x$parameters, collapse = ', ')}")
   cli::cli_text("local n = {x$n_local}")
   for (nm in names(x$offsets)) {
     for (g in setdiff(names(x$offsets[[nm]]), ".all")) {

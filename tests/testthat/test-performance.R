@@ -1,10 +1,10 @@
 test_that("frozen bundle is small and reproduces the fit after a round trip", {
   d <- perf_data()
   for (nm in names(perf_specs())) {
-    fit <- norm_fit(perf_specs()[[nm]], d$ref, c("y", "marker_01"))
-    fit <- norm_adapt(fit, d$new, by = site, parameters = c("location", "scale"))
-    fit <- norm_calibrate(fit, d$new, by = site)
-    bundle <- norm_reference(fit)
+    fit <- ref_fit(perf_specs()[[nm]], d$ref, c("y", "marker_01"))
+    fit <- ref_adapt(fit, d$new, by = site, parameters = c("location", "scale"))
+    fit <- ref_calibrate(fit, d$new, by = site)
+    bundle <- ref_reference(fit)
     path <- withr::local_tempfile(fileext = ".rds")
     # spec formulas made in the test helper env serialise with a package-env
     # warning under load_all; that is the harness, not the bundle.
@@ -22,16 +22,16 @@ test_that("frozen bundle is small and reproduces the fit after a round trip", {
         tolerance = 1e-10, label = paste(nm, u)
       )
     }
-    expect_equal(norm_assess(thawed, d$new)$overall, norm_assess(fit, d$new)$overall,
+    expect_equal(ref_assess(thawed, d$new)$overall, ref_assess(fit, d$new)$overall,
                  tolerance = 1e-10)
-    expect_equal(norm_support(thawed, d$new), norm_support(fit, d$new))
+    expect_equal(ref_support(thawed, d$new), ref_support(fit, d$new))
     expect_equal(tidy(thawed)$n, tidy(fit)$n)
   }
 })
 
 test_that("one link prediction per outcome, one lp matrix only for draws", {
   d <- perf_data()
-  fit <- norm_fit(perf_specs()$shash, d$ref, c("y", "marker_01"))
+  fit <- ref_fit(perf_specs()$shash, d$ref, c("y", "marker_01"))
   calls <- character()
   local_mocked_bindings(
     predict_gam_quiet = function(model, newdata, ...) {

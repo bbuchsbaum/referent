@@ -41,7 +41,7 @@ Matern-3/2 process in time plus measurement noise, with variance
 fractions 0.5, 0.35, and 0.15.
 
 ```{r data}
-long <- norm_simulate(1200, kind = "longitudinal", seed = 1)
+long <- ref_simulate(1200, kind = "longitudinal", seed = 1)
 truth <- attr(long, "truth")
 c(stable = truth$tau_b^2, dynamic = truth$tau_g^2, measurement = truth$sigma_e^2,
   ell = truth$ell)
@@ -50,15 +50,15 @@ head(long[, c("participant_id", "visit", "age", "sex", "y")])
 
 ## The marginal reference, then the process
 
-The marginal model is the usual cross-sectional fit. `norm_dynamics()`
+The marginal model is the usual cross-sectional fit. `ref_dynamics()`
 then estimates the process on the normal scores. By default it uses
 out-of-fold scores from a subject-level cross-fit, so that in-sample
 shrinkage does not masquerade as within-person dependence.
 
 ```{r fit}
-spec <- norm_spec(norm_gaussian(), location = ~ s(age, k = 6) + sex, scale = ~1)
-fit <- norm_fit(spec, data = long, outcomes = "y", id = participant_id)
-dyn <- norm_dynamics(fit, data = long, id = participant_id, time = age)
+spec <- ref_spec(ref_gaussian(), location = ~ s(age, k = 6) + sex, scale = ~1)
+fit <- ref_fit(spec, data = long, outcomes = "y", id = participant_id)
+dyn <- ref_dynamics(fit, data = long, id = participant_id, time = age)
 dyn
 ```
 
@@ -84,8 +84,8 @@ autoplot(dyn, type = "kernel")
 Three components cannot be separated from two-visit data at one fixed
 interval. With a single lag, any dependence structure collapses to one
 number, the correlation at that lag, and the Matern length-scale is not
-identified. `norm_dynamics()` detects this and reduces to the stable
-model (`norm_process("stable")`): a subject intercept plus nugget, one
+identified. `ref_dynamics()` detects this and reduces to the stable
+model (`ref_process("stable")`): a subject intercept plus nugget, one
 parameter. Everything downstream still works; it just cannot
 extrapolate to other intervals, and forecasts at other lags are flagged
 `extrapolated_lag`.
@@ -94,7 +94,7 @@ extrapolate to other intervals, and forecasts at other lags are flagged
 two_visit <- long[long$visit <= 2, ]
 two_visit <- two_visit[ave(two_visit$visit, two_visit$participant_id, FUN = length) == 2, ]
 two_visit$age <- ave(two_visit$age, two_visit$participant_id, FUN = function(a) a[1] + 2 * (seq_along(a) - 1))
-dyn_fixed <- norm_dynamics(fit, data = two_visit, id = participant_id, time = age, crossfit = 0)
+dyn_fixed <- ref_dynamics(fit, data = two_visit, id = participant_id, time = age, crossfit = 0)
 dyn_fixed$components[, c("process", "identified", "ell_identified", "median_lag", "r_median_lag")]
 ```
 
@@ -110,21 +110,21 @@ The design separates six questions that are often conflated.
 
 | Quantity | Question | Where |
 |---|---|---|
-| Chart velocity | How does a reference centile itself move with age? | `norm_derivative()` |
-| Observed velocity | At what raw rate did this person change? | `norm_transition()$observed_velocity` |
-| Expected velocity | What rate was expected given this person's history? | `norm_transition()$expected_velocity` |
-| Velocity centile | Where does the observed rate fall in the conditional distribution? | `norm_transition()$velocity_centile` |
-| Innovation Z | How surprising is the follow-up after conditioning on history? | `norm_transition()$innovation_z` |
-| Change Z | How unusual is the change in the unconditional distribution of changes? | `norm_transition()$change_z` |
+| Chart velocity | How does a reference centile itself move with age? | `ref_derivative()` |
+| Observed velocity | At what raw rate did this person change? | `ref_transition()$observed_velocity` |
+| Expected velocity | What rate was expected given this person's history? | `ref_transition()$expected_velocity` |
+| Velocity centile | Where does the observed rate fall in the conditional distribution? | `ref_transition()$velocity_centile` |
+| Innovation Z | How surprising is the follow-up after conditioning on history? | `ref_transition()$innovation_z` |
+| Change Z | How unusual is the change in the unconditional distribution of changes? | `ref_transition()$change_z` |
 
 Chart velocity is a property of the population curve, not of any person:
 
 ```{r derivative}
 grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
-norm_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
+ref_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
 ```
 
-The others come from `norm_transition()`, one row per consecutive pair
+The others come from `ref_transition()`, one row per consecutive pair
 of visits. Innovation Z is the history-conditioned score
 `(Z_2 - m) / s`, where `m` and `s` are the conditional mean and SD of
 the new score given all earlier ones; with one prior visit it reduces
@@ -134,8 +134,8 @@ Both are N(0, 1) under the reference process; the naive difference
 `Z_2 - Z_1` is not.
 
 ```{r transition}
-held <- norm_simulate(2400, kind = "longitudinal", seed = 7)
-tr <- norm_transition(dyn, data = held, id = participant_id, time = age)
+held <- ref_simulate(2400, kind = "longitudinal", seed = 7)
+tr <- ref_transition(dyn, data = held, id = participant_id, time = age)
 tr[1:4, c(".id", ".dt", "observed_velocity", "expected_velocity",
           "velocity_centile", "innovation_z", "change_z", "support")]
 ```
@@ -162,7 +162,7 @@ autoplot(tr, type = "innovation")
 
 ## Forecasts
 
-`norm_forecast()` conditions the marginal distribution at future times
+`ref_forecast()` conditions the marginal distribution at future times
 on a subject's history and returns one `dist_conditioned()` predictive
 distribution per time. The fan starts at the last observed visit; its
 width at short horizons reflects the measurement nugget and grows toward
@@ -171,14 +171,14 @@ the reference lag range are reported as `extrapolated_lag`.
 
 ```{r forecast}
 subject <- held[held$participant_id == 3, ]
-fc <- norm_forecast(dyn, history = subject, times = max(subject$age) + c(0.5, 1, 2, 3, 5))
+fc <- ref_forecast(dyn, history = subject, times = max(subject$age) + c(0.5, 1, 2, 3, 5))
 fc$summary
 autoplot(fc, type = "fan")
 ```
 
 The forecast distribution obeys every generic of the package: a later
 observation can be scored against it with `as_scores()`, which gives
-the same innovation Z that `norm_transition()` would.
+the same innovation Z that `ref_transition()` would.
 
 ```{r score-forecast}
 as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]

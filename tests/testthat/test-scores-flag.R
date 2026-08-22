@@ -1,10 +1,10 @@
-test_that("norm_flag reports exceedances and FDR rather than abnormalities", {
+test_that("ref_flag reports exceedances and FDR rather than abnormalities", {
   d <- distributional::dist_normal(0, 1)
   y <- c(0, 3, -2.5, 0.5, 1.9)
   sc <- as_scores(d, y)
   sc$.in_sample <- FALSE
-  fl <- norm_flag(sc, threshold = 2)
-  expect_s3_class(fl, "norm_flags")
+  fl <- ref_flag(sc, threshold = 2)
+  expect_s3_class(fl, "ref_flags")
   expect_equal(fl$exceedance, abs(y) > 2)
   expect_equal(attr(fl, "observed_exceedances"), 2L)
   expect_equal(attr(fl, "expected_exceedances"), 2 * stats::pnorm(-2) * 5)
@@ -16,7 +16,7 @@ test_that("norm_flag reports exceedances and FDR rather than abnormalities", {
   # in-sample scores warn
   sc_in <- sc
   sc_in$.in_sample <- TRUE
-  expect_warning(norm_flag(sc_in), "in-sample")
+  expect_warning(ref_flag(sc_in), "in-sample")
 })
 
 test_that("scores_matrix pivots a long table and keeps ids", {

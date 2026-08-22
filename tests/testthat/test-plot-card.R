@@ -1,8 +1,8 @@
 plot_fit <- function(seed = 30, n = 120) {
-  dat <- norm_simulate(n, seed = seed)
+  dat <- ref_simulate(n, seed = seed)
   dat$participant_id <- paste0("P", seq_len(nrow(dat)))
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
     data = dat,
     outcomes = c("y", "marker_01"),
     id = participant_id
@@ -53,9 +53,9 @@ test_that("centile chart: paired ribbons, median, facets, overlay, and stable ap
 })
 
 test_that("trajectories overlay subject paths on the centile chart", {
-  dat <- norm_simulate(150, kind = "longitudinal", seed = 32)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
+  dat <- ref_simulate(150, kind = "longitudinal", seed = 32)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
     data = dat, outcomes = "y", id = participant_id
   )
   p <- autoplot(fit, type = "trajectories", data = dat[dat$participant_id <= 12, ],
@@ -89,8 +89,8 @@ test_that("support plot classifies newdata against the fit", {
 
 test_that("adaptation plot shows offsets with intervals per group", {
   pf <- plot_fit(35, n = 200)
-  local <- norm_simulate(120, site_shift = c(0, 1, 0, 0), seed = 36)
-  ad <- norm_adapt(pf$fit, data = local, by = site)
+  local <- ref_simulate(120, site_shift = c(0, 1, 0, 0), seed = 36)
+  ad <- ref_adapt(pf$fit, data = local, by = site)
   p <- autoplot(ad, type = "adaptation")
   b <- expect_builds(p)
   cls <- layer_classes(p)
@@ -98,11 +98,11 @@ test_that("adaptation plot shows offsets with intervals per group", {
   pts <- b$data[[which(cls == "GeomPoint")]]
   expect_equal(nrow(pts), 4L * 2L)
   expect_equal(plot_label(p, "x"), "site")
-  expect_error(autoplot(pf$fit, type = "adaptation"), "norm_adapt")
+  expect_error(autoplot(pf$fit, type = "adaptation"), "ref_adapt")
   expect_identical(colour_guide(p), "legend")
   # pooled adaptation of a single outcome has no colour legend
-  fit1 <- norm_fit(pf$fit$spec, data = pf$data, outcomes = "y")
-  ad1 <- norm_adapt(fit1, data = local)
+  fit1 <- ref_fit(pf$fit$spec, data = pf$data, outcomes = "y")
+  ad1 <- ref_adapt(fit1, data = local)
   p1 <- autoplot(ad1, type = "adaptation")
   expect_builds(p1)
   expect_identical(colour_guide(p1), "none")
@@ -110,8 +110,8 @@ test_that("adaptation plot shows offsets with intervals per group", {
 
 test_that("assessment plots: calibration, qq, worm, conditional", {
   pf <- plot_fit(37, n = 150)
-  val <- norm_simulate(80, seed = 38)
-  a <- norm_assess(pf$fit, newdata = val)
+  val <- ref_simulate(80, seed = 38)
+  a <- ref_assess(pf$fit, newdata = val)
   p <- autoplot(a, type = "calibration")
   b <- expect_builds(p)
   cls <- layer_classes(p)
@@ -143,7 +143,7 @@ test_that("assessment plots: calibration, qq, worm, conditional", {
   bc <- expect_builds(pc)
   expect_equal(nrow(bc$data[[which(layer_classes(pc) == "GeomCol")]]), 2L)
   # a single outcome leaks no legend
-  a1 <- norm_assess(norm_fit(pf$fit$spec, pf$data, "y"), newdata = val)
+  a1 <- ref_assess(ref_fit(pf$fit$spec, pf$data, "y"), newdata = val)
   p1 <- autoplot(a1, type = "calibration")
   expect_builds(p1)
   expect_identical(colour_guide(p1), "none")
@@ -174,12 +174,12 @@ test_that("score plots: profile as dot and segment with guides, heatmap with ord
 
 test_that("dynamics plots: kernel, held-out calibration, transitions, and anchored fan", {
   skip_on_cran()
-  dat <- norm_simulate(600, kind = "longitudinal", seed = 40)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
+  dat <- ref_simulate(600, kind = "longitudinal", seed = 40)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
     data = dat, outcomes = "y"
   )
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   expect_true(dyn$processes$y$identified)
   pk <- autoplot(dyn, type = "kernel")
   bk <- expect_builds(pk)
@@ -187,12 +187,12 @@ test_that("dynamics plots: kernel, held-out calibration, transitions, and anchor
   expect_true(all(k$correlation <= 1 + 1e-8 & k$correlation >= 0))
   expect_equal(max(k$lag), 1.5 * dyn$lag_range[[2]])
   expect_true("GeomRect" %in% layer_classes(pk))
-  held <- norm_simulate(300, kind = "longitudinal", seed = 41)
+  held <- ref_simulate(300, kind = "longitudinal", seed = 41)
   pc <- autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age)
   bc <- expect_builds(pc)
   expect_match(plot_label(pc, "subtitle"), "held-out innovation Z")
   expect_equal(plot_label(pc, "y"), "Innovation Z")
-  tr <- norm_transition(dyn, data = held, id = participant_id, time = age)
+  tr <- ref_transition(dyn, data = held, id = participant_id, time = age)
   pts <- bc$data[[which(layer_classes(pc) == "GeomPoint")]]
   expect_equal(nrow(pts), sum(is.finite(tr$innovation_z)))
   expect_equal(sum(layer_classes(pc) == "GeomRibbon"), 2L)
@@ -204,7 +204,7 @@ test_that("dynamics plots: kernel, held-out calibration, transitions, and anchor
     expect_equal(plot_label(pt, "x"), "Elapsed time")
   }
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
-  fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + c(1, 2, 3))
+  fc <- ref_forecast(dyn, history = hist, times = max(hist$age) + c(1, 2, 3))
   pf <- autoplot(fc, type = "fan")
   bf <- expect_builds(pf)
   cls <- layer_classes(pf)
@@ -224,8 +224,8 @@ test_that("theme and model card", {
   expect_s3_class(theme_referent(grid = "both"), "theme")
   expect_s3_class(theme_referent(grid = "none"), "theme")
   pf <- plot_fit(42, n = 80)
-  card <- norm_reference(pf$fit)
-  expect_s3_class(card, "norm_reference")
+  card <- ref_reference(pf$fit)
+  expect_s3_class(card, "ref_reference")
   out <- paste(cli::cli_fmt(print(card)), collapse = "\n")
   expect_match(out, "model card")
   expect_match(out, "age: \\[")

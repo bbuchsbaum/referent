@@ -14,16 +14,16 @@
 #'    reference (leave-one-out ranks, \eqn{(\mathrm{rank}-0.5)/n}), so
 #'    the joint centile is calibrated even when the copula is imperfect.
 #'
-#' @param scores A `norm_scores` or `norm_transition` table of reference
+#' @param scores A `ref_scores` or `ref_transition` table of reference
 #'   scores (out-of-fold for honest calibration), or the wide output of
 #'   [augment()] (its `.z_<outcome>` columns).
 #' @param covariance `"shrinkage"` or `"identity"`.
 #' @param value Score column (`"z"` or `"innovation_z"`).
-#' @return A `norm_joint` model. `predict(joint, scores)` returns one row
+#' @return A `ref_joint` model. `predict(joint, scores)` returns one row
 #'   per subject with `d2`, `n_observed`, `joint_centile`, and `joint_z`;
 #'   `joint$reference` holds the reference rows scored leave-one-out.
 #' @export
-norm_joint <- function(scores,
+ref_joint <- function(scores,
                        covariance = c("shrinkage", "identity"),
                        value = NULL) {
   covariance <- match.arg(covariance)
@@ -47,18 +47,18 @@ norm_joint <- function(scores,
       reference_pit = sort(p_ref),
       n_reference = length(p_ref)
     ),
-    class = "norm_joint"
+    class = "ref_joint"
   )
   obj$reference <- joint_table(wide, base, loo)
   obj
 }
 
 #' @export
-#' @rdname norm_joint
-#' @param object A `norm_joint`.
+#' @rdname ref_joint
+#' @param object A `ref_joint`.
 #' @param newdata A score table for new subjects (same outcomes).
 #' @param ... Unused.
-predict.norm_joint <- function(object, newdata, ...) {
+predict.ref_joint <- function(object, newdata, ...) {
   wide <- scores_matrix(newdata, value = object$value)
   Z <- wide$matrix
   outs <- object$outcomes
@@ -149,9 +149,9 @@ joint_correlation <- function(Z, covariance) {
 }
 
 #' @export
-print.norm_joint <- function(x, ...) {
+print.ref_joint <- function(x, ...) {
   cli::cli_text(
-    "{.cls norm_joint} gaussian copula, {length(x$outcomes)} outcome{?s}, n = {x$n_reference} reference subjects"
+    "{.cls ref_joint} gaussian copula, {length(x$outcomes)} outcome{?s}, n = {x$n_reference} reference subjects"
   )
   lam <- attr(x$correlation, "lambda")
   if (!is.null(lam)) {

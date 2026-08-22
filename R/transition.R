@@ -18,16 +18,16 @@
 #' Duplicate visit times within a subject give a warning and `NA`
 #' velocities for the zero-length transition.
 #'
-#' @param dynamic A [norm_dynamics] object.
+#' @param dynamic A [ref_dynamics] object.
 #' @param data Subject visits.
 #' @param id Subject identifier.
 #' @param time Time variable. Every transition is conditioned on the
 #'   subject's full prior history.
-#' @return A `norm_transition` tibble, one row per consecutive visit pair
+#' @return A `ref_transition` tibble, one row per consecutive visit pair
 #'   and outcome (zero rows, full column set, when no subject has two
 #'   visits).
 #' @export
-norm_transition <- function(dynamic, data, id, time) {
+ref_transition <- function(dynamic, data, id, time) {
   data <- tibble::as_tibble(data)
   id_vec <- pull_column(data, rlang::enquo(id))
   time_vec <- pull_column(data, rlang::enquo(time))
@@ -42,7 +42,7 @@ norm_transition <- function(dynamic, data, id, time) {
   })
   rows <- Filter(Negate(is.null), rows)
   out <- if (length(rows)) dplyr_bind(rows) else transition_template()
-  structure(out, class = c("norm_transition", class(out)))
+  structure(out, class = c("ref_transition", class(out)))
 }
 
 # Typed zero-row table for the case without any transition.
@@ -144,7 +144,7 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
 }
 
 #' @export
-print.norm_transition <- function(x, ...) {
-  cli::cli_text("{.cls norm_transition} {nrow(x)} transition{?s}")
+print.ref_transition <- function(x, ...) {
+  cli::cli_text("{.cls ref_transition} {nrow(x)} transition{?s}")
   NextMethod()
 }

@@ -6,21 +6,21 @@
 #' (or per assessment, averaging the `overall` and `marginal` tables over
 #' outcomes). `augment()` returns `newdata` with `.z_<outcome>` and
 #' `.centile_<outcome>` columns and the covariate `.support`; the result
-#' can be passed straight to [norm_joint()].
+#' can be passed straight to [ref_joint()].
 #'
-#' @param x A [norm_fit] or `norm_assessment`.
+#' @param x A [ref_fit] or `ref_assessment`.
 #' @param newdata Data frame of target observations.
-#' @param uncertainty Passed to [predict.norm_fit()].
-#' @param ... Passed to [predict.norm_fit()] by `augment()`; unused
+#' @param uncertainty Passed to [predict.ref_fit()].
+#' @param ... Passed to [predict.ref_fit()] by `augment()`; unused
 #'   otherwise.
 #' @return A tibble.
 #' @examples
-#' ref <- norm_simulate(120, seed = 3)
-#' fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+#' ref <- ref_simulate(120, seed = 3)
+#' fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 #' tidy(fit)
 #' glance(fit)
 #' augment(fit, ref[1:3, ], uncertainty = "conditional")
-#' @name tidy.norm_fit
+#' @name tidy.ref_fit
 NULL
 
 #' @importFrom generics tidy glance augment
@@ -33,9 +33,9 @@ generics::glance
 #' @export
 generics::augment
 
-#' @rdname tidy.norm_fit
+#' @rdname tidy.ref_fit
 #' @export
-tidy.norm_fit <- function(x, ...) {
+tidy.ref_fit <- function(x, ...) {
   rows <- lapply(x$outcomes, function(nm) {
     m <- x$models[[nm]]
     model <- m$model
@@ -65,9 +65,9 @@ smooth_edf <- function(model) {
   out
 }
 
-#' @rdname tidy.norm_fit
+#' @rdname tidy.ref_fit
 #' @export
-glance.norm_fit <- function(x, ...) {
+glance.ref_fit <- function(x, ...) {
   st <- fit_statuses(x)
   tibble::tibble(
     family = x$spec$family$name,
@@ -81,9 +81,9 @@ glance.norm_fit <- function(x, ...) {
   )
 }
 
-#' @rdname tidy.norm_fit
+#' @rdname tidy.ref_fit
 #' @export
-glance.norm_assessment <- function(x, ...) {
+glance.ref_assessment <- function(x, ...) {
   col_mean <- function(tab, cols) {
     lapply(stats::setNames(cols, cols), function(cl) mean(tab[[cl]], na.rm = TRUE))
   }
@@ -96,9 +96,9 @@ glance.norm_assessment <- function(x, ...) {
   )
 }
 
-#' @rdname tidy.norm_fit
+#' @rdname tidy.ref_fit
 #' @export
-augment.norm_fit <- function(x, newdata, uncertainty = c("total", "conditional"), ...) {
+augment.ref_fit <- function(x, newdata, uncertainty = c("total", "conditional"), ...) {
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
   scores <- predict(x, newdata, uncertainty = uncertainty, ...)

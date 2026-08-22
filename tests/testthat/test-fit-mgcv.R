@@ -1,11 +1,11 @@
 test_that("Gaussian location-scale fit produces calibrated Z on new data", {
   set.seed(21)
-  train <- norm_simulate(350, seed = 21)
-  test <- norm_simulate(200, seed = 22)
-  fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
+  train <- ref_simulate(350, seed = 21)
+  test <- ref_simulate(200, seed = 22)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
   expect_equal(fit$models$y$status, "ok")
   sc <- predict(fit, newdata = test, type = "scores", uncertainty = "conditional")
-  expect_s3_class(sc, "norm_scores")
+  expect_s3_class(sc, "ref_scores")
   expect_lt(abs(mean(sc$z, na.rm = TRUE)), 0.25)
   expect_lt(abs(stats::var(sc$z, na.rm = TRUE) - 1), 0.35)
   expect_false(any(sc$.in_sample))
@@ -13,9 +13,9 @@ test_that("Gaussian location-scale fit produces calibrated Z on new data", {
 
 test_that("failed outcomes do not abort the panel", {
   set.seed(3)
-  dat <- norm_simulate(80, seed = 3)
+  dat <- ref_simulate(80, seed = 3)
   dat$marker_bad <- 1
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = c("marker_01", "marker_bad"))
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = c("marker_01", "marker_bad"))
   expect_equal(fit$models$marker_bad$status, "insufficient_variation")
   expect_equal(fit$models$marker_01$status, "ok")
   out <- paste(cli::cli_fmt(print(fit)), collapse = "\n")
@@ -26,8 +26,8 @@ test_that("failed outcomes do not abort the panel", {
 test_that("SHASH engine returns a dist_shash vector", {
   skip_on_cran()
   set.seed(5)
-  dat <- norm_simulate(250, kind = "shash", seed = 5)
-  fit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
+  dat <- ref_simulate(250, kind = "shash", seed = 5)
+  fit <- ref_fit(simple_spec("shash"), data = dat, outcomes = "y")
   expect_equal(fit$models$y$status, "ok")
   d <- predict(fit, newdata = dat[1:5, ], type = "distribution",
                uncertainty = "conditional")$y
@@ -38,8 +38,8 @@ test_that("SHASH engine returns a dist_shash vector", {
 
 test_that("total uncertainty widens the Gaussian predictive analytically", {
   set.seed(31)
-  dat <- norm_simulate(120, seed = 31)
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
+  dat <- ref_simulate(120, seed = 31)
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "y")
   cond <- predict(fit, newdata = dat[1:8, ], type = "distribution",
                   uncertainty = "conditional")$y
   tot <- predict(fit, newdata = dat[1:8, ], type = "distribution",
@@ -59,8 +59,8 @@ test_that("total uncertainty widens the Gaussian predictive analytically", {
 
 test_that("save/read round trip reproduces scores", {
   set.seed(8)
-  dat <- norm_simulate(120, seed = 8)
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
+  dat <- ref_simulate(120, seed = 8)
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "y")
   tmp <- tempfile(fileext = ".rds")
   suppressWarnings(saveRDS(fit, tmp))
   fit2 <- readRDS(tmp)
@@ -70,10 +70,10 @@ test_that("save/read round trip reproduces scores", {
 })
 
 test_that("predict carries the declared subject id", {
-  dat <- norm_simulate(40, seed = 74)
+  dat <- ref_simulate(40, seed = 74)
   dat$participant_id <- paste0("S", seq_len(nrow(dat)))
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
     outcomes = "y",
     id = participant_id
@@ -85,12 +85,12 @@ test_that("predict carries the declared subject id", {
 })
 
 test_that("non-numeric outcomes are reported as unsupported_type without aborting the panel", {
-  dat <- norm_simulate(100, seed = 3)
+  dat <- ref_simulate(100, seed = 3)
   dat$f <- factor(sample(c("a", "b"), 100, TRUE))
   dat$lg <- dat$y > 10
   dat$ch <- as.character(dat$f)
-  spec <- norm_spec(norm_gaussian(), ~ s(age, k = 5))
-  expect_silent(fit <- suppressMessages(norm_fit(spec, dat, c("y", "f", "lg", "ch"))))
+  spec <- ref_spec(ref_gaussian(), ~ s(age, k = 5))
+  expect_silent(fit <- suppressMessages(ref_fit(spec, dat, c("y", "f", "lg", "ch"))))
   expect_equal(unname(fit_statuses(fit)),
                c("ok", "unsupported_type", "unsupported_type", "unsupported_type"))
   expect_match(fit$models$f$message, "factor")
@@ -100,21 +100,21 @@ test_that("non-numeric outcomes are reported as unsupported_type without abortin
   expect_true(all(is.finite(sc$z[sc$.outcome == "y"])))
 })
 
-test_that("norm_fit aborts when the id column is missing", {
-  dat <- norm_simulate(60, seed = 4)
-  spec <- norm_spec(norm_gaussian(), ~ age)
-  expect_error(norm_fit(spec, dat, "y", id = "nope"), "nope")
-  expect_error(norm_fit(spec, dat, "y", id = nope), "nope")
+test_that("ref_fit aborts when the id column is missing", {
+  dat <- ref_simulate(60, seed = 4)
+  spec <- ref_spec(ref_gaussian(), ~ age)
+  expect_error(ref_fit(spec, dat, "y", id = "nope"), "nope")
+  expect_error(ref_fit(spec, dat, "y", id = nope), "nope")
 })
 
 test_that("predicting on 0-row newdata with ok and failed outcomes gives a typed 0-row table", {
-  dat <- norm_simulate(100, seed = 3)
+  dat <- ref_simulate(100, seed = 3)
   dat$const <- 1
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5)), dat, c("y", "const"))
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5)), dat, c("y", "const"))
   expect_equal(unname(fit_statuses(fit)), c("ok", "insufficient_variation"))
   for (unc in c("conditional", "total")) {
     sc <- predict(fit, dat[0, ], uncertainty = unc)
-    expect_s3_class(sc, "norm_scores")
+    expect_s3_class(sc, "ref_scores")
     expect_equal(nrow(sc), 0L)
     full <- predict(fit, dat[1:2, ], uncertainty = unc)
     expect_equal(names(sc), names(full))

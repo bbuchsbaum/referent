@@ -4,21 +4,21 @@
 #' include that observation. A final deployment model is then refit on all
 #' reference rows.
 #'
-#' @param spec A [norm_spec].
+#' @param spec A [ref_spec].
 #' @param data Reference data.
-#' @param outcomes Outcome selection, as in [norm_fit()].
+#' @param outcomes Outcome selection, as in [ref_fit()].
 #' @param folds Number of folds (at least 2).
 #' @param strata Optional stratification column. Rows with a missing
 #'   stratum form a stratum of their own.
 #' @param cluster Optional cluster / subject column. Entire clusters stay
 #'   in one fold.
 #' @param id Optional identifier stored on scores.
-#' @param ... Passed to [norm_fit()].
-#' @return A `norm_scores` object with `.in_sample = FALSE`, `.row`
+#' @param ... Passed to [ref_fit()].
+#' @return A `ref_scores` object with `.in_sample = FALSE`, `.row`
 #'   indexing rows of `data`, a per-row `crps` column, and a `.fold`
 #'   column, plus a `deployment` fit attribute.
 #' @export
-norm_crossfit <- function(spec,
+ref_crossfit <- function(spec,
                           data,
                           outcomes,
                           folds = 5,
@@ -39,7 +39,7 @@ norm_crossfit <- function(spec,
     if (!nrow(test) || !nrow(train)) {
       return(NULL)
     }
-    fit <- norm_fit(spec, data = train, outcomes = outcome_names, ...)
+    fit <- ref_fit(spec, data = train, outcomes = outcome_names, ...)
     dists <- predict_dists(fit, test, uncertainty = "conditional")
     sc <- scores_from_dists(fit, dists, test, allow_extrapolation = FALSE)
     sc$crps <- NA_real_
@@ -58,10 +58,10 @@ norm_crossfit <- function(spec,
   })
   scores <- dplyr_bind(Filter(Negate(is.null), pieces))
   scores <- scores[order(scores$.outcome, scores$.row), , drop = FALSE]
-  deployment <- norm_fit(spec, data = data, outcomes = outcome_names, id = !!id_quo, ...)
+  deployment <- ref_fit(spec, data = data, outcomes = outcome_names, id = !!id_quo, ...)
   structure(
     scores,
-    class = c("norm_scores", class(scores)),
+    class = c("ref_scores", class(scores)),
     deployment = deployment,
     folds = fold_id
   )

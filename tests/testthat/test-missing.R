@@ -1,10 +1,10 @@
 test_that("missing outcomes do not change the other fit", {
-  dat <- norm_simulate(120, seed = 16)
-  fit_full <- norm_fit(simple_spec(), data = dat, outcomes = c("marker_01", "marker_02"))
+  dat <- ref_simulate(120, seed = 16)
+  fit_full <- ref_fit(simple_spec(), data = dat, outcomes = c("marker_01", "marker_02"))
   dat2 <- dat
   dat2$marker_02[seq_len(40)] <- NA
   expect_message(
-    fit_miss <- norm_fit(simple_spec(), data = dat2, outcomes = c("marker_01", "marker_02")),
+    fit_miss <- ref_fit(simple_spec(), data = dat2, outcomes = c("marker_01", "marker_02")),
     "marker_02: dropped 40 rows"
   )
   a <- predict(fit_full, newdata = dat[1:8, ], uncertainty = "conditional")
@@ -16,15 +16,15 @@ test_that("missing outcomes do not change the other fit", {
 })
 
 test_that("a missing predictor is never imputed: constant-scale and gaulss Gaussian", {
-  dat <- norm_simulate(150, kind = "gaussian", scale = "age", seed = 17)
+  dat <- ref_simulate(150, kind = "gaussian", scale = "age", seed = 17)
   specs <- list(
-    constant = norm_spec(norm_gaussian(), location = ~ s(age, k = 5) + sex),
-    gaulss = norm_spec(norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~ s(age, k = 4))
+    constant = ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex),
+    gaulss = ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~ s(age, k = 4))
   )
   new <- dat[1:3, ]
   new$age[1] <- NA
   for (nm in names(specs)) {
-    fit <- norm_fit(specs[[nm]], data = dat, outcomes = "y")
+    fit <- ref_fit(specs[[nm]], data = dat, outcomes = "y")
     if (nm == "gaulss") {
       expect_true(inherits(fit$models$y$model$family, "general.family"), info = nm)
     }
@@ -47,12 +47,12 @@ test_that("a missing predictor is never imputed: constant-scale and gaulss Gauss
 
 test_that("SHASH assessment, crossfit, and printing tolerate NA outcomes and predictors", {
   skip_on_cran()
-  dat <- norm_simulate(300, kind = "shash", seed = 11)
-  sfit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
-  test <- norm_simulate(40, kind = "shash", seed = 12)
+  dat <- ref_simulate(300, kind = "shash", seed = 11)
+  sfit <- ref_fit(simple_spec("shash"), data = dat, outcomes = "y")
+  test <- ref_simulate(40, kind = "shash", seed = 12)
   test$y[5] <- NA
   test$age[3] <- NA
-  a <- norm_assess(sfit, newdata = test)
+  a <- ref_assess(sfit, newdata = test)
   expect_true(is.finite(a$overall$crps))
   expect_equal(a$marginal$n, 38L)
   dt <- predict(sfit, newdata = test[1:6, ], type = "distribution", uncertainty = "total")
@@ -60,7 +60,7 @@ test_that("SHASH assessment, crossfit, and printing tolerate NA outcomes and pre
   expect_equal(length(out), 6L)
   cf_dat <- dat[1:200, ]
   cf_dat$y[4] <- NA
-  cf <- norm_crossfit(simple_spec("shash"), data = cf_dat, outcomes = "y", folds = 2)
+  cf <- ref_crossfit(simple_spec("shash"), data = cf_dat, outcomes = "y", folds = 2)
   expect_true(is.na(cf$crps[cf$.row == 4]))
   expect_true(mean(is.finite(cf$crps)) > 0.9)
 })

@@ -1,7 +1,7 @@
 test_that("tidy, glance, and augment summarise a fit", {
-  dat <- norm_simulate(200, seed = 61)
+  dat <- ref_simulate(200, seed = 61)
   dat$marker_bad <- 1
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = c("y", "marker_01", "marker_bad"))
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = c("y", "marker_01", "marker_bad"))
   td <- tidy(fit)
   expect_s3_class(td, "tbl_df")
   expect_equal(td$outcome, c("y", "marker_01", "marker_bad"))
@@ -31,14 +31,14 @@ test_that("tidy, glance, and augment summarise a fit", {
   expect_equal(au$.z_y, sc$z[sc$.outcome == "y"])
   expect_equal(au$.centile_marker_01, sc$centile[sc$.outcome == "marker_01"])
   expect_true(all(is.na(au$.z_marker_bad)))
-  expect_equal(au$.support, norm_support(fit, new)$support)
+  expect_equal(au$.support, ref_support(fit, new)$support)
 })
 
 test_that("glance summarises an assessment in one row", {
-  train <- norm_simulate(250, seed = 62)
-  test <- norm_simulate(120, seed = 63)
-  fit <- norm_fit(simple_spec(), data = train, outcomes = c("y", "marker_01"))
-  a <- norm_assess(fit, newdata = test)
+  train <- ref_simulate(250, seed = 62)
+  test <- ref_simulate(120, seed = 63)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = c("y", "marker_01"))
+  a <- ref_assess(fit, newdata = test)
   gl <- glance(a)
   expect_equal(nrow(gl), 1L)
   expect_equal(gl$n, 120L)
@@ -48,13 +48,13 @@ test_that("glance summarises an assessment in one row", {
   expect_false(gl$in_sample)
 })
 
-test_that("norm_joint accepts augment output", {
-  dat <- norm_simulate(300, seed = 64)
-  fit <- norm_fit(simple_spec(), data = dat[1:200, ], outcomes = c("y", "marker_01"))
+test_that("ref_joint accepts augment output", {
+  dat <- ref_simulate(300, seed = 64)
+  fit <- ref_fit(simple_spec(), data = dat[1:200, ], outcomes = c("y", "marker_01"))
   au <- augment(fit, dat[201:300, ], uncertainty = "conditional")
-  j_wide <- norm_joint(au)
+  j_wide <- ref_joint(au)
   sc <- predict(fit, newdata = dat[201:300, ], uncertainty = "conditional")
-  j_long <- norm_joint(sc)
+  j_long <- ref_joint(sc)
   expect_equal(j_wide$outcomes, c("y", "marker_01"))
   expect_equal(j_wide$correlation, j_long$correlation)
   expect_equal(j_wide$reference$joint_z, j_long$reference$joint_z)

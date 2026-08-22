@@ -1,6 +1,6 @@
 #' Specification of a distributional reference model
 #'
-#' @param family A [norm_family] such as [norm_gaussian()] or [norm_shash()].
+#' @param family A [ref_family] such as [ref_gaussian()] or [ref_shash()].
 #' @param location,scale,skew,tail One-sided formulas for the additive
 #'   predictors. Unused shape formulas default to `~ 1`.
 #' @param method `mgcv` smoothness-selection method.
@@ -8,11 +8,11 @@
 #'   `n >= bam_min_n`.
 #' @param bam_min_n Minimum rows before `bam()` is considered.
 #' @param control Extra engine controls (list).
-#' @return An object of class `norm_spec`.
+#' @return An object of class `ref_spec`.
 #' @examples
-#' norm_spec(family = norm_gaussian(), location = ~ s(age, k = 8) + sex)
+#' ref_spec(family = ref_gaussian(), location = ~ s(age, k = 8) + sex)
 #' @export
-norm_spec <- function(family = norm_gaussian(),
+ref_spec <- function(family = ref_gaussian(),
                       location = ~1,
                       scale = ~1,
                       skew = ~1,
@@ -21,8 +21,8 @@ norm_spec <- function(family = norm_gaussian(),
                       use_bam = TRUE,
                       bam_min_n = 20000L,
                       control = list()) {
-  if (!inherits(family, "norm_family")) {
-    cli::cli_abort("{.arg family} must be a {.fn norm_family} constructor result.")
+  if (!inherits(family, "ref_family")) {
+    cli::cli_abort("{.arg family} must be a {.fn ref_family} constructor result.")
   }
   location <- as_rhs_formula(location)
   scale <- as_rhs_formula(scale)
@@ -41,7 +41,7 @@ norm_spec <- function(family = norm_gaussian(),
       bam_min_n = as.integer(bam_min_n),
       control = control
     ),
-    class = "norm_spec"
+    class = "ref_spec"
   )
 }
 
@@ -60,8 +60,8 @@ formula_is_intercept_only <- function(f) {
 }
 
 #' @export
-print.norm_spec <- function(x, ...) {
-  cli::cli_text("{.cls norm_spec} {x$family$name} via {x$engine}")
+print.ref_spec <- function(x, ...) {
+  cli::cli_text("{.cls ref_spec} {x$family$name} via {x$engine}")
   cli::cli_text("  location: {deparse(x$location)}")
   cli::cli_text("  scale:    {deparse(x$scale)}")
   if (identical(x$family$name, "shash")) {

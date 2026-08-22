@@ -12,16 +12,16 @@ expected_naive_fpr <- function(r, threshold = stats::qnorm(0.975)) {
 }
 
 fit_two_visit_transition <- function(dat) {
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1),
     data = dat,
     outcomes = "y",
     id = participant_id
   )
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age)
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age)
   list(
     dyn = dyn,
-    transition = norm_transition(dyn, data = dat, id = participant_id, time = age)
+    transition = ref_transition(dyn, data = dat, id = participant_id, time = age)
   )
 }
 
@@ -39,7 +39,7 @@ test_that("out-of-sample change_z FPR stays near nominal across correlation and 
     pr <- got$dyn$processes$y
     expect_true(pr$identified)
     expect_identical(pr$process$name, "stable")
-    tr <- norm_transition(got$dyn, data = test, id = participant_id, time = age)
+    tr <- ref_transition(got$dyn, data = test, id = participant_id, time = age)
     naive <- naive_change_z(tr)
     tibble::tibble(
       r = cfg$r,

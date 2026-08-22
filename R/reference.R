@@ -7,14 +7,14 @@
 #' when predicting) are dropped, so the bundle is a small fraction of the
 #' fit's size. Predictions from the bundle reproduce those of the fit
 #' exactly. The bundle keeps what is required for support checks,
-#' adaptation, calibration, and provenance. Printing a `norm_reference`
+#' adaptation, calibration, and provenance. Printing a `ref_reference`
 #' shows the model card.
 #'
-#' @param fit A [norm_fit].
+#' @param fit A [ref_fit].
 #' @param criteria,units,missing_policy Optional provenance fields.
-#' @return An object of class `norm_reference` (also a `norm_fit`).
+#' @return An object of class `ref_reference` (also a `ref_fit`).
 #' @export
-norm_reference <- function(fit,
+ref_reference <- function(fit,
                            criteria = NULL,
                            units = NULL,
                            missing_policy = "complete-case per outcome; predictors are never imputed") {
@@ -40,7 +40,7 @@ norm_reference <- function(fit,
         r = paste(R.version$major, R.version$minor, sep = ".")
       )
     ),
-    class = c("norm_reference", "norm_fit")
+    class = c("ref_reference", "ref_fit")
   )
 }
 
@@ -52,7 +52,7 @@ strip_fit_one <- function(fit_one) {
 }
 
 #' @export
-print.norm_reference <- function(x, ...) {
+print.ref_reference <- function(x, ...) {
   cli::cli_h1("referent model card")
   cli::cli_text("family: {x$spec$family$name}")
   cli::cli_text("engine: {x$spec$engine}")

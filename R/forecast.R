@@ -5,24 +5,24 @@
 #' graphics then follow from the existing contract.
 #'
 #' The forecast refuses to run when the process for `outcome` is not
-#' identified (see [norm_dynamics()]): a history-conditioned distribution
+#' identified (see [ref_dynamics()]): a history-conditioned distribution
 #' from an unestimated kernel would be silently wrong. History rows with a
 #' non-finite time or outcome are dropped and the number actually used is
 #' returned as `history_n`. Epistemic uncertainty of the reference location
 #' is carried in the marginal distributions but the uncertainty of the
 #' kernel parameters is not propagated into the forecast.
 #'
-#' @param dynamic A [norm_dynamics] object.
+#' @param dynamic A [ref_dynamics] object.
 #' @param history Subject history data frame. Must contain the time column
-#'   used in [norm_dynamics()] and the outcome.
+#'   used in [ref_dynamics()] and the outcome.
 #' @param times Future times.
 #' @param outcome Outcome name.
-#' @return A `norm_forecast` with `$dist` (a `distribution` vector, one element per time),
+#' @return A `ref_forecast` with `$dist` (a `distribution` vector, one element per time),
 #'   `$summary` (median and 90% interval), `$history_n`, and
 #'   `$lag_support` (`"in"` or `"extrapolated_lag"` per forecast time,
 #'   judged from the last history visit against the reference lag range).
 #' @export
-norm_forecast <- function(dynamic, history, times, outcome = NULL) {
+ref_forecast <- function(dynamic, history, times, outcome = NULL) {
   outcome <- outcome %||% dynamic$outcomes[[1]]
   if (!outcome %in% dynamic$outcomes) {
     cli::cli_abort("{.val {outcome}} is not an outcome of the dynamics object.")
@@ -37,7 +37,7 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
   time_nm <- dynamic$time_name
   history <- tibble::as_tibble(history)
   if (!time_nm %in% names(history)) {
-    cli::cli_abort("History must contain the time column {.field {time_nm}} used by {.fn norm_dynamics}.")
+    cli::cli_abort("History must contain the time column {.field {time_nm}} used by {.fn ref_dynamics}.")
   }
   if (!outcome %in% names(history)) {
     cli::cli_abort("History must contain the outcome column {.field {outcome}}.")
@@ -84,7 +84,7 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
       history_n = length(z_hist),
       lag_support = lag_support
     ),
-    class = "norm_forecast"
+    class = "ref_forecast"
   )
 }
 
@@ -96,23 +96,23 @@ norm_forecast <- function(dynamic, history, times, outcome = NULL) {
 #' finite-difference of the linear-predictor matrix. This is a
 #' population-chart derivative, not an individual longitudinal estimate.
 #'
-#' @param reference A [norm_fit].
+#' @param reference A [ref_fit].
 #' @param newdata Grid of covariate values.
 #' @param with_respect_to The time covariate, as a bare column name or a
 #'   string.
 #' @param centiles Probability levels.
 #' @param h Finite-difference step.
 #' @param outcomes Optional subset of outcomes (default: all).
-#' @return A `norm_derivative` tibble with columns `.outcome`, `time`,
+#' @return A `ref_derivative` tibble with columns `.outcome`, `time`,
 #'   `centile`, `chart_velocity`, and `chart_velocity_se` (`NA` when the
 #'   engine does not expose a coefficient covariance).
 #' @examples
-#' ref <- norm_simulate(150, seed = 1)
-#' fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+#' ref <- ref_simulate(150, seed = 1)
+#' fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 #' grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
-#' norm_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
+#' ref_derivative(fit, grid, with_respect_to = age, centiles = c(0.1, 0.5, 0.9))
 #' @export
-norm_derivative <- function(reference,
+ref_derivative <- function(reference,
                             newdata,
                             with_respect_to,
                             centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
@@ -161,7 +161,7 @@ norm_derivative <- function(reference,
     tibble::tibble(.outcome = character(), time = numeric(), centile = numeric(),
                    chart_velocity = numeric(), chart_velocity_se = numeric())
   }
-  structure(out, class = c("norm_derivative", class(out)))
+  structure(out, class = c("ref_derivative", class(out)))
 }
 
 # Delta-method SE of the chart velocity: the velocity is a function of the

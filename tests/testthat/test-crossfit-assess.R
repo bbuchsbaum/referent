@@ -1,8 +1,8 @@
 test_that("cross-fitted scores are out of sample, cover every row once, and are calibrated", {
-  dat <- norm_simulate(400, seed = 11)
+  dat <- ref_simulate(400, seed = 11)
   dat$participant_id <- rep(1:100, each = 4)
   withr::with_seed(11, {
-    cf <- norm_crossfit(
+    cf <- ref_crossfit(
       simple_spec(),
       data = dat,
       outcomes = "y",
@@ -10,9 +10,9 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
       cluster = participant_id
     )
   })
-  expect_s3_class(cf, "norm_scores")
+  expect_s3_class(cf, "ref_scores")
   expect_false(any(cf$.in_sample))
-  expect_s3_class(attr(cf, "deployment"), "norm_fit")
+  expect_s3_class(attr(cf, "deployment"), "ref_fit")
   expect_equal(sort(cf$.row), seq_len(nrow(dat)))
   expect_equal(sort(unique(cf$.fold)), 1:4)
   # clusters stay together
@@ -30,12 +30,12 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
   expect_lt(abs(mean(cf$crps) - 1.3 / sqrt(pi)), 0.1)
 })
 
-test_that("norm_assess recovers nominal coverage and a positive log-score gain", {
-  train <- norm_simulate(300, seed = 13)
-  test <- norm_simulate(400, seed = 14)
-  fit <- norm_fit(simple_spec(), data = train, outcomes = "y")
-  a <- norm_assess(fit, newdata = test)
-  expect_s3_class(a, "norm_assessment")
+test_that("ref_assess recovers nominal coverage and a positive log-score gain", {
+  train <- ref_simulate(300, seed = 13)
+  test <- ref_simulate(400, seed = 14)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
+  a <- ref_assess(fit, newdata = test)
+  expect_s3_class(a, "ref_assessment")
   expect_false(a$in_sample)
   expect_equal(a$n, 400L)
   m <- a$marginal
@@ -67,12 +67,12 @@ msll_longhand <- function(scores, y_ref) {
 }
 
 test_that("standardized_log_score is the negative MSLL against the reference sample", {
-  ref <- norm_simulate(300, seed = 21)
-  new <- norm_simulate(120, seed = 22)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+  ref <- ref_simulate(300, seed = 21)
+  new <- ref_simulate(120, seed = 22)
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 
   for (rows in list(seq_len(120), seq_len(40))) {
-    a <- norm_assess(fit, new[rows, ])
+    a <- ref_assess(fit, new[rows, ])
     sc <- predict(fit, new[rows, ], type = "scores", uncertainty = "conditional")
     expect_equal(
       -a$overall$standardized_log_score,
@@ -83,22 +83,22 @@ test_that("standardized_log_score is the negative MSLL against the reference sam
 })
 
 test_that("the reference baseline survives freezing to a bundle", {
-  ref <- norm_simulate(200, seed = 23)
-  new <- norm_simulate(80, seed = 24)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
-  thawed <- norm_reference(fit)
-  expect_equal(norm_assess(thawed, new)$overall, norm_assess(fit, new)$overall,
+  ref <- ref_simulate(200, seed = 23)
+  new <- ref_simulate(80, seed = 24)
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+  thawed <- ref_reference(fit)
+  expect_equal(ref_assess(thawed, new)$overall, ref_assess(fit, new)$overall,
     tolerance = 1e-12
   )
 })
 
-test_that("norm_assess() honours the uncertainty argument", {
-  ref <- norm_simulate(200, seed = 25)
-  new <- norm_simulate(80, seed = 26)
-  fit <- norm_fit(norm_spec(norm_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
+test_that("ref_assess() honours the uncertainty argument", {
+  ref <- ref_simulate(200, seed = 25)
+  new <- ref_simulate(80, seed = 26)
+  fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 
-  expect_equal(norm_assess(fit, new)$overall, norm_assess(fit, new, uncertainty = "conditional")$overall)
-  total <- norm_assess(fit, new, uncertainty = "total")
+  expect_equal(ref_assess(fit, new)$overall, ref_assess(fit, new, uncertainty = "conditional")$overall)
+  total <- ref_assess(fit, new, uncertainty = "total")
   expect_equal(
     -total$overall$standardized_log_score,
     msll_longhand(predict(fit, new, type = "scores", uncertainty = "total"), ref$y),
@@ -106,19 +106,19 @@ test_that("norm_assess() honours the uncertainty argument", {
   )
   expect_false(isTRUE(all.equal(
     total$overall$mean_log_score,
-    norm_assess(fit, new)$overall$mean_log_score
+    ref_assess(fit, new)$overall$mean_log_score
   )))
 })
 
-test_that("norm_crossfit rejects one fold or one cluster clearly and scores NA strata", {
-  dat <- norm_simulate(90, seed = 3)
-  spec <- norm_spec(norm_gaussian(), ~ s(age, k = 5))
-  expect_error(norm_crossfit(spec, dat, "y", folds = 1), "at least 2")
+test_that("ref_crossfit rejects one fold or one cluster clearly and scores NA strata", {
+  dat <- ref_simulate(90, seed = 3)
+  spec <- ref_spec(ref_gaussian(), ~ s(age, k = 5))
+  expect_error(ref_crossfit(spec, dat, "y", folds = 1), "at least 2")
   dat$cl <- "one"
-  expect_error(norm_crossfit(spec, dat, "y", folds = 3, cluster = cl), "two clusters")
+  expect_error(ref_crossfit(spec, dat, "y", folds = 3, cluster = cl), "two clusters")
   dat$st <- dat$site
   dat$st[1:10] <- NA
-  cf <- norm_crossfit(spec, dat, "y", folds = 3, strata = st)
+  cf <- ref_crossfit(spec, dat, "y", folds = 3, strata = st)
   expect_equal(nrow(cf), 90L)
   expect_equal(sort(unique(cf$.row)), 1:90)
   expect_true(all(attr(cf, "folds") %in% 1:3))

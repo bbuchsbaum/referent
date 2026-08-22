@@ -6,7 +6,7 @@
 #' spread `"insufficient_variation"`, and an engine failure
 #' `"nonconverged"`.
 #'
-#' @param spec A [norm_spec].
+#' @param spec A [ref_spec].
 #' @param data A data frame of reference observations.
 #' @param outcomes Tidyselect specification or character vector of outcome
 #'   columns. The covariate frame is kept wide.
@@ -21,17 +21,17 @@
 #'
 #' Outcomes are fitted in parallel when the `future.apply` package is
 #' installed and a non-sequential [future::plan()] is active.
-#' @return An object of class `norm_fit`. `fit$covariates` holds the
+#' @return An object of class `ref_fit`. `fit$covariates` holds the
 #'   covariate names.
 #' @examples
-#' ref <- norm_simulate(80, seed = 1)
-#' spec <- norm_spec(family = norm_gaussian(), location = ~ age + sex)
-#' fit <- norm_fit(spec, data = ref, outcomes = "y")
+#' ref <- ref_simulate(80, seed = 1)
+#' spec <- ref_spec(family = ref_gaussian(), location = ~ age + sex)
+#' fit <- ref_fit(spec, data = ref, outcomes = "y")
 #' predict(fit, newdata = ref[1:3, ], uncertainty = "conditional")
 #' @export
-norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
-  if (!inherits(spec, "norm_spec")) {
-    cli::cli_abort("{.arg spec} must be a {.cls norm_spec}.")
+ref_fit <- function(spec, data, outcomes, id = NULL, ...) {
+  if (!inherits(spec, "ref_spec")) {
+    cli::cli_abort("{.arg spec} must be a {.cls ref_spec}.")
   }
   data <- tibble::as_tibble(data)
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
@@ -85,12 +85,12 @@ norm_fit <- function(spec, data, outcomes, id = NULL, ...) {
       covariates = covariate_names,
       support_ref = support_ref
     ),
-    class = "norm_fit"
+    class = "ref_fit"
   )
 }
 
 # Mean and population standard deviation (ddof = 0) of every outcome in
-# the reference sample. `norm_assess()` scores a model against this
+# the reference sample. `ref_assess()` scores a model against this
 # unconditional Gaussian so that the baseline is fixed by the reference
 # population rather than by whatever sample is being scored. Scoring a
 # model against the held-out sample's own moments makes the baseline an
@@ -190,11 +190,11 @@ fit_statuses <- function(fit) {
 }
 
 #' @export
-print.norm_fit <- function(x, ...) {
+print.ref_fit <- function(x, ...) {
   st <- fit_statuses(x)
   tab <- sort(table(st), decreasing = TRUE)
   status_txt <- paste(paste0(names(tab), "=", as.integer(tab)), collapse = ", ")
-  cli::cli_text("{.cls norm_fit} {x$spec$family$name} via {x$spec$engine}")
+  cli::cli_text("{.cls ref_fit} {x$spec$family$name} via {x$spec$engine}")
   cli::cli_text("{length(x$outcomes)} outcome{?s}, n = {x$n}")
   cli::cli_text("covariates: {.field {x$covariates}}")
   cli::cli_text("status: {status_txt}")
@@ -222,7 +222,7 @@ fit_ok <- function(fit_one) {
 #' and scale, including any coefficient draws), then scoring, then PIT
 #' recalibration, and finally extrapolation masking.
 #'
-#' @param object A [norm_fit].
+#' @param object A [ref_fit].
 #' @param newdata Data frame of target observations.
 #' @param type `"scores"` or `"distribution"`. Distributions carry
 #'   adaptation but not the calibration map, which acts on probabilities.
@@ -235,7 +235,7 @@ fit_ok <- function(fit_one) {
 #'   `"out"` or `"new_group"` have `NA` for `z`, `centile`, `tail_prob`,
 #'   `tail_surprisal`, and `log_density` (`median` and `residual` are
 #'   kept). An unseen level of a grouping covariate is extrapolation
-#'   unless the fit has been adapted to it with [norm_adapt()]; a
+#'   unless the fit has been adapted to it with [ref_adapt()]; a
 #'   parametric factor has no prediction at all for such a row.
 #' @param n_draw Number of coefficient draws for `"total"`; defaults to
 #'   `spec$control$n_draw` or 200. Draws are seeded from
@@ -243,11 +243,11 @@ fit_ok <- function(fit_one) {
 #'   With 200 draws the Monte Carlo error of a score is about 0.02 in
 #'   `z` near the centre and larger in the far tails; it falls as
 #'   \eqn{1/\sqrt{n_{draw}}}, so pass `n_draw = 2000` (or set
-#'   `control = list(n_draw = 2000)` in [norm_spec()]) for reporting
+#'   `control = list(n_draw = 2000)` in [ref_spec()]) for reporting
 #'   extreme centiles. The constant-scale Gaussian uses the exact
 #'   analytic total and is unaffected.
 #' @param ... Unused.
-#' @return For `"scores"`, a `norm_scores` tibble with one row per
+#' @return For `"scores"`, a `ref_scores` tibble with one row per
 #'   observation and outcome. `status` is `"ok"`, `"missing_predictor"`
 #'   (a covariate is `NA`), `"new_group"` (an unseen factor level), or
 #'   the fit status of a failed outcome.
@@ -255,7 +255,7 @@ fit_ok <- function(fit_one) {
 #'   [distribution][dist_shash] column per outcome (missing distributions
 #'   for failed outcomes).
 #' @export
-predict.norm_fit <- function(object,
+predict.ref_fit <- function(object,
                              newdata,
                              type = c("scores", "distribution"),
                              uncertainty = c("total", "conditional"),
@@ -363,7 +363,7 @@ scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE
       .in_sample = logical(), status = character()
     )
   }
-  structure(out, class = c("norm_scores", class(out)))
+  structure(out, class = c("ref_scores", class(out)))
 }
 
 score_ids <- function(object, newdata) {
@@ -390,13 +390,13 @@ is_in_sample_data <- function(fit, newdata) {
 }
 
 #' @export
-print.norm_scores <- function(x, ...) {
+print.ref_scores <- function(x, ...) {
   n_in <- if (".in_sample" %in% names(x)) {
     sum(x$.in_sample, na.rm = TRUE)
   } else {
     0L
   }
-  cli::cli_text("{.cls norm_scores} {nrow(x)} row{?s}")
+  cli::cli_text("{.cls ref_scores} {nrow(x)} row{?s}")
   if (n_in > 0) {
     cli::cli_alert_warning("{n_in} in-sample score{?s} (.in_sample = TRUE)")
   }

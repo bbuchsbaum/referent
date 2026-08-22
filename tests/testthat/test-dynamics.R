@@ -1,5 +1,5 @@
 long_spec <- function() {
-  norm_spec(family = norm_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1)
+  ref_spec(family = ref_gaussian(), location = ~ s(age, k = 5) + sex, scale = ~1)
 }
 
 test_that("paper-reduction law: innovation_z equals Z-gain", {
@@ -7,7 +7,7 @@ test_that("paper-reduction law: innovation_z equals Z-gain", {
   z1 <- 1.2
   z2 <- -0.4
   expect_gain <- (z2 - r * z1) / sqrt(1 - r^2)
-  process <- norm_process("stable")
+  process <- ref_process("stable")
   psi <- list(tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), ell = Inf)
   R <- process_correlation(c(0, 1), psi, process)
   expect_equal(R[1, 2], r, tolerance = 1e-8)
@@ -21,7 +21,7 @@ test_that("difference-reduction law: change_z equals standardized difference", {
   z1 <- 0.8
   z2 <- -0.2
   expect_d <- (z2 - z1) / sqrt(2 * (1 - r))
-  process <- norm_process(ell = Inf)
+  process <- ref_process(ell = Inf)
   expect_identical(process$name, "stable")
   psi <- list(tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), ell = Inf)
   r12 <- process_kernel(1, psi, process)
@@ -29,7 +29,7 @@ test_that("difference-reduction law: change_z equals standardized difference", {
 })
 
 test_that("history law: added history cannot increase conditional variance", {
-  fitted <- list(process = norm_process(ell = 4),
+  fitted <- list(process = ref_process(ell = 4),
                  psi = list(tau_b = 0.5, tau_g = 0.4, sigma_e = 0.2, ell = 4))
   s1 <- condition_history(0.3, 10, 12, fitted)$s
   s2 <- condition_history(c(0.1, 0.3), c(8, 10), 12, fitted)$s
@@ -42,7 +42,7 @@ test_that("history law: added history cannot increase conditional variance", {
 })
 
 test_that("correlation matrices are positive semidefinite", {
-  process <- norm_process(ell = 3)
+  process <- ref_process(ell = 3)
   psi <- list(tau_b = 0.4, tau_g = 0.5, sigma_e = 0.2, ell = 3)
   times <- c(0, 0.4, 1.7, 6)
   k <- process_correlation(times, psi, process)
@@ -71,19 +71,19 @@ test_that("batched likelihood equals the per-subject Gaussian likelihood", {
 })
 
 test_that("simplex parameterisation gives unit total variance", {
-  psi <- process_par(c(0.3, -1.2, 0.5), norm_process())
+  psi <- process_par(c(0.3, -1.2, 0.5), ref_process())
   expect_equal(psi$tau_b^2 + psi$tau_g^2 + psi$sigma_e^2, 1, tolerance = 1e-12)
-  psi_s <- process_par(0.7, norm_process("stable"))
+  psi_s <- process_par(0.7, ref_process("stable"))
   expect_equal(psi_s$tau_b^2 + psi_s$sigma_e^2, 1, tolerance = 1e-12)
   expect_identical(psi_s$ell, Inf)
 })
 
 test_that("kernel recovery: r(lag) at the median lag within 0.08 of truth on irregular lags", {
   skip_on_cran()
-  dat <- norm_simulate(1800, kind = "longitudinal", seed = 11)
+  dat <- ref_simulate(1800, kind = "longitudinal", seed = 11)
   truth <- attr(dat, "truth")
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age)
   pr <- dyn$processes$y
   expect_true(pr$identified)
   expect_true(pr$ell_identified)
@@ -101,12 +101,12 @@ test_that("kernel recovery: r(lag) at the median lag within 0.08 of truth on irr
 
 test_that("out-of-sample calibration of innovation_z and change_z on irregular 3-visit data", {
   skip_on_cran()
-  train <- norm_simulate(1800, kind = "longitudinal", seed = 12)
-  test <- norm_simulate(3000, kind = "longitudinal", seed = 13)
+  train <- ref_simulate(1800, kind = "longitudinal", seed = 12)
+  test <- ref_simulate(3000, kind = "longitudinal", seed = 13)
   expect_gt(attr(train, "truth")$sigma_e, 0)
-  fit <- norm_fit(long_spec(), data = train, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = train, id = participant_id, time = age)
-  tr <- norm_transition(dyn, data = test, id = participant_id, time = age)
+  fit <- ref_fit(long_spec(), data = train, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = train, id = participant_id, time = age)
+  tr <- ref_transition(dyn, data = test, id = participant_id, time = age)
   innov <- tr$innovation_z[is.finite(tr$innovation_z)]
   change <- tr$change_z[is.finite(tr$change_z)]
   expect_gt(length(innov), 1800)
@@ -125,8 +125,8 @@ test_that("out-of-sample calibration of innovation_z and change_z on irregular 3
 test_that("stable model on fixed-lag two-visit data recovers r with ell unidentified", {
   skip_on_cran()
   dat <- simulate_two_visit(600, r = 0.6, lag = 2, seed = 5)
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age)
   pr <- dyn$processes$y
   expect_true(dyn$identifiability$fixed_lag)
   expect_true(pr$identified)
@@ -146,10 +146,10 @@ test_that("stable and Matern kernels agree on r(lag) for near-fixed lags", {
   set.seed(61)
   jitter <- stats::runif(nrow(dat) / 2, -0.4, 0.4)
   dat$age[seq(2, nrow(dat), by = 2)] <- dat$age[seq(2, nrow(dat), by = 2)] + jitter
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn_m <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
-  dyn_s <- norm_dynamics(fit, data = dat, id = participant_id, time = age,
-                         process = norm_process("stable"), crossfit = 0)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn_m <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  dyn_s <- ref_dynamics(fit, data = dat, id = participant_id, time = age,
+                         process = ref_process("stable"), crossfit = 0)
   expect_identical(dyn_m$processes$y$process$name, "matern32")
   expect_identical(dyn_s$processes$y$process$name, "stable")
   expect_identical(dyn_m$z_source, "in_sample")
@@ -160,19 +160,19 @@ test_that("stable and Matern kernels agree on r(lag) for near-fixed lags", {
 })
 
 test_that("unidentified dynamics give NA history-conditioned quantities and no forecast", {
-  dat <- norm_simulate(200, seed = 77)
+  dat <- ref_simulate(200, seed = 77)
   dat$participant_id <- seq_len(nrow(dat))
   # three subjects with a repeat: not enough to identify dependence
   dat$participant_id[1:3] <- dat$participant_id[4:6]
-  fit <- norm_fit(norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+  fit <- ref_fit(ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
                   data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   pr <- dyn$processes$y
   expect_false(pr$identified)
   expect_null(pr$psi)
   expect_match(pr$reason, "too few")
   expect_true(is.na(dyn$components$stable))
-  tr <- norm_transition(dyn, data = dat, id = participant_id, time = age)
+  tr <- ref_transition(dyn, data = dat, id = participant_id, time = age)
   expect_equal(nrow(tr), 3L)
   for (col in c("innovation_z", "change_z", "velocity_centile", "change_centile",
                 "expected_velocity", "velocity_lower", "velocity_upper", "measurement_sd")) {
@@ -182,24 +182,24 @@ test_that("unidentified dynamics give NA history-conditioned quantities and no f
   expect_true(all(tr$support == "unidentified"))
   expect_false(any(tr$calibrated))
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
-  expect_error(norm_forecast(dyn, history = hist, times = max(hist$age) + 1), "not identified")
+  expect_error(ref_forecast(dyn, history = hist, times = max(hist$age) + 1), "not identified")
   expect_true(all(is.na(fortify_kernel(dyn)$correlation)))
   expect_match(print_text(dyn), "not identified")
 })
 
-test_that("norm_transition handles no transitions and duplicate visit times", {
-  dat <- norm_simulate(300, kind = "longitudinal", seed = 31)
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+test_that("ref_transition handles no transitions and duplicate visit times", {
+  dat <- ref_simulate(300, kind = "longitudinal", seed = 31)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   single <- dat[!duplicated(dat$participant_id), ]
-  tr0 <- norm_transition(dyn, data = single, id = participant_id, time = age)
-  expect_s3_class(tr0, "norm_transition")
+  tr0 <- ref_transition(dyn, data = single, id = participant_id, time = age)
+  expect_s3_class(tr0, "ref_transition")
   expect_equal(nrow(tr0), 0L)
   expect_identical(names(tr0), names(transition_template()))
   dup <- dat[dat$participant_id %in% dat$participant_id[1:2], ]
   dup$age[2] <- dup$age[1]
   expect_warning(
-    tr_d <- norm_transition(dyn, data = dup, id = participant_id, time = age),
+    tr_d <- ref_transition(dyn, data = dup, id = participant_id, time = age),
     "duplicate visit time"
   )
   zero <- tr_d$.dt == 0
@@ -211,41 +211,41 @@ test_that("norm_transition handles no transitions and duplicate visit times", {
 
 test_that("temporal support flags extrapolated lags under a fixed-lag reference", {
   dat <- simulate_two_visit(200, r = 0.6, lag = 2, seed = 8)
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   expect_identical(classify_temporal_support(dyn, 40, 42, 1), "in")
   expect_identical(classify_temporal_support(dyn, 40, 50, 1), "extrapolated_lag")
   expect_identical(classify_temporal_support(dyn, 40, 40.5, 1), "extrapolated_lag")
   hist <- dat[dat$participant_id == 1, ]
-  fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + c(2, 10))
+  fc <- ref_forecast(dyn, history = hist, times = max(hist$age) + c(2, 10))
   expect_equal(fc$history_n, 2L)
   expect_identical(fc$lag_support, c("in", "extrapolated_lag"))
   expect_identical(fc$summary$support, fc$lag_support)
 })
 
-test_that("norm_forecast requires the time column and drops non-finite history", {
-  dat <- norm_simulate(300, kind = "longitudinal", seed = 32)
-  fit <- norm_fit(long_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+test_that("ref_forecast requires the time column and drops non-finite history", {
+  dat <- ref_simulate(300, kind = "longitudinal", seed = 32)
+  fit <- ref_fit(long_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
   bad <- hist
   names(bad)[names(bad) == "age"] <- "years"
   bad$age_at_scan <- bad$years
-  expect_error(norm_forecast(dyn, history = bad, times = 60), "time column")
+  expect_error(ref_forecast(dyn, history = bad, times = 60), "time column")
   hist$y[[1]] <- NA_real_
-  expect_message(fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + 1),
+  expect_message(fc <- ref_forecast(dyn, history = hist, times = max(hist$age) + 1),
                  "Dropped 1 history row")
   expect_equal(fc$history_n, nrow(hist) - 1L)
   expect_true(all(is.finite(fc$summary$median)))
-  expect_error(norm_forecast(dyn, history = hist, times = 60, outcome = "nope"), "not an outcome")
+  expect_error(ref_forecast(dyn, history = hist, times = 60, outcome = "nope"), "not an outcome")
 })
 
 test_that("time-unit law: velocity rescales, innovation does not", {
   skip_on_cran()
-  dat <- norm_simulate(300, kind = "longitudinal", seed = 24)
-  fit <- norm_fit(simple_spec(), data = dat, outcomes = "y")
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
-  tr <- norm_transition(dyn, data = dat, id = participant_id, time = age)
+  dat <- ref_simulate(300, kind = "longitudinal", seed = 24)
+  fit <- ref_fit(simple_spec(), data = dat, outcomes = "y")
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  tr <- ref_transition(dyn, data = dat, id = participant_id, time = age)
   expect_equal(tr$observed_velocity * tr$.dt, tr$observed_change, tolerance = 1e-10)
   expect_equal(tr$expected_velocity * tr$.dt, tr$expected_change, tolerance = 1e-10)
   dat_m <- dat
@@ -257,38 +257,38 @@ test_that("time-unit law: velocity rescales, innovation does not", {
   for (nm in names(dyn_m$processes)) {
     dyn_m$processes[[nm]]$psi$ell <- dyn$processes[[nm]]$psi$ell * 12
   }
-  tr_m <- norm_transition(dyn_m, data = dat_m, id = participant_id, time = age_months)
+  tr_m <- ref_transition(dyn_m, data = dat_m, id = participant_id, time = age_months)
   expect_equal(tr_m$innovation_z, tr$innovation_z, tolerance = 1e-8)
   expect_equal(tr_m$change_z, tr$change_z, tolerance = 1e-8)
   expect_equal(tr_m$observed_velocity * 12, tr$observed_velocity, tolerance = 1e-8)
 })
 
 test_that("forecast density law holds after conditioning", {
-  dat <- norm_simulate(240, kind = "longitudinal", seed = 25)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+  dat <- ref_simulate(240, kind = "longitudinal", seed = 25)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
     outcomes = "y"
   )
-  dyn <- norm_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
-  fc <- norm_forecast(dyn, history = hist, times = max(hist$age) + 1)
+  fc <- ref_forecast(dyn, history = hist, times = max(hist$age) + 1)
   d <- fc$dist[1]
   expect_s3_class(vctrs::vec_data(d)[[1]], "dist_conditioned")
   p <- c(0.2, 0.5, 0.8)
   expect_equal(dist_cdf(d, dist_quantile(d, p)), p, tolerance = 1e-6)
 })
 
-test_that("norm_derivative reproduces a linear slope and its standard error", {
-  dat <- norm_simulate(300, seed = 41)
-  fit <- norm_fit(
-    norm_spec(family = norm_gaussian(), location = ~ age + sex, scale = ~1),
+test_that("ref_derivative reproduces a linear slope and its standard error", {
+  dat <- ref_simulate(300, seed = 41)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
     data = dat,
     outcomes = c("y", "marker_01")
   )
   grid <- data.frame(age = c(30, 50, 70), sex = factor("F", levels = c("F", "M")))
-  dv <- norm_derivative(fit, grid, with_respect_to = "age", centiles = c(0.1, 0.5))
-  expect_s3_class(dv, "norm_derivative")
+  dv <- ref_derivative(fit, grid, with_respect_to = "age", centiles = c(0.1, 0.5))
+  expect_s3_class(dv, "ref_derivative")
   expect_setequal(unique(dv$.outcome), c("y", "marker_01"))
   expect_equal(nrow(dv), 2 * 3 * 2)
   m <- fit$models$y$model
@@ -297,17 +297,17 @@ test_that("norm_derivative reproduces a linear slope and its standard error", {
   got <- dv[dv$.outcome == "y", ]
   expect_equal(got$chart_velocity, rep(slope, nrow(got)), tolerance = 1e-6)
   expect_equal(got$chart_velocity_se, rep(slope_se, nrow(got)), tolerance = 1e-4)
-  dv1 <- norm_derivative(fit, grid, with_respect_to = "age", outcomes = "marker_01")
+  dv1 <- ref_derivative(fit, grid, with_respect_to = "age", outcomes = "marker_01")
   expect_true(all(dv1$.outcome == "marker_01"))
   expect_true(all(dv1$chart_velocity_se > 0))
 })
 
-test_that("norm_derivative gives finite SEs for smooth SHASH fits", {
+test_that("ref_derivative gives finite SEs for smooth SHASH fits", {
   skip_on_cran()
-  dat <- norm_simulate(500, kind = "shash", seed = 42)
-  fit <- norm_fit(simple_spec("shash"), data = dat, outcomes = "y")
+  dat <- ref_simulate(500, kind = "shash", seed = 42)
+  fit <- ref_fit(simple_spec("shash"), data = dat, outcomes = "y")
   grid <- data.frame(age = c(30, 50, 70), sex = factor("M", levels = c("F", "M")))
-  dv <- norm_derivative(fit, grid, with_respect_to = "age")
+  dv <- ref_derivative(fit, grid, with_respect_to = "age")
   expect_true(all(is.finite(dv$chart_velocity)))
   expect_true(all(is.finite(dv$chart_velocity_se) & dv$chart_velocity_se > 0))
   # the upper centile is steeper where the scale grows with age only if scale varies;
@@ -322,7 +322,7 @@ test_that("an optimum on the logit bound is flagged and carries no standard erro
   z <- rep(stats::rnorm(n), each = 2)
   id <- rep(seq_len(n), each = 2)
   time <- rep(c(0, 2), n)
-  pr <- fit_process(norm_process("stable"), z, id, time)
+  pr <- fit_process(ref_process("stable"), z, id, time)
   expect_true(pr$at_boundary)
   expect_equal(unname(pr$theta), 12)
   expect_true(is.na(pr$se[["logit_stable"]]))
@@ -332,7 +332,7 @@ test_that("an optimum on the logit bound is flagged and carries no standard erro
   expect_true(process_components(list(y = pr))$at_boundary)
   # an interior optimum is not flagged
   z2 <- z + stats::rnorm(2 * n, sd = 0.5)
-  pr2 <- fit_process(norm_process("stable"), z2, id, time)
+  pr2 <- fit_process(ref_process("stable"), z2, id, time)
   expect_false(pr2$at_boundary)
   expect_true(is.finite(pr2$se[["logit_stable"]]))
 })

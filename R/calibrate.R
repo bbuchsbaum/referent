@@ -15,17 +15,17 @@
 #' stretched but never collapsed to 0 or 1, and the calibrated tail is
 #' evaluated in log space so very large `|z|` remain distinguishable.
 #'
-#' @param fit A [norm_fit].
+#' @param fit A [ref_fit].
 #' @param data Calibration reference data, not reused for evaluation.
 #' @param by Optional grouping column (e.g. site). Groups absent from the
 #'   calibration data fall back to the pooled map.
-#' @return The fit with a `calibration` slot; [predict.norm_fit()] applies
+#' @return The fit with a `calibration` slot; [predict.ref_fit()] applies
 #'   the map to `centile`, `z`, and the tail columns and sets
 #'   `calibrated = TRUE` on every row that was mapped. An outcome with
 #'   fewer than two finite calibration PITs (overall, or in a group with
 #'   no pooled map) has no map and its rows stay `calibrated = FALSE`.
 #' @export
-norm_calibrate <- function(fit, data, by = NULL) {
+ref_calibrate <- function(fit, data, by = NULL) {
   data <- tibble::as_tibble(data)
   by_quo <- rlang::enquo(by)
   by_vec <- pull_column(data, by_quo, default = NULL)
@@ -51,7 +51,7 @@ norm_calibrate <- function(fit, data, by = NULL) {
       n = nrow(data),
       pre = pre
     ),
-    class = "norm_calibration"
+    class = "ref_calibration"
   )
   fit
 }
@@ -65,7 +65,7 @@ pit_map <- function(u) {
   }
   structure(
     list(x = c(0, u, 1), y = c(0, seq_len(n) / (n + 1), 1), n = n),
-    class = "norm_pit_map"
+    class = "ref_pit_map"
   )
 }
 
@@ -143,7 +143,7 @@ calibrate_scores <- function(cal, outcome, grp, sc) {
 }
 
 #' @export
-print.norm_calibration <- function(x, ...) {
-  cli::cli_text("{.cls norm_calibration} method = {x$method}, n = {x$n}{if (is.null(x$by)) '' else paste0(', by ', x$by)}")
+print.ref_calibration <- function(x, ...) {
+  cli::cli_text("{.cls ref_calibration} method = {x$method}, n = {x$n}{if (is.null(x$by)) '' else paste0(', by ', x$by)}")
   invisible(x)
 }

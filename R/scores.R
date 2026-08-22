@@ -36,18 +36,18 @@ as_scores <- function(distribution, y) {
 #' well-calibrated independent outcomes, about `0.0455 * p` rows are
 #' expected to exceed `|z| > 2` by chance.
 #'
-#' @param scores A `norm_scores` table.
+#' @param scores A `ref_scores` table.
 #' @param threshold Absolute Z threshold.
 #' @return The score table with `exceedance` and `fdr` columns, of class
-#'   `norm_flags`. The attributes `expected_exceedances` and
+#'   `ref_flags`. The attributes `expected_exceedances` and
 #'   `observed_exceedances` give the chance expectation under calibration
 #'   and the observed count.
 #' @examples
 #' sc <- as_scores(distributional::dist_normal(0, 1), c(0.2, 2.6, -3.1))
 #' sc$.in_sample <- FALSE
-#' norm_flag(sc)
+#' ref_flag(sc)
 #' @export
-norm_flag <- function(scores, threshold = 2) {
+ref_flag <- function(scores, threshold = 2) {
   warn_in_sample(scores, used_for = "a group comparison")
   out <- scores
   out$exceedance <- is.finite(out$z) & abs(out$z) > threshold
@@ -58,14 +58,14 @@ norm_flag <- function(scores, threshold = 2) {
   expected <- 2 * stats::pnorm(-threshold) * sum(is.finite(out$z))
   attr(out, "expected_exceedances") <- expected
   attr(out, "observed_exceedances") <- sum(out$exceedance, na.rm = TRUE)
-  class(out) <- unique(c("norm_flags", class(out)))
+  class(out) <- unique(c("ref_flags", class(out)))
   out
 }
 
 #' @export
-print.norm_flags <- function(x, ...) {
+print.ref_flags <- function(x, ...) {
   cli::cli_text(
-    "{.cls norm_flags} {attr(x, 'observed_exceedances')} exceedance{?s} (expected {signif(attr(x, 'expected_exceedances'), 3)})"
+    "{.cls ref_flags} {attr(x, 'observed_exceedances')} exceedance{?s} (expected {signif(attr(x, 'expected_exceedances'), 3)})"
   )
   NextMethod()
 }

@@ -39,12 +39,12 @@
 #'   parameters. For `"longitudinal"`, `truth$correlation(lag)` gives the
 #'   implied correlation of normal scores at a given lag.
 #' @examples
-#' ref <- norm_simulate(200, seed = 1)
+#' ref <- ref_simulate(200, seed = 1)
 #' attr(ref, "truth")$sigma
-#' long <- norm_simulate(300, kind = "longitudinal", seed = 2)
+#' long <- ref_simulate(300, kind = "longitudinal", seed = 2)
 #' attr(long, "truth")$correlation(2)
 #' @export
-norm_simulate <- function(n = 400,
+ref_simulate <- function(n = 400,
                           kind = c("gaussian", "shash", "longitudinal"),
                           sites = 4,
                           site_shift = 0,

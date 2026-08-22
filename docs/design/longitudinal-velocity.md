@@ -1,6 +1,6 @@
 # Velocity should be a core consequence of the model, not a bolt-on
 
-Agreed. I would promote longitudinal change from the earlier `norm_change()` idea into a **first-class dynamic extension of the reference model**.
+Agreed. I would promote longitudinal change from the earlier `ref_change()` idea into a **first-class dynamic extension of the reference model**.
 
 The central abstraction becomes:
 
@@ -190,7 +190,7 @@ Adding valid history cannot increase \(s_*^2\) at fixed model parameters. The pa
 
 ---
 
-## 3. The dynamic forecast is still a `norm_dist`
+## 3. The dynamic forecast is still a `ref_dist`
 
 The especially attractive feature is that the dynamic result preserves our original predictive-distribution contract.
 
@@ -250,7 +250,7 @@ s_*\phi(z(y))
 }.
 \]
 
-Consequently, `norm_forecast()` can return exactly the same type of distribution object as `norm_fit()`:
+Consequently, `ref_forecast()` can return exactly the same type of distribution object as `ref_fit()`:
 
 ```text
 cdf()
@@ -481,13 +481,13 @@ measurement_variance
 
 The measurement component may eventually depend on covariates
 (`measurement = ~ site + device + quality`); that is future work. The
-current `norm_process()` fits a single measurement nugget and accepts no
+current `ref_process()` fits a single measurement nugget and accepts no
 measurement formula.
 
 At a new site, adaptation should be separable:
 
 ```r
-local <- norm_adapt(
+local <- ref_adapt(
   dyn,
   data = local_reference,
   components = c("location", "scale", "measurement")
@@ -557,18 +557,18 @@ A user should never receive a polished five-year velocity centile from a referen
 The dynamic layer should introduce only a few public verbs.
 
 ```r
-reference <- norm_fit(
+reference <- ref_fit(
   spec,
   data = reference_data,
   outcomes = starts_with("marker_")
 )
 
-dynamic <- norm_dynamics(
+dynamic <- ref_dynamics(
   reference,
   data = longitudinal_reference,
   id = participant_id,
   time = age,
-  process = norm_process("matern32", stable_rank = TRUE),
+  process = ref_process("matern32", stable_rank = TRUE),
   crossfit = 5
 )
 ```
@@ -576,7 +576,7 @@ dynamic <- norm_dynamics(
 ### Reference-chart derivatives
 
 ```r
-chart_velocity <- norm_derivative(
+chart_velocity <- ref_derivative(
   reference,
   newdata = age_grid,
   with_respect_to = age,
@@ -590,19 +590,19 @@ This estimates derivatives of the modeled quantile curves using the `mgcv` predi
 ### History-conditioned forecast
 
 ```r
-forecast <- norm_forecast(
+forecast <- ref_forecast(
   dynamic,
   history = subject_history,
   times = c(70.5, 71, 72)
 )
 ```
 
-This returns a `norm_forecast` containing predictive `norm_dist` objects at each requested time.
+This returns a `ref_forecast` containing predictive `ref_dist` objects at each requested time.
 
 ### Transition and velocity analysis
 
 ```r
-transition <- norm_transition(
+transition <- ref_transition(
   dynamic,
   data = subject_visits,
   id = participant_id,
@@ -610,16 +610,16 @@ transition <- norm_transition(
   conditioning = "all"
 )
 
-# norm_velocity() was merged into norm_transition() (2026-08-22); the
-# velocity columns below are produced directly by norm_transition().
-velocity <- norm_velocity(
+# ref_velocity() was merged into ref_transition() (2026-08-22); the
+# velocity columns below are produced directly by ref_transition().
+velocity <- ref_velocity(
   transition,
   time_unit = "year",
   scale = "response"
 )
 ```
 
-A row of the resulting `norm_transition` object would contain:
+A row of the resulting `ref_transition` object would contain:
 
 ```text
 .id
@@ -691,10 +691,10 @@ The package should decline to estimate an instantaneous individual derivative wh
 
 For multi-outcome panels, the temporal parameters can optionally be stabilized through empirical-Bayes pooling across outcomes. This is especially useful when hundreds of features share broadly similar reliability and temporal scales, but each feature has sparse repeats. The outcome-specific marginal distributions remain separate.
 
-The existing `norm_joint()` concept can then be applied to transition innovations:
+The existing `ref_joint()` concept can then be applied to transition innovations:
 
 ```r
-joint_change <- norm_joint(
+joint_change <- ref_joint(
   transition,
   value = "innovation_z",
   method = "gaussian_copula"
@@ -791,7 +791,7 @@ I would make the following architectural change to the earlier proposal:
 }
 \]
 
-`norm_change()` would no longer be an isolated calculation. It would either become a convenience wrapper around `norm_transition()` or disappear from the primary API.
+`ref_change()` would no longer be an isolated calculation. It would either become a convenience wrapper around `ref_transition()` or disappear from the primary API.
 
 The package’s substantive methodological contribution would then be broader than “R GAMLSS for normative modeling”:
 

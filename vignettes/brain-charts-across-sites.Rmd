@@ -36,7 +36,7 @@ spread. The outcome `y` plays the role of a regional volume; the three
 markers are further regions that share a latent factor with `y`.
 
 ```{r data}
-ref <- norm_simulate(
+ref <- ref_simulate(
   800, sites = 5,
   site_shift = c(0, 0.8, -0.5, 0.3, 0),
   site_log_scale = c(0, 0, 0, 0, 0.2),
@@ -55,12 +55,12 @@ and the population curve is used. `referent` reports those rows with
 `support == "new_group"`.
 
 ```{r fit}
-spec <- norm_spec(
-  family = norm_gaussian(),
+spec <- ref_spec(
+  family = ref_gaussian(),
   location = ~ s(age, k = 6) + sex + s(site, bs = "re"),
   scale = ~1
 )
-fit <- norm_fit(spec, data = ref, outcomes = all_of(regions), id = participant_id)
+fit <- ref_fit(spec, data = ref, outcomes = all_of(regions), id = participant_id)
 fit
 tidy(fit)[, c("outcome", "status", "n", "edf_s(age)", "edf_s(site)")]
 ```
@@ -72,14 +72,14 @@ autoplot(fit, type = "centiles", outcome = "y", by = sex)
 ## Out-of-fold reference scores
 
 Scoring the reference rows with the model that was fit to them
-understates their deviations. `norm_crossfit()` gives every reference
+understates their deviations. `ref_crossfit()` gives every reference
 row a score from a fold that excluded it, stratified by site so that
 each fold's model still sees every scanner. These scores are the honest
 reference for anything downstream: calibration checks, the joint model,
 and the expected exceedance rate.
 
 ```{r crossfit}
-cf <- norm_crossfit(spec, data = ref, outcomes = all_of(regions), folds = 5,
+cf <- ref_crossfit(spec, data = ref, outcomes = all_of(regions), folds = 5,
                     strata = site, id = participant_id)
 oof <- split(cf, cf$.outcome)
 oof_calibration <- data.frame(
@@ -106,7 +106,7 @@ every reference site. Thirty of its participants are known controls; the
 rest are the people we want to score.
 
 ```{r newsite}
-new_site <- norm_simulate(
+new_site <- ref_simulate(
   1500, sites = 6,
   site_shift = c(0, 0.8, -0.5, 0.3, 0, 1.0),
   site_log_scale = c(0, 0, 0, 0, 0.2, 0),
@@ -116,7 +116,7 @@ new_site <- new_site[new_site$site == "F", ][1:200, ]
 new_site$participant_id <- sprintf("F%04d", seq_len(nrow(new_site)))
 controls <- new_site[1:30, ]
 held_out <- new_site[31:200, ]
-table(norm_support(fit, held_out)$support)
+table(ref_support(fit, held_out)$support)
 ```
 
 There are three options, and they answer different questions.
@@ -125,11 +125,11 @@ There are three options, and they answer different questions.
    random effect for site F is zero, so the scores are relative to the
    average reference site. Any level difference of the scanner becomes a
    shift in everyone's `z`.
-2. **Adapt.** `norm_adapt()` freezes the shared trajectory and estimates
+2. **Adapt.** `ref_adapt()` freezes the shared trajectory and estimates
    a shrunk location (and optionally scale) offset for site F from the
    30 controls. This is the right tool when the scanner moves the
    measurements but the age trend is shared.
-3. **Calibrate by site.** `norm_calibrate(by = site)` re-maps the PIT
+3. **Calibrate by site.** `ref_calibrate(by = site)` re-maps the PIT
    values of site F through their empirical distribution on the 30
    controls. It fixes probabilities rather than parameters and needs
    more local data to do so without noise.
@@ -138,10 +138,10 @@ There are three options, and they answer different questions.
    it changes the reference for everyone else.
 
 ```{r strategies}
-adapted <- norm_adapt(fit, data = controls, by = site,
+adapted <- ref_adapt(fit, data = controls, by = site,
                       parameters = c("location", "scale"))
-calibrated <- norm_calibrate(fit, data = controls, by = site)
-refit <- norm_fit(spec, data = rbind(ref, controls), outcomes = all_of(regions),
+calibrated <- ref_calibrate(fit, data = controls, by = site)
+refit <- ref_fit(spec, data = rbind(ref, controls), outcomes = all_of(regions),
                   id = participant_id)
 adapted$adaptation
 ```
@@ -164,7 +164,7 @@ c(controls_mean_z = round(mean(ctrl_scores$z), 2),
 ```{r compare}
 strategies <- list(population = fit, adapted = adapted, calibrated = calibrated, refit = refit)
 comparison <- do.call(rbind, lapply(names(strategies), function(nm) {
-  a <- norm_assess(strategies[[nm]], newdata = held_out)
+  a <- ref_assess(strategies[[nm]], newdata = held_out)
   m <- a$marginal[a$marginal$.outcome == "y", ]
   data.frame(
     strategy = nm,
@@ -201,14 +201,14 @@ autoplot(adapted, type = "adaptation")
 
 Per-region Z-scores are correlated; a participant who is low on every
 region is more unusual than four independent `z = -1.5` values suggest.
-`norm_joint()` fits a Gaussian copula on the out-of-fold reference
+`ref_joint()` fits a Gaussian copula on the out-of-fold reference
 scores, with a shrinkage correlation estimate, and returns a joint
 centile calibrated through the reference distribution of the
 Mahalanobis statistic. Missing regions are handled by the observed
 submatrix.
 
 ```{r joint}
-joint <- norm_joint(cf)
+joint <- ref_joint(cf)
 joint
 new_scores <- predict(adapted, newdata = held_out, type = "scores")
 joint_scores <- predict(joint, new_scores)
@@ -218,13 +218,13 @@ mean(joint_scores$joint_centile > 0.95, na.rm = TRUE)
 
 ## Flags, and how many to expect
 
-`norm_flag()` marks `|z| > 2` per region and adds FDR-adjusted two-sided
+`ref_flag()` marks `|z| > 2` per region and adds FDR-adjusted two-sided
 tail probabilities across all region-by-person tests. Under calibration
 about 4.6% of rows exceed the threshold by chance; the attribute
 `expected_exceedances` is that count.
 
 ```{r flag}
-flags <- norm_flag(new_scores, threshold = 2)
+flags <- ref_flag(new_scores, threshold = 2)
 c(observed = attr(flags, "observed_exceedances"),
   expected = round(attr(flags, "expected_exceedances"), 1))
 sum(flags$fdr < 0.05, na.rm = TRUE)
@@ -233,7 +233,7 @@ autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
 
 ## What to report
 
-* The reference: `norm_reference(fit)` prints a model card with the
+* The reference: `ref_reference(fit)` prints a model card with the
   family, formulas, covariate ranges, site levels, and software
   versions. Ship the frozen bundle, not the training data.
 * Out-of-fold calibration of the reference (the `oof_calibration` table),
@@ -246,5 +246,5 @@ autoplot(new_scores[new_scores$.row <= 15, ], type = "heatmap")
   rather than a list of flagged people.
 
 ```{r card}
-norm_reference(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
+ref_reference(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
 ```

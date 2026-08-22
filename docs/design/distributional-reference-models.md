@@ -100,8 +100,8 @@ The common case should be concise, while the underlying specification remains ex
 ```r
 library(referent)
 
-spec <- norm_spec(
-  family = norm_shash(),
+spec <- ref_spec(
+  family = ref_shash(),
 
   location = ~ s(age, k = 10) +
                sex +
@@ -114,14 +114,14 @@ spec <- norm_spec(
   tail = ~ 1
 )
 
-fit <- norm_fit(
+fit <- ref_fit(
   spec,
   data = reference,
   outcomes = starts_with("marker_"),
   id = participant_id
 )
 
-assessment <- norm_assess(
+assessment <- ref_assess(
   fit,
   newdata = validation
 )
@@ -140,7 +140,7 @@ scores <- predict(
 )
 ```
 
-The result would be a long-form `norm_scores` object:
+The result would be a long-form `ref_scores` object:
 
 ```text
 .row  .id   .outcome   observed   median   centile      z
@@ -163,14 +163,14 @@ Useful transformations would be explicit:
 Model adaptation, cross-fitting, and longitudinal scoring should feel like natural extensions:
 
 ```r
-local_fit <- norm_adapt(
+local_fit <- ref_adapt(
   fit,
   data = local_reference,
   by = site,
   parameters = c("location", "scale")
 )
 
-oof_scores <- norm_crossfit(
+oof_scores <- ref_crossfit(
   spec,
   data = reference,
   outcomes = starts_with("marker_"),
@@ -179,7 +179,7 @@ oof_scores <- norm_crossfit(
   cluster = participant_id
 )
 
-change <- norm_change(
+change <- ref_change(
   local_fit,
   data = repeated_observations,
   id = participant_id,
@@ -196,13 +196,13 @@ S3 is preferable to R6 here. The objects should be inspectable, serializable, an
 
 | Class | Responsibility |
 |---|---|
-| `norm_spec` | Family, parameter formulas, engine, fitting controls |
-| `norm_fit` | A common schema plus named per-outcome fitted models |
-| `norm_dist` | Vectorized predictive distribution returned by an engine |
-| `norm_scores` | Subject-by-outcome centiles, deviations, tails, uncertainty |
-| `norm_assessment` | Proper scores, calibration, support and convergence results |
-| `norm_adaptation` | Documented target-domain adjustment |
-| `norm_reference` | Frozen, shareable model bundle with provenance |
+| `ref_spec` | Family, parameter formulas, engine, fitting controls |
+| `ref_fit` | A common schema plus named per-outcome fitted models |
+| `ref_dist` | Vectorized predictive distribution returned by an engine |
+| `ref_scores` | Subject-by-outcome centiles, deviations, tails, uncertainty |
+| `ref_assessment` | Proper scores, calibration, support and convergence results |
+| `ref_adaptation` | Documented target-domain adjustment |
+| `ref_reference` | Frozen, shareable model bundle with provenance |
 
 The crucial internal contract is not “return coefficients.” Every engine must be able to return a distribution object supporting:
 
@@ -280,7 +280,7 @@ Fit one final model to all suitable reference observations, then score genuinely
 
 #### Scientific evaluation
 
-Use `norm_crossfit()` so that every reference observation receives an out-of-fold score. The package then refits the final deployment model separately.
+Use `ref_crossfit()` so that every reference observation receives an out-of-fold score. The package then refits the final deployment model separately.
 
 Training-data prediction should be visibly marked:
 
@@ -298,7 +298,7 @@ This is a meaningful improvement over many existing workflows and costs very lit
 
 Calibration and predictive accuracy are not interchangeable. The 2026 paper gives concrete examples in which outcomes with mediocre SMSE, MSLL, or correlation nevertheless had reasonable centile calibration, while other outcomes had acceptable mean-fit metrics but poor Z-score calibration.
 
-`norm_assess()` should report at least four distinct dimensions:
+`ref_assess()` should report at least four distinct dimensions:
 
 #### Overall probabilistic fit
 
@@ -348,7 +348,7 @@ F^\star(y\mid x)=G\!\left(F_0(y\mid x)\right).
 Because \(G\) is monotone, \(F^\star\) remains a valid CDF. This can correct moderate global or group-specific probability miscalibration without refitting the underlying trajectory.
 
 ```r
-calibrated_fit <- norm_calibrate(
+calibrated_fit <- ref_calibrate(
   fit,
   data = calibration_reference,
   method = "rank",
@@ -477,7 +477,7 @@ D_i^2=z_i^\top R^{-1}z_i.
 6. Return feature-level contribution summaries.
 
 ```r
-joint <- norm_joint(
+joint <- ref_joint(
   oof_scores,
   method = "gaussian_copula",
   covariance = "shrinkage"
@@ -527,7 +527,7 @@ A shareable reference bundle should include:
 This should be generated automatically as a model card:
 
 ```r
-print(norm_reference(fit))  # norm_card() merged into print.norm_reference (2026-08-22)
+print(ref_reference(fit))  # ref_card() merged into print.ref_reference (2026-08-22)
 ```
 
 ---
@@ -674,7 +674,7 @@ Recreate the central comparison between Gaussian and non-Gaussian normative mode
 
 ### Reproduction of the z-diff simulation
 
-Vary true disruption and residual autocorrelation, and verify that `norm_change()` maintains the nominal false-positive rate while naïve Z-score subtraction does not.
+Vary true disruption and residual autocorrelation, and verify that `ref_change()` maintains the nominal false-positive rate while naïve Z-score subtraction does not.
 
 ### Multi-group transfer
 
@@ -729,7 +729,7 @@ The vignettes should use a synthetic growth measure, a cognitive or psychometric
 
 Add:
 
-- longitudinal `norm_change()`;
+- longitudinal `ref_change()`;
 - discrete and ordinal outcomes with randomized PIT;
 - the Gaussian-copula joint layer;
 - optional `gamlss`/`gamlss2` engines;

@@ -2,15 +2,15 @@ simple_spec <- function(family = "gaussian", scale = FALSE) {
   loc <- ~ s(age, k = 5) + sex
   sc <- if (isTRUE(scale)) ~ s(age, k = 4) else ~ 1
   if (identical(family, "shash")) {
-    norm_spec(
-      family = norm_shash(),
+    ref_spec(
+      family = ref_shash(),
       location = loc,
       scale = sc,
       skew = ~1,
       tail = ~1
     )
   } else {
-    norm_spec(family = norm_gaussian(), location = loc, scale = sc)
+    ref_spec(family = ref_gaussian(), location = loc, scale = sc)
   }
 }
 
@@ -34,7 +34,7 @@ simulate_skewed <- function(n, seed = NULL, skew = 1.4, tail = 0.7) {
 # Two-visit longitudinal data with a fixed lag and correlation `r` between
 # the visits' normal scores (stable rank + nugget, no Matern component).
 simulate_two_visit <- function(n_id, r, lag = 2, seed = NULL) {
-  norm_simulate(
+  ref_simulate(
     2L * n_id, kind = "longitudinal", lag = lag,
     tau_b = sqrt(r), tau_g = 0, sigma_e = sqrt(1 - r), seed = seed
   )
@@ -73,17 +73,17 @@ print_text <- function(x) {
 
 # Multi-outcome fits used by the prediction and performance tests.
 perf_data <- function() {
-  ref <- norm_simulate(300, sites = 4, scale = "age", seed = 11)
-  new <- norm_simulate(80, sites = 4, scale = "age", seed = 12)
+  ref <- ref_simulate(300, sites = 4, scale = "age", seed = 11)
+  new <- ref_simulate(80, sites = 4, scale = "age", seed = 12)
   list(ref = ref, new = new)
 }
 
 perf_specs <- function() {
   list(
-    constant = norm_spec(norm_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re")),
-    gaulss = norm_spec(norm_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re"),
+    constant = ref_spec(ref_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re")),
+    gaulss = ref_spec(ref_gaussian(), ~ s(age, k = 6) + sex + s(site, bs = "re"),
                        scale = ~ s(age, k = 4)),
-    shash = norm_spec(norm_shash(), ~ s(age, k = 6) + sex, scale = ~ s(age, k = 4))
+    shash = ref_spec(ref_shash(), ~ s(age, k = 6) + sex, scale = ~ s(age, k = 4))
   )
 }
 

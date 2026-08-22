@@ -24,20 +24,20 @@ pak::pak("bbuchsbaum/referent")
 ```r
 library(referent)
 
-ref <- norm_simulate(300, kind = "gaussian", scale = "age", seed = 1)
-spec <- norm_spec(
-  family = norm_gaussian(),
+ref <- ref_simulate(300, kind = "gaussian", scale = "age", seed = 1)
+spec <- ref_spec(
+  family = ref_gaussian(),
   location = ~ s(age, k = 8) + sex,
   scale = ~ s(age, k = 5)
 )
-fit <- norm_fit(spec, data = ref, outcomes = "y")
+fit <- ref_fit(spec, data = ref, outcomes = "y")
 fit
 
-target <- norm_simulate(100, kind = "gaussian", scale = "age", seed = 2)
+target <- ref_simulate(100, kind = "gaussian", scale = "age", seed = 2)
 scores <- predict(fit, newdata = target, type = "scores")
 scores[1:3, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
 
-norm_assess(fit, newdata = target)$marginal[, c("mean_z", "var_z", "cover_95")]
+ref_assess(fit, newdata = target)$marginal[, c("mean_z", "var_z", "cover_95")]
 autoplot(fit, type = "centiles", by = sex, newdata = target)
 ```
 
@@ -68,22 +68,22 @@ draws (an internal `dist_shash_draws` class); forecasts return
 
 | Step | Function |
 |---|---|
-| Specify a family and formulas | `norm_spec()`, `norm_gaussian()`, `norm_shash()` |
-| Fit one model per outcome | `norm_fit()` |
+| Specify a family and formulas | `ref_spec()`, `ref_gaussian()`, `ref_shash()` |
+| Fit one model per outcome | `ref_fit()` |
 | Score observations or get distributions | `predict()`, `as_scores()`, `augment()` |
-| Choose among candidate distributions out of sample | `norm_select()`, `norm_crossfit()` |
-| Check calibration on held-out data | `norm_assess()` |
-| Transport to a new site | `norm_adapt()`, `norm_calibrate()`, `norm_support()` |
-| Joint deviation across outcomes | `norm_joint()` |
-| Threshold exceedances with FDR | `norm_flag()` |
-| Freeze and document a reference | `norm_reference()` |
-| Longitudinal change | `norm_dynamics()`, `norm_transition()`, `norm_forecast()`, `norm_derivative()` |
+| Choose among candidate distributions out of sample | `ref_select()`, `ref_crossfit()` |
+| Check calibration on held-out data | `ref_assess()` |
+| Transport to a new site | `ref_adapt()`, `ref_calibrate()`, `ref_support()` |
+| Joint deviation across outcomes | `ref_joint()` |
+| Threshold exceedances with FDR | `ref_flag()` |
+| Freeze and document a reference | `ref_reference()` |
+| Longitudinal change | `ref_dynamics()`, `ref_transition()`, `ref_forecast()`, `ref_derivative()` |
 | Graphics | `autoplot()` methods, `fortify_centiles()`, `theme_referent()` |
 
 Longitudinal change is a dynamic extension of the reference model, not a
-standalone calculation: `norm_fit()` gives the marginal distributions,
-`norm_dynamics()` estimates within-person dependence on normal scores, and
-`norm_transition()` / `norm_forecast()` read innovation Z, change Z,
+standalone calculation: `ref_fit()` gives the marginal distributions,
+`ref_dynamics()` estimates within-person dependence on normal scores, and
+`ref_transition()` / `ref_forecast()` read innovation Z, change Z,
 velocity centiles, and conditional forecasts off the same process.
 
 ## Articles

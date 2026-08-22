@@ -4,14 +4,14 @@
 #' also rebuild a chart by hand.
 #'
 #' @name fortify_centiles
-#' @param fit A [norm_fit].
+#' @param fit A [ref_fit].
 #' @param outcome Outcome name.
 #' @param x Numeric covariate for the x-axis.
 #' @param by Optional grouping factor (column name). One chart is built
 #'   per level; other covariates stay at their reference value.
 #' @param centiles Probability levels to evaluate.
 #' @param n Grid length along `x`.
-#' @return A list of class `norm_centile_data` with `lines` and `ribbons` tibbles.
+#' @return A list of class `ref_centile_data` with `lines` and `ribbons` tibbles.
 NULL
 
 #' @rdname fortify_centiles
@@ -45,7 +45,7 @@ fortify_centiles <- function(fit,
   ribbons <- ribbon_from_lines(lines)
   structure(
     list(lines = lines, ribbons = ribbons, x_name = x_nm, by = by_nm, outcome = outcome),
-    class = "norm_centile_data"
+    class = "ref_centile_data"
   )
 }
 
@@ -127,8 +127,8 @@ eq_group <- function(x, g) {
 }
 
 fortify_kernel <- function(fit, lags = NULL) {
-  if (!inherits(fit, "norm_dynamics")) {
-    cli::cli_abort("{.fn fortify_kernel} expects a {.cls norm_dynamics} object.")
+  if (!inherits(fit, "ref_dynamics")) {
+    cli::cli_abort("{.fn fortify_kernel} expects a {.cls ref_dynamics} object.")
   }
   max_lag <- fit$lag_range[[2]]
   hi <- if (is.finite(max_lag) && max_lag > 0) {
