@@ -70,6 +70,86 @@ tidy(fit)[, c("outcome", "status", "n", "edf_s(age)", "edf_s(site)")]
 autoplot(fit, type = "centiles", outcome = "y", by = sex)
 ```
 
+# Scaling to many outcomes
+
+A regional panel has tens of outcomes; a vertex-wise or voxel-wise chart has
+tens of thousands. `ref_fit()` fits each outcome independently, so the
+problem is embarrassingly parallel, and the package has three levers for it.
+
+**Parallel fits in one session.** When `future.apply` is installed and a
+non-sequential plan is active, outcomes are fitted across workers. Nothing
+else changes: the same call, the same object back.
+
+```{r parallel, eval = FALSE}
+future::plan(future::multisession, workers = 8)
+fit_wide <- ref_fit(spec, data = wide, outcomes = starts_with("vertex_"))
+future::plan(future::sequential)
+```
+
+**Memory per outcome, and why to freeze.** Each fitted outcome carries its
+`mgcv` model, including the model frame, fitted values, and residuals; those
+are what make a fit large. `ref_freeze()` keeps only what prediction needs
+(coefficients, their covariance, the smooth constructions, factor levels)
+and reproduces the fit's predictions exactly. On 20 outcomes at n = 5000,
+the fit is about 14 MB and the bundle about 3 MB, a factor of 4.6; the
+saving grows with n because the bundle's size does not depend on it.
+
+```{r freeze-size}
+wide <- ref_simulate(5000, seed = 1)
+set.seed(2)
+for (j in 1:20) wide[[sprintf("vertex_%02d", j)]] <- wide$y + rnorm(5000)
+wide_spec <- ref_spec(ref_gaussian(), ~ s(age, k = 6) + sex, scale = ~1)
+fit_wide <- ref_fit(wide_spec, wide, outcomes = starts_with("vertex_"))
+bundle_wide <- ref_freeze(fit_wide)
+c(fit = format(object.size(fit_wide), units = "MB"),
+  bundle = format(object.size(bundle_wide), units = "MB"))
+```
+
+**Blocks as independent jobs.** For a matrix too wide to hold in one
+session, split the outcome columns into blocks, fit each block as its own
+job, and combine the score tables afterwards. Outcomes share no state in
+`ref_fit()`, so the combined result is identical to one big fit. The demo
+below fits 12 outcomes as three blocks of four and checks that claim.
+
+```{r blocks}
+vertices <- sprintf("vertex_%02d", 1:12)
+target <- ref_simulate(50, seed = 3)
+for (v in vertices) target[[v]] <- target$y + rnorm(50)
+single <- ref_fit(wide_spec, wide, outcomes = all_of(vertices))
+blocks <- split(vertices, rep(1:3, each = 4))
+block_fits <- lapply(blocks, function(b) ref_fit(wide_spec, wide, outcomes = all_of(b)))
+
+z_single <- predict(single, target, uncertainty = "conditional")
+z_blocks <- vctrs::vec_rbind(!!!lapply(block_fits, predict, newdata = target,
+                                       uncertainty = "conditional"))
+identical(z_single$z, z_blocks$z)
+```
+
+The same holds for `augment()`: the wide per-observation frames from each
+block share the covariate columns and can be joined on `.row`. On a cluster,
+the block is the array index. A `fit_block.R` that reads its block of
+columns, fits, freezes, and saves the bundle is the whole job:
+
+```{r slurm, eval = FALSE}
+# fit_block.R, run as: Rscript fit_block.R $SLURM_ARRAY_TASK_ID
+block <- as.integer(commandArgs(trailingOnly = TRUE)[[1]])
+columns <- readRDS("outcome_blocks.rds")[[block]]   # list of column-name vectors
+wide <- arrow::read_parquet("reference.parquet", col_select = c("age", "sex", "site", columns))
+fit <- ref_fit(spec, wide, outcomes = all_of(columns))
+saveRDS(ref_freeze(fit), sprintf("bundles/block_%04d.rds", block))
+```
+
+```
+#SBATCH --array=1-100
+#SBATCH --cpus-per-task=1 --mem=4G
+Rscript fit_block.R $SLURM_ARRAY_TASK_ID
+```
+
+Scoring a new cohort is then `vctrs::vec_rbind()` over
+`predict(readRDS(path), newdata)` for each bundle. Because bundles are small,
+the 100 of them for 100k vertices are a few hundred megabytes, and scoring
+reads them one at a time.
+
 # Out-of-fold reference scores
 
 Scoring the reference rows with the model that was fit to them
@@ -207,9 +287,10 @@ controls and the other 170 participants, which none of them can know.
 They differ in how they spend the 30 observations. Adaptation estimates
 two numbers (a shrunk location and log-scale offset) on the family's own
 likelihood and leaves the age curve alone, so it is the most stable.
-Calibration by site re-maps probabilities through a 30-knot rank map;
-its centre is as good as the controls' mean, but its spread and tails
-are noisy at this sample size. The refit lets the controls move the
+Calibration by site re-maps probabilities through a four-parameter
+sinh-arcsinh map on the normal scores; its centre is as good as the
+controls' mean, but its spread and tail parameters are noisy at this sample
+size. The refit lets the controls move the
 shared smooth and the random-effect variance as well as the site level,
 and it changes the reference for every other site. In this simulation with 30
 controls, adaptation spends the local information on two parameters and is
@@ -292,6 +373,70 @@ stopifnot(
 ref_freeze(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
 ```
 
-Continue with [Longitudinal change](/articles/longitudinal-change/), or use
-[Troubleshooting reference models](/articles/troubleshooting/) when transported
+# Ship and reuse a reference
+
+A reference is useful to other sites only if it can be applied without the
+training data. `ref_freeze()` produces that object; `saveRDS()` ships it.
+
+```{r ship}
+bundle <- ref_freeze(fit, criteria = "healthy controls, 20-80 years", units = "mm^3")
+bundle_path <- file.path(tempdir(), "reference-v1.rds")
+saveRDS(bundle, bundle_path)
+file.size(bundle_path)
+```
+
+The bundle contains, per outcome, the coefficients, their covariance `Vp`,
+the smooth bases, the terms and factor levels (`xlevels`), plus the support
+reference (covariate ranges and factor levels), the calibration and
+adaptation slots if any were estimated, the reference-sample baseline used by
+`standardized_log_score`, and the model card. It excludes the training rows,
+the model frame, fitted values, and residuals. No individual observation can
+be recovered from it, which is what makes it safe to share where the data
+are not.
+
+A receiving site needs only the file and the package. Everything that applies
+to a `ref_fit` applies to the bundle: scoring, support checks, adaptation, and
+calibration.
+
+```{r reuse}
+reference <- readRDS(bundle_path)
+reference
+local_scores <- predict(reference, newdata = held_out, outcomes = "y",
+                        allow_extrapolation = TRUE)
+table(ref_support(reference, held_out)$support)
+local_adapted <- ref_adapt(reference, data = controls, by = site)
+local_calibrated <- ref_calibrate(reference, data = controls, by = site)
+local_adapted$adaptation
+```
+
+The bundle's predictions are the fit's predictions, not an approximation:
+
+```{r bundle-equality}
+identical(
+  predict(fit, held_out, outcomes = "y", uncertainty = "conditional",
+          allow_extrapolation = TRUE)$z,
+  predict(reference, held_out, outcomes = "y", uncertainty = "conditional",
+          allow_extrapolation = TRUE)$z
+)
+```
+
+**Versioning.** The printed card records the package, `mgcv`, and R versions
+that produced the bundle, and `bundle$data_hash` is a fingerprint of the
+training data: its row count, the covariate and outcome names, and a
+per-column sum. It distinguishes references fitted to different data without
+storing any of it; add `rlang::hash(ref)` to the bundle yourself if you need
+a cryptographic digest. Name files by reference version
+(`reference-v1.rds`), not by date, and treat a change in the reference
+cohort, the specification, or the package major version as a new reference:
+scores from different references are not comparable, and the fingerprint is
+how a reader can tell two bundles apart.
+
+```{r provenance}
+bundle$versions
+bundle$data_hash
+```
+
+Continue with [Longitudinal change](https://bbuchsbaum.github.io/referent/articles/longitudinal-change/)
+(`vignette("longitudinal-change", package = "referent")`), or use
+[Troubleshooting reference models](https://bbuchsbaum.github.io/referent/articles/troubleshooting/) when transported
 scores remain masked or unstable.

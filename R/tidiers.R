@@ -91,7 +91,8 @@ glance.ref_assessment <- function(x, ...) {
     n = x$n,
     n_outcomes = nrow(x$overall),
     !!!col_mean(x$overall, c("mean_log_score", "crps", "rmse", "smse", "ev", "cor")),
-    !!!col_mean(x$marginal, c("mean_z", "var_z", "cover_95")),
+    !!!col_mean(x$marginal, c("mean_z", "var_z", "skew_z", "excess_kurtosis_z",
+                              "shapiro_w", "mace", "cover_95")),
     in_sample = x$in_sample
   )
 }

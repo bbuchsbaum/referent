@@ -98,7 +98,7 @@ thaw_model <- function(fit_one) {
 }
 
 predict_mgcv_dist <- function(fit_one, newdata, uncertainty = "conditional",
-                              n_draw = 200L, seed = 1L) {
+                              n_draw = 200L, seed = 1L, exclude = NULL) {
   if (is.null(fit_one$model)) {
     cli::cli_abort("Cannot predict from a failed fit.")
   }
@@ -107,7 +107,7 @@ predict_mgcv_dist <- function(fit_one, newdata, uncertainty = "conditional",
   }
   model <- thaw_model(fit_one)
   fam <- fit_one$family$name
-  pars <- mgcv_parameters(model, newdata, fam, fit_one)
+  pars <- mgcv_parameters(model, newdata, fam, fit_one, exclude = exclude)
   if (identical(uncertainty, "total") && !is.null(model$Vp)) {
     if (identical(fit_one$mgcv_family, "gaussian")) {
       # identity location, constant scale: the total predictive is exactly
@@ -116,7 +116,7 @@ predict_mgcv_dist <- function(fit_one, newdata, uncertainty = "conditional",
         pars$location, sqrt(pars$scale^2 + pars$epistemic_sd^2)
       ))
     }
-    return(mgcv_dist_total(model, newdata, fam, fit_one, pars, n_draw, seed))
+    return(mgcv_dist_total(model, newdata, fam, fit_one, pars, n_draw, seed, exclude))
   }
   make_dist(fam, pars)
 }
@@ -155,28 +155,80 @@ unseen_level_rows <- function(model, newdata) {
   bad
 }
 
+# Labels of the smooths whose terms include any of `vars` (random-effect
+# and factor-smooth terms of a grouping covariate, for instance).
+smooths_using <- function(model, vars) {
+  sm <- model$smooth
+  uses <- vapply(sm, function(s) any(c(s$term, s$fterm) %in% vars), logical(1))
+  vapply(sm[uses], `[[`, "", "label")
+}
+
+# Rows whose level of a factor-smooth (`bs = "fs"`) factor was not seen
+# in the fit. mgcv predicts NA for them, whereas an unseen level of a
+# `bs = "re"` smooth is given a zero effect; the two are reconciled by
+# excluding the factor smooth for such rows (the population curve).
+unseen_fs_rows <- function(model, newdata) {
+  bad <- rep(FALSE, nrow(newdata))
+  for (s in model$smooth) {
+    if (!inherits(s, "fs.interaction") || !s$fterm %in% names(newdata)) {
+      next
+    }
+    v <- as.character(newdata[[s$fterm]])
+    bad <- bad | (!is.na(v) & !v %in% s$flev)
+  }
+  bad
+}
+
 # predict.gam on the rows without unseen parametric levels; NULL when
 # prediction fails. `pad` rebuilds a full-length result from the kept
-# rows' values.
-predict_gam_rows <- function(model, newdata, pad, ...) {
+# rows' values. Rows with an unseen factor-smooth level are predicted
+# with that smooth excluded.
+predict_gam_rows <- function(model, newdata, pad, ..., exclude = NULL) {
   bad <- unseen_level_rows(model, newdata)
   if (all(bad)) {
     return(pad(NULL, bad))
   }
-  pr <- tryCatch(
-    predict_gam_quiet(model, newdata[!bad, , drop = FALSE], ...),
-    error = function(e) NULL
-  )
+  fs_new <- unseen_fs_rows(model, newdata) & !bad
+  fs_labels <- vapply(Filter(function(s) inherits(s, "fs.interaction"), model$smooth),
+                      `[[`, "", "label")
+  one <- function(rows, excl) {
+    tryCatch(
+      predict_gam_quiet(model, newdata[rows, , drop = FALSE], ..., exclude = excl),
+      error = function(e) NULL
+    )
+  }
+  pr <- if (!any(fs_new)) {
+    one(!bad, exclude)
+  } else {
+    pieces <- list(one(!bad & !fs_new, exclude), one(fs_new, union(exclude, fs_labels)))
+    if (any(vapply(pieces, is.null, logical(1)))) NULL else bind_pred(pieces, !bad, fs_new)
+  }
   if (is.null(pr)) {
     return(NULL)
   }
   pad(pr, bad)
 }
 
+# Reassemble two predict.gam results (plain or `se.fit` lists, vectors or
+# matrices) into one in the order of the kept rows.
+bind_pred <- function(pieces, kept, second) {
+  ord <- order(c(which(kept & !second), which(second)))
+  join <- function(a, b) {
+    if (is.list(a)) {
+      return(Map(join, a, b))
+    }
+    out <- if (is.matrix(a)) rbind(a, b)[ord, , drop = FALSE] else c(a, b)[ord]
+    attr(out, "lpi") <- attr(a, "lpi")
+    out
+  }
+  join(pieces[[1L]], pieces[[2L]])
+}
+
 # One `predict(type = "link", se.fit = TRUE)` call: a list of linear
 # predictors (one vector per lp) and the standard error of the first.
-mgcv_link <- function(model, newdata) {
-  predict_gam_rows(model, newdata, type = "link", se.fit = TRUE, pad = function(pr, bad) {
+mgcv_link <- function(model, newdata, exclude = NULL) {
+  predict_gam_rows(model, newdata, type = "link", se.fit = TRUE, exclude = exclude,
+                   pad = function(pr, bad) {
     n <- length(bad)
     if (is.null(pr)) {
       return(list(eta = list(rep(NA_real_, n)), se = rep(NA_real_, n)))
@@ -191,8 +243,8 @@ mgcv_link <- function(model, newdata) {
 
 # The lp matrix with NA rows for unseen parametric levels; NULL when
 # prediction fails or no row can be predicted.
-mgcv_lpmatrix <- function(model, newdata) {
-  predict_gam_rows(model, newdata, type = "lpmatrix", pad = function(lp, bad) {
+mgcv_lpmatrix <- function(model, newdata, exclude = NULL) {
+  predict_gam_rows(model, newdata, type = "lpmatrix", exclude = exclude, pad = function(lp, bad) {
     if (is.null(lp)) {
       return(NULL)
     }
@@ -203,9 +255,9 @@ mgcv_lpmatrix <- function(model, newdata) {
   })
 }
 
-mgcv_parameters <- function(model, newdata, fam, fit_one) {
+mgcv_parameters <- function(model, newdata, fam, fit_one, exclude = NULL) {
   n <- nrow(newdata)
-  link <- mgcv_link(model, newdata)
+  link <- mgcv_link(model, newdata, exclude)
   if (is.null(link)) {
     return(list(location = rep(NA_real_, n), scale = rep(NA_real_, n),
                 skew = rep(0, n), tail = rep(1, n), epistemic_sd = rep(0, n)))
@@ -252,8 +304,9 @@ residual_scale <- function(model) {
 
 # Equal-weight mixture over coefficient draws from N(beta_hat, Vp). Each
 # linear predictor is one product of the lp matrix with the draw matrix.
-mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1L) {
-  lp <- mgcv_lpmatrix(model, newdata)
+mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1L,
+                            exclude = NULL) {
+  lp <- mgcv_lpmatrix(model, newdata, exclude)
   if (is.null(lp) || is.null(model$Vp)) {
     return(make_dist(fam, cond))
   }

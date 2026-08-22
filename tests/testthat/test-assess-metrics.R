@@ -1,0 +1,30 @@
+test_that("mace and shapiro_w flag a misspecified family and pass a calibrated one", {
+  dat <- simulate_skewed(3000, seed = 51)
+  test <- simulate_skewed(1500, seed = 52)
+  g <- ref_fit(simple_spec("gaussian", scale = TRUE), dat, outcomes = "y")
+  s <- ref_fit(simple_spec("shash", scale = TRUE), dat, outcomes = "y")
+  a_g <- ref_assess(g, test)$marginal
+  a_s <- ref_assess(s, test)$marginal
+  expect_true(all(c("mace", "shapiro_w", "skew_z", "excess_kurtosis_z") %in% names(a_s)))
+  expect_lt(a_s$mace, 0.02)
+  expect_gt(a_s$shapiro_w, 0.99)
+  expect_gt(a_g$mace, a_s$mace * 2)
+  expect_lt(a_g$shapiro_w, a_s$shapiro_w)
+  expect_gt(abs(a_g$skew_z), 0.3)
+  expect_lt(abs(a_s$skew_z), 0.15)
+  gl <- glance(ref_assess(s, test))
+  expect_true(all(c("mace", "shapiro_w", "skew_z", "excess_kurtosis_z") %in% names(gl)))
+  expect_equal(gl$mace, a_s$mace)
+})
+
+test_that("mace matches its definition and shapiro_w subsamples above 5000", {
+  u <- c(0.01, 0.2, 0.3, 0.6, 0.9)
+  grid <- c(0.05, 0.25, 0.5, 0.75, 0.95)
+  expect_equal(mace(u), mean(abs(grid - sapply(grid, function(q) mean(u <= q)))))
+  expect_equal(mace(numeric()), NA_real_)
+  set.seed(1)
+  z <- stats::rnorm(6000)
+  expect_equal(shapiro_w(z), shapiro_w(z))
+  expect_gt(shapiro_w(z), 0.995)
+  expect_true(is.na(shapiro_w(c(1, 2))))
+})

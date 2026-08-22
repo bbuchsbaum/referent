@@ -17,9 +17,9 @@ raw standardized residual.
 > Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
 > are reported as unsupported instead of being silently coerced.
 
-Browse the [documentation site](https://bbuchsbaum.github.io/referent/), or
-start directly with [Getting started](vignettes/getting-started.Rmd). Keep
-[Troubleshooting reference-model workflows](vignettes/troubleshooting.Rmd)
+Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
+(or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep
+[Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/)
 nearby for support, transport, calibration, panel-fit, and longitudinal
 failure modes. The complete article map is below.
 
@@ -78,12 +78,13 @@ generics above rather than depend on an internal representation.
 
 | Step | Function |
 |---|---|
-| Specify a family and formulas | `ref_spec()`, `ref_gaussian()`, `ref_shash()` |
-| Fit one model per outcome | `ref_fit()` |
+| Specify a family, formulas, and an optional response transform | `ref_spec()`, `ref_gaussian()`, `ref_shash()` |
+| Fit one model per outcome (in parallel under a `future` plan) | `ref_fit()` |
 | Score observations or get distributions | `predict()`, `as_scores()`, `augment()` |
 | Choose among candidate distributions out of sample | `ref_select()`, `ref_crossfit()` |
 | Check calibration on held-out data | `ref_assess()` |
 | Transport to a new site | `ref_adapt()`, `ref_calibrate()`, `ref_support()` |
+| Remove site effects from the data themselves | `predict(type = "harmonised")` |
 | Joint deviation across outcomes | `ref_joint()` |
 | Threshold exceedances with FDR | `ref_flag()` |
 | Freeze and document a reference | `ref_freeze()` |
@@ -98,20 +99,21 @@ velocity centiles, and conditional forecasts off the same process.
 
 ## Articles
 
-- [Getting started](vignettes/getting-started.Rmd): fit, model ladder,
+- [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/): fit, model ladder,
   scoring, support, predictive distributions, and interpretation.
-- [Validate and choose a reference model](vignettes/validate-reference.Rmd):
+- [Validate and choose a reference model](https://bbuchsbaum.github.io/referent/articles/validate-reference/):
   out-of-fold model selection, held-out calibration, and conditional drift.
-- [Brain charts across sites](vignettes/brain-charts-across-sites.Rmd):
-  random site effects, out-of-fold reference scores, scoring a new site
-  (population curve vs adapt vs calibrate vs refit), joint deviation, FDR
-  flags, what to report.
-- [Longitudinal change](vignettes/longitudinal-change.Rmd): dynamics,
+- [Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/):
+  random site effects, out-of-fold reference scores, scaling to many
+  outcomes, scoring a new site (population curve vs adapt vs calibrate vs
+  refit), joint deviation, FDR flags, shipping a frozen reference.
+- [Longitudinal change](https://bbuchsbaum.github.io/referent/articles/longitudinal-change/): dynamics,
   identifiability and the stable model, six longitudinal quantities,
   forecasts.
-- [Coming from PCNtoolkit](vignettes/pcntoolkit.Rmd): concept and metric
-  mapping.
-- [Troubleshooting reference-model workflows](vignettes/troubleshooting.Rmd):
+- [Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/): concept and metric
+  mapping (warped BLR, HBR batch effects and random slopes, harmonised
+  outputs, MSLL/SMSE/EV/MACE), and what is deliberately missing.
+- [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/):
   missing and unsupported covariates, transported unseen sites, small local
   samples, partial panel fits, honest assessment, and unidentified dynamics.
 

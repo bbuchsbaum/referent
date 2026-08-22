@@ -115,7 +115,20 @@ autoplot(assessment, type = "worm")
 
 A tilted worm suggests a scale error; curvature suggests skew or tail
 misfit. Treat that shape as a diagnosis to test, not automatic permission to
-add a more flexible family.
+add a more flexible family. The QQ plot shows the same ordered scores
+against the standard normal without the detrending, which makes gross tail
+departures easier to see and small ones harder.
+
+```{r qq-plot, fig.alt="Quantile-quantile plot of held-out normal scores against the standard normal."}
+autoplot(assessment, type = "qq")
+```
+
+The `tail` table quantifies what the plot shows: observed versus expected
+exceedance rates at several tail levels, with standard errors.
+
+```{r tail}
+assessment$tail
+```
 
 # Does calibration drift across covariates or groups?
 
@@ -146,6 +159,7 @@ validation cohort. If failure is concentrated at a new scanner, use a
 transport analysis instead of bending the shared trajectory to that scanner.
 If scores are missing, diagnose support before model complexity.
 
-Continue with [Brain charts across sites](/articles/brain-charts-across-sites/), or
-use [Troubleshooting reference models](/articles/troubleshooting/) when a fit or
+Continue with [Brain charts across sites](https://bbuchsbaum.github.io/referent/articles/brain-charts-across-sites/)
+(`vignette("brain-charts-across-sites", package = "referent")`), or
+use [Troubleshooting reference models](https://bbuchsbaum.github.io/referent/articles/troubleshooting/) when a fit or
 score does not behave as expected.

@@ -193,6 +193,18 @@ autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age
 autoplot(tr, type = "innovation")
 ```
 
+The thrive plot is the population-level view of the same process. Each
+line starts on a reference centile and follows the `thrive` conditional
+quantile (by default 0.025) of the forecast `horizon` time units later: a
+follow-up below that line is unexpectedly low *given where the person
+started*, which is what innovation Z measures. Because the process regresses
+toward the mean, the lines run toward the median, and a person who merely
+crosses a centile line has not necessarily changed more than expected.
+
+```{r thrive, fig.alt="Thrive lines: conditional 2.5 percent forecast quantiles two years ahead for subjects starting at several reference centiles, over the centile chart."}
+autoplot(dyn, type = "thrive", horizon = 2)
+```
+
 # Forecasts
 
 `ref_forecast()` conditions the marginal distribution at future times
@@ -237,6 +249,7 @@ as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]
   separable; otherwise the innovation Z still conditions on history but
   treats all short-lag dependence as rank dynamics.
 
-Continue with [Coming from PCNtoolkit](/articles/pcntoolkit/), or use
-[Troubleshooting reference models](/articles/troubleshooting/) when the process is
+Continue with [Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/)
+(`vignette("pcntoolkit", package = "referent")`), or use
+[Troubleshooting reference models](https://bbuchsbaum.github.io/referent/articles/troubleshooting/) when the process is
 unidentified or a forecast is unsupported.

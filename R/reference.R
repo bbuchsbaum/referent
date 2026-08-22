@@ -20,7 +20,7 @@ ref_freeze <- function(fit,
                            missing_policy = "complete-case per outcome; predictors are never imputed") {
   structure(
     list(
-      spec = fit$spec,
+      spec = strip_spec_env(fit$spec),
       outcomes = fit$outcomes,
       models = lapply(fit$models, strip_fit_one),
       covariates = fit$covariates,
@@ -48,7 +48,25 @@ strip_fit_one <- function(fit_one) {
   if (!is.null(fit_one$model)) {
     fit_one$model <- strip_gam(fit_one$model)
   }
+  if (!is.null(fit_one$spec)) {
+    fit_one$spec <- strip_spec_env(fit_one$spec)
+  }
   fit_one
+}
+
+# The spec's formulas keep the environment they were created in. When that
+# is a function frame or a knitr chunk rather than the global environment,
+# `saveRDS()` serialises everything in it along with the bundle, so the
+# formulas are given an empty child of the global environment instead,
+# as `strip_gam()` does for the model's own formulas.
+strip_spec_env <- function(spec) {
+  env <- new.env(parent = globalenv())
+  for (nm in c("location", "scale", "skew", "tail")) {
+    if (inherits(spec[[nm]], "formula")) {
+      environment(spec[[nm]]) <- env
+    }
+  }
+  spec
 }
 
 #' @export

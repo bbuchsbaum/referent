@@ -244,8 +244,23 @@ fit_ok <- function(fit_one) {
 #'
 #' @param object A [ref_fit].
 #' @param newdata Data frame of target observations.
-#' @param type `"scores"` or `"distribution"`. Distributions carry
-#'   adaptation but not the calibration map, which acts on probabilities.
+#' @param type `"scores"`, `"distribution"`, or `"harmonised"`.
+#'   Distributions carry adaptation but not the calibration map, which
+#'   acts on probabilities. `"harmonised"` returns `newdata` with each
+#'   outcome replaced by its conditional quantile mapping out of the
+#'   group effect: \eqn{y_h = Q(F(y \mid x, g) \mid x, g_0)}, where
+#'   \eqn{F} is the predictive for the row's own group (after adaptation)
+#'   and the target \eqn{g_0} is either the model with the smooth terms
+#'   of `by` excluded (a zero group effect; a parametric `by` term is set
+#'   to its reference level) and no adaptation, or the level `to`. The map
+#'   is deterministic and monotone, so harmonised values scored under the
+#'   target predictive have exactly the original centiles; the other
+#'   columns of `newdata` (including `by`) are returned unchanged.
+#' @param by Grouping covariate for `"harmonised"`; defaults to the
+#'   adaptation's `by` or, failing that, the single factor entering a
+#'   smooth (such as `s(site, bs = "re")`).
+#' @param to Optional target level for `"harmonised"`; `NULL` (default)
+#'   removes the group effect.
 #' @param uncertainty `"total"` (default) integrates the scores over
 #'   coefficient draws (or uses the analytic Gaussian total when the
 #'   location is identity-linked with constant scale); `"conditional"`
@@ -273,19 +288,36 @@ fit_ok <- function(fit_one) {
 #'   the fit status of a failed outcome.
 #'   For `"distribution"`, a tibble with `.id` and one
 #'   [distribution][dist_shash] column per outcome (missing distributions
-#'   for failed outcomes).
+#'   for failed outcomes). For `"harmonised"`, `newdata` with
+#'   harmonised outcome columns.
+#' @examples
+#' ref <- ref_simulate(300, site_shift = c(0, 1, -1, 0), seed = 1)
+#' spec <- ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex + s(site, bs = "re"))
+#' fit <- ref_fit(spec, ref, outcomes = "y")
+#' # synthetic subjects from the reference: one draw per covariate-grid row
+#' grid <- expand.grid(age = c(30, 50, 70), sex = factor("F"), site = factor("A"))
+#' dists <- predict(fit, grid, type = "distribution")
+#' synthetic <- data.frame(grid, y = unlist(distributional::generate(dists$y, 1)))
+#' # site effects mapped out of the observed outcomes
+#' harm <- predict(fit, ref, type = "harmonised")
+#' tapply(harm$y - ref$y, ref$site, mean)
 #' @export
 predict.ref_fit <- function(object,
                              newdata,
-                             type = c("scores", "distribution"),
+                             type = c("scores", "distribution", "harmonised"),
                              uncertainty = c("total", "conditional"),
                              outcomes = NULL,
                              allow_extrapolation = FALSE,
                              n_draw = NULL,
+                             by = NULL,
+                             to = NULL,
                              ...) {
   type <- match.arg(type)
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
+  if (identical(type, "harmonised")) {
+    return(harmonise_data(object, newdata, by, to, uncertainty, outcomes, n_draw))
+  }
   dists <- predict_dists(object, newdata, uncertainty, outcomes, n_draw)
   if (identical(type, "distribution")) {
     n <- nrow(newdata)
@@ -295,13 +327,62 @@ predict.ref_fit <- function(object,
   scores_from_dists(object, dists, newdata, allow_extrapolation)
 }
 
+# Conditional quantile mapping of each outcome from its own group's
+# predictive to the target predictive: u = F(y | x, group), y_h = Q(u | x,
+# target). The target drops the group's smooth terms (its random effect
+# is zero) and any adaptation, or is the fitted distribution at level `to`
+# (with `to`'s adaptation offsets). A parametric `by` term is set to its
+# reference level when `to` is NULL.
+harmonise_data <- function(object, newdata, by, to, uncertainty, outcomes, n_draw) {
+  by <- by %||% object$adaptation$by
+  if (is.null(by)) {
+    smooth_factors <- unique(unlist(lapply(object$models, function(m) {
+      if (!fit_ok(m)) return(NULL)
+      fac <- names(Filter(is.factor, m$model$var.summary))
+      intersect(unlist(lapply(m$model$smooth, function(s) c(s$term, s$fterm))), fac)
+    })))
+    if (length(smooth_factors) != 1L) {
+      cli::cli_abort("Supply {.arg by}: the grouping covariate to harmonise over.")
+    }
+    by <- smooth_factors
+  }
+  if (!by %in% names(newdata)) {
+    cli::cli_abort("{.arg newdata} has no column {.val {by}}.")
+  }
+  from <- predict_dists(object, newdata, uncertainty, outcomes, n_draw)
+  target_data <- newdata
+  if (is.null(to)) {
+    ok <- Filter(fit_ok, object$models)
+    exclude <- unique(unlist(lapply(ok, function(m) smooths_using(m$model, by))))
+    ref_level <- unlist(lapply(ok, function(m) m$model$xlevels[[by]][1L]))[1L]
+    if (!is.null(ref_level)) {
+      target_data[[by]] <- ref_level
+    }
+    target <- predict_dists(object, target_data, uncertainty, outcomes, n_draw,
+                            exclude = exclude, adapt = FALSE)
+  } else {
+    target_data[[by]] <- as.character(to)
+    target <- predict_dists(object, target_data, uncertainty, outcomes, n_draw)
+  }
+  out <- newdata
+  for (nm in names(from)) {
+    if (is.null(from[[nm]]) || !nm %in% names(newdata)) {
+      next
+    }
+    u <- dist_z(from[[nm]], newdata[[nm]])
+    out[[nm]] <- dist_quantile(target[[nm]], stats::pnorm(u))
+  }
+  out
+}
+
 # Named list of per-outcome distribution vectors (NULL for failed fits),
 # after site adaptation. Adaptation offsets live on the fitted (transform)
 # scale, so the response transform is applied last; `warp = FALSE` returns
 # the distributions on that fitted scale, which is what [ref_adapt()] and
 # nothing else needs.
 predict_dists <- function(object, newdata, uncertainty = "conditional",
-                          outcomes = NULL, n_draw = NULL, warp = TRUE) {
+                          outcomes = NULL, n_draw = NULL, warp = TRUE,
+                          exclude = NULL, adapt = TRUE) {
   nms <- object$outcomes
   if (!is.null(outcomes)) {
     nms <- intersect(as.character(outcomes), nms)
@@ -314,10 +395,10 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
     if (!fit_ok(m)) {
       return(NULL)
     }
-    predict_mgcv_dist(m, newdata, uncertainty, n_draw, seed)
+    predict_mgcv_dist(m, newdata, uncertainty, n_draw, seed, exclude = exclude)
   })
   names(dists) <- nms
-  if (!is.null(object$adaptation)) {
+  if (isTRUE(adapt) && !is.null(object$adaptation)) {
     dists <- apply_adaptation(object$adaptation, dists, newdata,
                               total = identical(uncertainty, "total"), seed = seed)
   }

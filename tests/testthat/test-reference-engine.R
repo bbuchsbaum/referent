@@ -24,6 +24,26 @@ test_that("a frozen reference predicts identically after a saveRDS/readRDS round
   expect_equal(tidy(ref2)$outcome, c("y", "marker_01"))
 })
 
+test_that("a frozen reference does not serialise the frame its spec was built in", {
+  build <- function() {
+    ballast <- stats::rnorm(2e6)
+    dat <- ref_simulate(120, seed = 101)
+    spec <- ref_spec(ref_gaussian(), location = ~ s(age, k = 5) + sex)
+    fit <- ref_fit(spec, data = dat, outcomes = "y")
+    list(fit = fit, bundle = ref_freeze(fit), dat = dat, ballast = ballast)
+  }
+  built <- build()
+  tmp <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(built$bundle, tmp)
+  expect_lt(file.size(tmp), 2e6)
+  thawed <- readRDS(tmp)
+  expect_equal(
+    predict(thawed, built$dat[1:10, ], uncertainty = "conditional")$z,
+    predict(built$fit, built$dat[1:10, ], uncertainty = "conditional")$z
+  )
+  expect_s3_class(ref_fit(thawed$spec, data = built$dat, outcomes = "y"), "ref_fit")
+})
+
 test_that("the bam path is used for constant-scale Gaussian fits above bam_min_n", {
   dat <- ref_simulate(300, seed = 101)
   spec_bam <- ref_spec(ref_gaussian(), location = ~ s(age, k = 6) + sex, scale = ~1,

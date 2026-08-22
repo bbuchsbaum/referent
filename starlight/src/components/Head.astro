@@ -1,0 +1,17 @@
+---
+// Starlight composes <title> as "<page> | <site>". The home page's title is
+// the package Title from DESCRIPTION, and so is the default site title, which
+// duplicated it. The site title is set to the package name in
+// astro.config.mjs; here the home tab collapses to that name alone.
+import Default from '@astrojs/starlight/components/Head.astro';
+
+const { head } = Astro.locals.starlightRoute;
+const isHome = Astro.locals.starlightdown?.kind === 'home';
+if (isHome) {
+	for (const item of head) {
+		if (item.tag === 'title') item.content = 'referent';
+	}
+}
+---
+
+<Default><slot /></Default>

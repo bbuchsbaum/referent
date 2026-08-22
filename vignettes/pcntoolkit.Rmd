@@ -34,15 +34,71 @@ assessment <- ref_assess(fit, newdata = val)
 
 | PCNtoolkit | referent | Notes |
 |---|---|---|
-| normative model (`BLR`, `HBR`, `GPR`) | [`ref_spec()`](/reference/ref_spec/) + [`ref_fit()`](/reference/ref_fit/) | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
+| normative model (`BLR`, `HBR`, `GPR`) | [`ref_spec()`](https://bbuchsbaum.github.io/referent/reference/ref_spec/) + [`ref_fit()`](https://bbuchsbaum.github.io/referent/reference/ref_fit/) | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
 | response variable | `outcomes =` | several outcomes fit as a panel, kept wide |
 | covariates, batch effects | formula terms | `s(site, bs = "re")` plays the role of a batch random effect |
 | `predict()` / `estimate()` | `predict(fit, newdata)` | returns scores or `<distribution>` columns |
 | cross-validation (`cvfolds`) | `ref_crossfit()` | out-of-fold scores for every reference row; the deployment refit is attached |
 | warp (`SHASHb`, `SinArcsinh`) | `ref_shash()` | sinh-arcsinh likelihood via `mgcv::shash()` |
-| site transfer / `adapt` | `ref_adapt()` | shrunk location (and scale) offsets on the family's own density, trajectory frozen |
+| `NormData` `batch_effects` | `s(site, bs = "re")`; `ref_calibrate(by = )` | the batch variable is a random intercept in the formula; group-specific probability re-mapping is a separate step |
+| HBR random slopes | not available; `s(age, site, bs = "fs")` | `bs = "re"` is a random intercept only; `mgcv`'s factor-smooth basis gives each site its own age curve shrunk toward the shared one (see below) |
+| HBR Beta likelihood | not available | families are Gaussian and SHASH on a monotone transform of the outcome; a bounded outcome can be logit-transformed by hand before fitting |
+| `GPR` | not available | smooth terms (`s(age)`, `te(age, x)`) take the place of a GP mean; their uncertainty enters `uncertainty = "total"` through the coefficient covariance |
+| warped BLR (`WarpSinArcsinh`, `WarpBoxCox`) | `ref_spec(transform = )` and `ref_shash()` | a Box-Cox or log transform of the response is `transform =`; a sinh-arcsinh likelihood is `ref_shash()`; the two combine |
+| `fit_predict` | `ref_crossfit()` + `ref_fit()` | cross-fit for out-of-fold reference scores, then fit on all rows for deployment |
+| site transfer / `adapt` / `transfer` | `ref_adapt()` | shrunk location (and scale) offsets on the family's own density, trajectory frozen |
 | (no direct analogue) | `ref_calibrate()` | monotone re-mapping of PIT values; optional `by = site` |
+| `extend` | refit on pooled data | `ref_fit(spec, rbind(reference, new_site))` is the extend operation; the reference changes for every site |
+| `merge` / federated models | none | the unit of sharing is a frozen bundle (`ref_freeze()`), not model parameters to be merged |
+| harmonised outputs (`Y_harmonized`) | `predict(type = "harmonised")` | conditional quantile mapping out of the site effect (or to a chosen `to` level); the deviation score itself is already site-free |
 | extreme value / abnormality | not provided | see below |
+
+## Harmonised values
+
+When a downstream analysis needs raw values on one scale, the conditional
+quantile map gives them: a value at the 80th centile of its own site's
+predictive becomes the 80th centile of the target predictive.
+
+```{r harmonise}
+sites <- ref_simulate(300, sites = 3, site_shift = c(0, 1, -1), seed = 5)
+site_fit <- ref_fit(
+  ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex + s(site, bs = "re")),
+  sites, "y"
+)
+harmonised <- predict(site_fit, sites, type = "harmonised")
+rbind(raw = tapply(sites$y, sites$site, mean),
+      harmonised = tapply(harmonised$y, harmonised$site, mean))
+```
+
+## Random slopes by site
+
+`s(site, bs = "re")` shifts the level per site. If sites also differ in the
+shape of the age trend, `mgcv`'s factor-smooth interaction,
+`s(age, site, bs = "fs")`, fits one smooth per site with a shared penalty
+that shrinks each curve toward the common one. It is accepted anywhere a
+formula is, and an unseen site still receives the population curve with
+`support == "new_group"`.
+
+```{r fs}
+multi <- ref_simulate(600, sites = 5, seed = 4)
+fs_spec <- ref_spec(
+  ref_gaussian(),
+  location = ~ s(age, k = 6) + sex + s(age, site, bs = "fs", k = 5)
+)
+fs_fit <- ref_fit(fs_spec, multi, "y")
+tidy(fs_fit)[, c("status", "edf_s(age)", "edf_s(age,site)")]
+```
+
+```{r fs-check, include = FALSE}
+stopifnot(tidy(fs_fit)$status == "ok")
+```
+
+This is not HBR: the site curves are penalised deviations from a shared
+smooth, not draws from a hierarchical prior with its own estimated
+hyperparameters, and `ref_adapt()` transports only the level and scale, not
+the slope. Use it when the reference contains enough rows per site to
+support a curve each, and cross-fit with `strata = site` to check that it
+earns its effective degrees of freedom.
 
 # Metrics
 
@@ -63,6 +119,9 @@ not the legacy 0.35 interface.
 | `EV` (`EXPV`) | `ev` | Algebraically equivalent on nonconstant complete data | Both compute `1 - var(residual) / var(y)`. Constant outcomes and filtering of non-finite rows can produce different edge behaviour. |
 | `Rho` | no exact column | Different statistic | PCNtoolkit 1.x reports Spearman rank correlation. `cor` is Pearson correlation of the observed value and predictive median. |
 | `RMSE` | `rmse` | Exact on the same included rows | Missing and non-finite row handling must also match. |
+| `MACE` | `mace` | Same definition | Mean over the centiles 0.05, 0.25, 0.5, 0.75, 0.95 of the absolute gap between the centile and the fraction of observations at or below its curve. |
+| `ShapiroW` | `shapiro_w` | Same statistic | Shapiro-Wilk W of Z; `referent` subsamples 5000 scores with a fixed seed when n is larger, because `shapiro.test()` accepts no more. |
+| `Skew`, `Kurtosis` | `skew_z`, `excess_kurtosis_z` | Exact up to the kurtosis convention | Both are standardised moments of Z. PCNtoolkit reports kurtosis; `referent` reports excess kurtosis (kurtosis minus 3). |
 | (none) | `mean_log_score`, `crps` | referent additions | Proper scores of the full predictive distribution; larger log score and smaller CRPS are better. |
 
 ```{r metrics}
@@ -87,6 +146,36 @@ rho_values <- c(
   spearman_rho = cor(metric_rows$observed, metric_rows$median, method = "spearman")
 )
 stopifnot(all(is.finite(rho_values)), abs(diff(rho_values)) > 1e-4)
+```
+
+The normality metrics are in the marginal table. The chunk after it
+recomputes them from the same held-out scores (`assessment$scores`; the
+`scores` object above was computed under `uncertainty = "total"` and differs
+slightly), which is also how to get them on a different centile grid or
+without the kurtosis offset.
+
+```{r normality}
+assessment$marginal[, c("mean_z", "var_z", "skew_z", "excess_kurtosis_z",
+                        "shapiro_w", "mace")]
+held <- assessment$scores
+z <- held$z[is.finite(held$z)]
+u <- held$centile[is.finite(held$centile)]
+grid <- c(0.05, 0.25, 0.5, 0.75, 0.95)
+c(
+  MACE = mean(vapply(grid, function(q) abs(q - mean(u <= q)), numeric(1))),
+  ShapiroW = unname(shapiro.test(z)$statistic),
+  Skew = mean((z - mean(z))^3) / sd(z)^3,
+  Kurtosis = mean((z - mean(z))^4) / sd(z)^4
+)
+```
+
+```{r normality-check, include = FALSE}
+m <- assessment$marginal
+stopifnot(
+  abs(mean((z - mean(z))^3) / sd(z)^3 - m$skew_z) < 0.05,
+  abs(mean((z - mean(z))^4) / sd(z)^4 - 3 - m$excess_kurtosis_z) < 0.05,
+  abs(unname(shapiro.test(z)$statistic) - m$shapiro_w) < 1e-6
+)
 ```
 
 ```{r z}
@@ -135,6 +224,26 @@ FDR-adjusted tail probability, and `ref_joint()` gives a calibrated
 joint centile across outcomes. Whether an exceedance means anything is a
 question for the study design, not the scoring function.
 
-Continue with [Troubleshooting reference-model workflows](/articles/troubleshooting/),
-or return to [Getting started with referent](/articles/getting-started/) for the
+To state the rest plainly, `referent` does not do the following.
+
+* **Hierarchical Bayesian regression.** There is no MCMC, no posterior over
+  site slopes, and no Beta or other bounded likelihood. Site effects are
+  penalised random intercepts (or factor smooths); uncertainty in the curves
+  is Gaussian in the coefficients.
+* **Gaussian-process regression.** Smooth terms play that role.
+* **Harmonisation as a separate model.** `predict(type = "harmonised")`
+  maps each value through its own site's predictive CDF and the target
+  site's quantile function, so it removes exactly the site effect the
+  reference model estimated and nothing else. There is no ComBat-style
+  empirical-Bayes step, and the deviation score, which is site-free by
+  construction, is the quantity meant for downstream use.
+* **Model merging or federated fitting.** A reference is fitted on data in one
+  place and shipped as a bundle. Extending a reference means refitting on the
+  pooled data.
+* **Classification or clinical thresholds.** No function maps a score to a
+  label.
+
+Continue with [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/)
+(`vignette("troubleshooting", package = "referent")`),
+or return to [Getting started with referent](https://bbuchsbaum.github.io/referent/articles/getting-started/) for the
 default end-to-end workflow.
