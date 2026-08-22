@@ -38,7 +38,8 @@ optionally scale) offsets per group. This is not recalibration (see
 \code{\link[=ref_calibrate]{ref_calibrate()}}) and not a refit of the shared trajectory.
 }
 \details{
-Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
+Offsets \eqn{\delta_\mu} (units of the fitted scale, that is of
+\code{transform}ed outcome when \code{\link[=ref_spec]{ref_spec()}} carries one) and \eqn{\delta_\sigma}
 (log scale) are estimated per outcome and group by penalised maximum
 likelihood on the reference family's own density with the shared
 trajectory frozen, so the estimates are correct for SHASH as well as

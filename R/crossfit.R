@@ -13,6 +13,11 @@
 #' @param cluster Optional cluster / subject column. Entire clusters stay
 #'   in one fold.
 #' @param id Optional identifier stored on scores.
+#' @param uncertainty Passed to [predict.ref_fit()] when the held-out
+#'   fold is scored, as in [ref_assess()]. Use `"total"` to match the
+#'   predictive that [predict.ref_fit()] returns by default, which is
+#'   what a map fitted on these scores by [ref_calibrate()] will be
+#'   applied to.
 #' @param ... Passed to [ref_fit()].
 #' @return A `ref_scores` object with `.in_sample = FALSE`, `.row`
 #'   indexing rows of `data`, a per-row `crps` column, and a `.fold`
@@ -25,7 +30,9 @@ ref_crossfit <- function(spec,
                           strata = NULL,
                           cluster = NULL,
                           id = NULL,
+                          uncertainty = c("conditional", "total"),
                           ...) {
+  uncertainty <- match.arg(uncertainty)
   data <- tibble::as_tibble(data)
   outcome_names <- select_outcomes(rlang::enquo(outcomes), data)
   strata_vec <- pull_column(data, rlang::enquo(strata), default = NULL)
@@ -40,7 +47,7 @@ ref_crossfit <- function(spec,
       return(NULL)
     }
     fit <- ref_fit(spec, data = train, outcomes = outcome_names, ...)
-    dists <- predict_dists(fit, test, uncertainty = "conditional")
+    dists <- predict_dists(fit, test, uncertainty = uncertainty)
     sc <- scores_from_dists(fit, dists, test, allow_extrapolation = FALSE)
     sc$crps <- NA_real_
     for (nm in names(dists)) {

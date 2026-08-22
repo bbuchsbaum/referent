@@ -32,7 +32,9 @@ Gaussian fits use \code{\link[distributional:dist_normal]{distributional::dist_n
 \code{dist_shash()}; \code{uncertainty = "total"} predictions from location-scale
 and SHASH fits are equal-weight mixtures over coefficient draws (an
 internal \code{dist_shash_draws} class, one SHASH parameter set per draw and
-observation); history-conditioned forecasts are \code{dist_conditioned()}.
+observation); history-conditioned forecasts are \code{dist_conditioned()}; a
+spec with a response transform returns the push-forward of the fitted
+distribution onto the response scale (an internal \code{dist_warped} class).
 }
 \details{
 \code{dist_shash()} follows the \code{mgcv::shash()} parameterisation. With

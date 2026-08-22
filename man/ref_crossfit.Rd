@@ -12,6 +12,7 @@ ref_crossfit(
   strata = NULL,
   cluster = NULL,
   id = NULL,
+  uncertainty = c("conditional", "total"),
   ...
 )
 }
@@ -31,6 +32,12 @@ stratum form a stratum of their own.}
 in one fold.}
 
 \item{id}{Optional identifier stored on scores.}
+
+\item{uncertainty}{Passed to \code{\link[=predict.ref_fit]{predict.ref_fit()}} when the held-out
+fold is scored, as in \code{\link[=ref_assess]{ref_assess()}}. Use \code{"total"} to match the
+predictive that \code{\link[=predict.ref_fit]{predict.ref_fit()}} returns by default, which is
+what a map fitted on these scores by \code{\link[=ref_calibrate]{ref_calibrate()}} will be
+applied to.}
 
 \item{...}{Passed to \code{\link[=ref_fit]{ref_fit()}}.}
 }

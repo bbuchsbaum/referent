@@ -187,3 +187,88 @@ test_that("joint location+scale adaptation is not biased by feedback between the
   expect_lt(abs(mean(free[, "location"]) - 6), 0.15)
   expect_lt(abs(mean(free[, "scale"]) - 0.2), 0.05)
 })
+
+test_that("calibration moves the density with the centile and integrates to one", {
+  train <- ref_simulate(400, seed = 51)
+  # a model that is wrong in shape: fit a Gaussian to heavy-tailed residuals
+  train$y <- train$y + 1.2 * stats::rt(nrow(train), df = 4)
+  cal <- ref_simulate(600, seed = 52)
+  cal$y <- cal$y + 1.2 * stats::rt(nrow(cal), df = 4)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
+  cf <- ref_calibrate(fit, data = cal)
+  map <- cf$calibration$maps$y$.global
+  expect_s3_class(map, "ref_pit_map")
+
+  test <- cal[1:40, ]
+  raw <- predict(fit, newdata = test, uncertainty = "conditional", allow_extrapolation = TRUE)
+  new <- predict(cf, newdata = test, uncertainty = "conditional", allow_extrapolation = TRUE)
+  # F* = G(F0) implies f* = g(F0(y)) f0(y)
+  jac <- shash_log_density(raw$z, map$mu, map$sigma, map$eps, map$delta) -
+    stats::dnorm(raw$z, log = TRUE)
+  expect_equal(new$log_density - raw$log_density, jac)
+  # the calibrated centile is still a strictly monotone function of the raw one
+  o <- order(raw$z)
+  expect_true(all(diff(new$z[o]) > 0))
+  expect_true(all(new$centile > 0 & new$centile < 1))
+  # and the calibrated predictive is still a density
+  one <- test[1, ]
+  dens <- function(y) {
+    r <- one
+    r$y <- y
+    s <- predict(cf, newdata = r, uncertainty = "conditional", allow_extrapolation = TRUE)
+    exp(s$log_density)
+  }
+  expect_equal(stats::integrate(Vectorize(dens), -400, 400, subdivisions = 800L)$value, 1,
+               tolerance = 1e-4)
+})
+
+test_that("the calibrated median is the calibrated 0.5 centile", {
+  train <- ref_simulate(400, seed = 53)
+  cal <- ref_simulate(600, seed = 54)
+  cal$y <- cal$y + 3 + 1.2 * stats::rt(nrow(cal), df = 4)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
+  cf <- ref_calibrate(fit, data = cal)
+  map <- cf$calibration$maps$y$.global
+  expect_gt(abs(map$mu), 0.5)
+
+  test <- cal[1:30, ]
+  raw <- predict(fit, newdata = test, uncertainty = "conditional", allow_extrapolation = TRUE)
+  new <- predict(cf, newdata = test, uncertainty = "conditional", allow_extrapolation = TRUE)
+  # the map has moved the centre, so the reported median must move with it
+  expect_false(isTRUE(all.equal(new$median, raw$median)))
+  expect_equal(new$residual, test$y - new$median)
+  # feeding the reported median back in gives a calibrated centile of exactly 0.5
+  at_median <- test
+  at_median$y <- new$median
+  back <- predict(cf, newdata = at_median, uncertainty = "conditional",
+                  allow_extrapolation = TRUE)
+  expect_equal(back$centile, rep(0.5, nrow(test)), tolerance = 1e-6)
+})
+
+test_that("the calibration gate leaves an already-calibrated model alone", {
+  train <- ref_simulate(400, seed = 61)
+  cal <- ref_simulate(900, seed = 62)
+  fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
+  cf <- ref_calibrate(fit, data = cal)
+  map <- cf$calibration$maps$y$.global
+  expect_equal(unlist(map[c("mu", "sigma", "eps", "delta")]),
+               c(mu = 0, sigma = 1, eps = 0, delta = 1))
+  test <- ref_simulate(80, seed = 63)
+  raw <- predict(fit, newdata = test, uncertainty = "conditional")
+  new <- predict(cf, newdata = test, uncertainty = "conditional")
+  expect_equal(new$z, raw$z)
+  expect_equal(new$log_density, raw$log_density)
+  expect_equal(new$median, raw$median)
+  expect_true(all(new$calibrated))
+})
+
+test_that("ref_calibrate accepts out-of-fold scores from ref_crossfit", {
+  dat <- ref_simulate(600, seed = 71)
+  dat$y <- dat$y + 1.2 * stats::rt(nrow(dat), df = 4)
+  set.seed(72)
+  cf <- ref_crossfit(simple_spec(), data = dat, outcomes = "y", folds = 5)
+  fit <- ref_calibrate(attr(cf, "deployment"), cf)
+  expect_s3_class(fit$calibration, "ref_calibration")
+  expect_equal(fit$calibration$n, nrow(dat))
+  expect_error(ref_calibrate(attr(cf, "deployment"), cf, by = site), "score table")
+})

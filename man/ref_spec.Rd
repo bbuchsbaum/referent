@@ -10,6 +10,7 @@ ref_spec(
   scale = ~1,
   skew = ~1,
   tail = ~1,
+  transform = "identity",
   method = "REML",
   use_bam = TRUE,
   bam_min_n = 20000L,
@@ -21,6 +22,15 @@ ref_spec(
 
 \item{location, scale, skew, tail}{One-sided formulas for the additive
 predictors. Unused shape formulas default to \code{~ 1}.}
+
+\item{transform}{Monotone response transform applied before fitting:
+\code{"identity"} (the default), \code{"sqrt"}, \code{"log"}, or a Box-Cox power
+\eqn{\lambda \ge 0}. The model is fitted to
+\eqn{h_\lambda(y)=(y^\lambda-1)/\lambda} (\eqn{\log y} at
+\eqn{\lambda=0}) and every predictive distribution is pushed back to
+the response scale, so densities carry the log Jacobian and
+quantiles, medians, \code{hilo()}, and CRPS are in the units of \code{y}. Any
+transform other than the identity requires a positive outcome.}
 
 \item{method}{\code{mgcv} smoothness-selection method.}
 
@@ -39,4 +49,5 @@ Specification of a distributional reference model
 }
 \examples{
 ref_spec(family = ref_gaussian(), location = ~ s(age, k = 8) + sex)
+ref_spec(family = ref_shash(), location = ~ s(age, k = 8), transform = "log")
 }

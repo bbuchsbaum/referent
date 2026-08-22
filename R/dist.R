@@ -8,7 +8,9 @@
 #' `dist_shash()`; `uncertainty = "total"` predictions from location-scale
 #' and SHASH fits are equal-weight mixtures over coefficient draws (an
 #' internal `dist_shash_draws` class, one SHASH parameter set per draw and
-#' observation); history-conditioned forecasts are `dist_conditioned()`.
+#' observation); history-conditioned forecasts are `dist_conditioned()`; a
+#' spec with a response transform returns the push-forward of the fitted
+#' distribution onto the response scale (an internal `dist_warped` class).
 #'
 #' @details
 #' `dist_shash()` follows the `mgcv::shash()` parameterisation. With
@@ -193,6 +195,26 @@ log_tail.dist_conditioned <- function(x, q, lower.tail = TRUE) {
   stats::pnorm((z - x[["m"]]) / x[["s"]], lower.tail = lower.tail, log.p = TRUE)
 }
 
+#' @export
+log_tail.dist_warped <- function(x, q, lower.tail = TRUE) {
+  w <- warped_parts(x)
+  t <- transform_apply(w$tr, q)
+  outside <- !is.na(q) & is.na(t)
+  if (!lower.tail) {
+    upper <- log_tail(w$inner, t, FALSE) - w$log_denom
+    upper[outside] <- 0
+    return(upper)
+  }
+  lower <- log_tail(w$inner, t, TRUE)
+  if (is.finite(w$t_min)) {
+    share <- exp(log_tail(w$inner, w$t_min, TRUE) - lower)
+    share[!is.finite(share)] <- 0
+    lower <- lower + log1p(-pmin(share, 1)) - w$log_denom
+  }
+  lower[outside] <- -Inf
+  lower
+}
+
 log_dens <- function(x, at) {
   UseMethod("log_dens")
 }
@@ -223,6 +245,17 @@ log_dens.dist_conditioned <- function(x, at) {
   log_dens(x[["dist"]], at) +
     stats::dnorm((z - x[["m"]]) / x[["s"]], log = TRUE) - log(x[["s"]]) -
     stats::dnorm(z, log = TRUE)
+}
+
+#' @export
+log_dens.dist_warped <- function(x, at) {
+  w <- warped_parts(x)
+  t <- transform_apply(w$tr, at)
+  outside <- !is.na(at) & is.na(t)
+  at[outside] <- NA_real_
+  out <- log_dens(w$inner, t) + transform_log_deriv(w$tr, at) - w$log_denom
+  out[outside] <- -Inf
+  out
 }
 
 # Normal score of `q` under an element (or unpacked vector) `x`, taken from
@@ -424,6 +457,88 @@ generate.dist_conditioned <- function(x, times, ...) {
   quantile(x, stats::runif(times))
 }
 
+# --- dist_warped: a fit on h(y), read on the y scale -----------------------
+# `ref_spec(transform = ...)` fits the model to t = h(y) for a strictly
+# increasing Box-Cox map h. The predictive for Y is the push-forward of the
+# predictive for T: tails carry over unchanged, the density picks up
+# log h'(y), and quantiles are back-transformed, so a warped fit is scored
+# in the units of `y` and its log density is comparable with an untransformed
+# fit's. When the image of h is bounded below (any power between 0 and 1),
+# the fitted distribution puts mass below h(0) that no response value can
+# produce; that mass is renormalised away, which keeps the predictive a
+# proper density on (0, Inf) rather than one that integrates to slightly
+# less than one.
+
+dist_warped <- function(dist, lambda) {
+  distributional::new_dist(
+    dist = vctrs::vec_data(dist),
+    lambda = rep_len(as.numeric(lambda), length(dist)),
+    class = "dist_warped"
+  )
+}
+
+# The transform, the inner (unwarped) distribution, and the log of the
+# probability the inner distribution puts on the image of h.
+warped_parts <- function(x) {
+  tr <- as_transform(x[["lambda"]][[1L]])
+  inner <- x[["dist"]]
+  t_min <- transform_t_min(tr)
+  list(
+    tr = tr, inner = inner, t_min = t_min,
+    log_denom = if (is.finite(t_min)) log_tail(inner, t_min, FALSE) else 0
+  )
+}
+
+#' @export
+format.dist_warped <- function(x, digits = 2, ...) {
+  sprintf(
+    "%s{%s}", as_transform(x[["lambda"]][[1L]])$name,
+    format(x[["dist"]], digits = digits, ...)
+  )
+}
+
+#' @method cdf dist_warped
+#' @export
+cdf.dist_warped <- cdf_from_log_tail
+
+#' @method density dist_warped
+#' @export
+density.dist_warped <- density_from_log_dens
+
+#' @export
+quantile.dist_warped <- function(x, p, ...) {
+  w <- warped_parts(x)
+  if (is.finite(w$t_min)) {
+    p <- exp(log_tail(w$inner, w$t_min, TRUE)) + p * exp(w$log_denom)
+  }
+  transform_invert(w$tr, quantile(w$inner, p))
+}
+
+#' @export
+generate.dist_warped <- function(x, times, ...) {
+  quantile(x, stats::runif(times))
+}
+
+# The response-scale moments have no closed form; they come from the same
+# K-atom quantile discretisation `crps_from_dist()` uses.
+warped_atoms <- function(x, K = 199L) {
+  n <- max(length(x[["lambda"]]), 1L)
+  p <- (seq_len(K) - 0.5) / K
+  matrix(vapply(p, function(pk) as.numeric(quantile(x, rep(pk, n))), numeric(n)),
+         n, K)
+}
+
+#' @export
+mean.dist_warped <- function(x, ...) {
+  rowMeans(warped_atoms(x))
+}
+
+#' @export
+variance.dist_warped <- function(x, ...) {
+  a <- warped_atoms(x)
+  rowMeans(a^2) - rowMeans(a)^2
+}
+
 # --- Vectorised evaluation of a whole distribution vector -----------------
 # A homogeneous distribution vector is unpacked into one pseudo-element
 # whose fields are vectors (or n x K matrices, for draw mixtures). The element
@@ -439,6 +554,13 @@ dist_unpack <- function(d) {
   }
   cls <- unique(vapply(el, function(e) class(e)[[1L]], ""))
   if (length(cls) != 1L) {
+    return(NULL)
+  }
+  # Some distributions carry functions rather than parameters: a
+  # `dist_transformed` holds its transform and inverse. Those fields cannot be
+  # stacked into parallel vectors, so unpacking them corrupts the result. Fall
+  # back to the elementwise path, which dispatches on the distribution itself.
+  if (any(vapply(el[[1L]], is.function, logical(1)))) {
     return(NULL)
   }
   fields <- list()

@@ -51,12 +51,26 @@ ref_fit <- function(spec, data, outcomes, id = NULL, ...) {
       status = status, message = message, model = NULL, spec = spec
     )
   }
+  transform <- spec_transform(spec)
   fit_one <- function(nm) {
     y <- data[[nm]]
     if (!is.numeric(y)) {
       return(failed(nm, "unsupported_type", paste0(
         "Outcome is ", class(y)[[1L]], "; only numeric outcomes are supported."
       )))
+    }
+    # The engine sees h(y); everything downstream of prediction is pushed
+    # back to the response scale by `dist_warped()`. Values outside the
+    # transform's domain become NA and drop out with the incomplete rows.
+    if (!transform_is_identity(transform)) {
+      y <- transform_apply(transform, y)
+      n_outside <- sum(is.finite(data[[nm]]) & !is.finite(y))
+      if (n_outside > 0L) {
+        cli::cli_inform(
+          "{.field {nm}}: dropped {n_outside} row{?s} outside the domain of the {transform$name} transform."
+        )
+      }
+      data[[nm]] <- y
     }
     if (sum(is.finite(y)) < 8L || stats::sd(y, na.rm = TRUE) < .Machine$double.eps) {
       return(failed(nm, "insufficient_variation", "Outcome has insufficient variation."))
@@ -195,6 +209,10 @@ print.ref_fit <- function(x, ...) {
   tab <- sort(table(st), decreasing = TRUE)
   status_txt <- paste(paste0(names(tab), "=", as.integer(tab)), collapse = ", ")
   cli::cli_text("{.cls ref_fit} {x$spec$family$name} via {x$spec$engine}")
+  tr <- spec_transform(x$spec)
+  if (!transform_is_identity(tr)) {
+    cli::cli_text("transform: {tr$name}")
+  }
   cli::cli_text("{length(x$outcomes)} outcome{?s}, n = {x$n}")
   cli::cli_text("covariates: {.field {x$covariates}}")
   cli::cli_text("status: {status_txt}")
@@ -202,7 +220,7 @@ print.ref_fit <- function(x, ...) {
     cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
   }
   if (!is.null(x$calibration)) {
-    cli::cli_text("calibrated: {x$calibration$method}{if (is.null(x$calibration$by)) '' else paste0(' by ', x$calibration$by)}")
+    cli::cli_text("calibrated: n = {x$calibration$n}{if (is.null(x$calibration$by)) '' else paste0(', by ', x$calibration$by)}")
   }
   failed <- names(st)[st != "ok"]
   if (length(failed)) {
@@ -219,8 +237,10 @@ fit_ok <- function(fit_one) {
 #'
 #' One method serves plain, adapted, calibrated, and frozen fits. The
 #' steps are: engine prediction, then site adaptation (shifting location
-#' and scale, including any coefficient draws), then scoring, then PIT
-#' recalibration, and finally extrapolation masking.
+#' and scale, including any coefficient draws), then the response
+#' transform of [ref_spec()] (which puts the predictive back on the scale
+#' of `y`), then scoring, then PIT recalibration, and finally
+#' extrapolation masking.
 #'
 #' @param object A [ref_fit].
 #' @param newdata Data frame of target observations.
@@ -276,9 +296,12 @@ predict.ref_fit <- function(object,
 }
 
 # Named list of per-outcome distribution vectors (NULL for failed fits),
-# after site adaptation.
+# after site adaptation. Adaptation offsets live on the fitted (transform)
+# scale, so the response transform is applied last; `warp = FALSE` returns
+# the distributions on that fitted scale, which is what [ref_adapt()] and
+# nothing else needs.
 predict_dists <- function(object, newdata, uncertainty = "conditional",
-                          outcomes = NULL, n_draw = NULL) {
+                          outcomes = NULL, n_draw = NULL, warp = TRUE) {
   nms <- object$outcomes
   if (!is.null(outcomes)) {
     nms <- intersect(as.character(outcomes), nms)
@@ -297,6 +320,12 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
   if (!is.null(object$adaptation)) {
     dists <- apply_adaptation(object$adaptation, dists, newdata,
                               total = identical(uncertainty, "total"), seed = seed)
+  }
+  transform <- spec_transform(object$spec)
+  if (isTRUE(warp) && !transform_is_identity(transform)) {
+    dists <- lapply(dists, function(d) {
+      if (is.null(d) || !length(d)) d else dist_warped(d, transform$lambda)
+    })
   }
   dists
 }
@@ -333,7 +362,7 @@ scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE
     }
     calibrated <- rep(FALSE, n)
     if (!is.null(cal_group) && !is.null(d)) {
-      sc <- calibrate_scores(object$calibration, nm, cal_group, sc)
+      sc <- calibrate_scores(object$calibration, nm, cal_group, sc, d)
       calibrated <- sc$calibrated
       sc$calibrated <- NULL
     }

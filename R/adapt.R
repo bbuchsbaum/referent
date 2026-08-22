@@ -5,7 +5,8 @@
 #' [ref_calibrate()]) and not a refit of the shared trajectory.
 #'
 #' @details
-#' Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
+#' Offsets \eqn{\delta_\mu} (units of the fitted scale, that is of
+#' `transform`ed outcome when [ref_spec()] carries one) and \eqn{\delta_\sigma}
 #' (log scale) are estimated per outcome and group by penalised maximum
 #' likelihood on the reference family's own density with the shared
 #' trajectory frozen, so the estimates are correct for SHASH as well as
@@ -65,14 +66,17 @@ ref_adapt <- function(fit,
   }
   base <- fit
   base$adaptation <- NULL
-  dists <- predict_dists(base, data, uncertainty = "conditional")
+  # Offsets are estimated, stored, and applied on the scale the model was
+  # fitted on, so a spec with a response transform is adapted in h(y).
+  transform <- spec_transform(fit$spec)
+  dists <- predict_dists(base, data, uncertainty = "conditional", warp = FALSE)
   by_chr <- as.character(by_vec)
   offsets <- lapply(names(dists), function(nm) {
     d <- dists[[nm]]
     if (is.null(d) || !nm %in% names(data)) {
       return(NULL)
     }
-    y <- data[[nm]]
+    y <- transform_apply(transform, data[[nm]])
     groups <- split(seq_along(y), by_chr)
     groups$.all <- seq_along(y)
     lapply(groups, function(idx) {
