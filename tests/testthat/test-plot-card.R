@@ -10,20 +10,6 @@ plot_fit <- function(seed = 30, n = 120) {
   list(fit = fit, data = dat)
 }
 
-expect_builds <- function(p) {
-  expect_s3_class(p, "ggplot")
-  built <- ggplot2::ggplot_build(p)
-  expect_s3_class(built, "ggplot_built")
-  invisible(built)
-}
-
-layer_classes <- function(p) {
-  vapply(p$layers, function(ly) class(ly$geom)[[1]], character(1))
-}
-
-plot_label <- function(p, aes) {
-  ggplot2::get_labs(p)[[aes]]
-}
 
 # The guide of the colour scale ("legend" or "none").
 colour_guide <- function(p) {
@@ -230,3 +216,51 @@ test_that("theme and model card", {
   expect_match(out, "model card")
   expect_match(out, "age: \\[")
 })
+
+test_that("thrive lines are ref_forecast() on a grid of one-visit histories", {
+  dat <- ref_simulate(300, kind = "longitudinal", seed = 71)
+  fit <- ref_fit(
+    ref_spec(family = ref_gaussian(), location = ~ age + sex, scale = ~1),
+    data = dat, outcomes = "y"
+  )
+  dyn <- ref_dynamics(fit, data = dat, id = participant_id, time = age, crossfit = 0)
+  th <- fortify_thrive(dyn, "y", anchors = c(0.05, 0.5, 0.95),
+                       from = c(40, 55), horizon = 2, thrive = 0.025, level = 0.9)
+  # the anchor sits exactly on the population centile curve and carries no
+  # correlation uncertainty of its own
+  anchor <- th[th$horizon == 0, ]
+  expect_equal(anchor$centile, anchor$anchor_centile, tolerance = 1e-10)
+  expect_equal(anchor$lower, anchor$value, tolerance = 1e-8)
+  expect_equal(anchor$r, rep(1, nrow(anchor)), tolerance = 1e-12)
+  # every forward point is ref_forecast()'s quantile at the thrive level
+  tmpl <- centile_grid(fit, "age", n = 1)
+  for (s in unique(th$.segment)) {
+    seg <- th[th$.segment == s, ]
+    hist <- tmpl
+    hist$age <- seg$anchor_time[[1]]
+    hist$y <- seg$value[seg$horizon == 0]
+    fc <- ref_forecast(dyn, history = hist, times = seg$time[seg$horizon > 0],
+                        outcome = "y")
+    expect_equal(seg$value[seg$horizon > 0],
+                 as.numeric(dist_quantile(fc$dist, 0.025)), tolerance = 1e-6)
+  }
+  # thrive = 0.5 is the conditional-median (regression-to-the-mean) path
+  mid <- fortify_thrive(dyn, "y", anchors = 0.9, from = 50, horizon = 3, thrive = 0.5)
+  fwd <- mid[mid$horizon == 3, ]
+  expect_equal(fwd$z, fwd$r * stats::qnorm(0.9), tolerance = 1e-10)
+  expect_true(fwd$z < stats::qnorm(0.9))
+  # the correlation interval widens with the horizon
+  wide <- fortify_thrive(dyn, "y", anchors = 0.5, from = 50,
+                         horizon = c(1, 6), thrive = 0.025, level = 0.9)
+  w <- wide$upper - wide$lower
+  expect_true(w[wide$horizon == 6] > w[wide$horizon == 1])
+  expect_true(all(w >= 0))
+  # lags beyond the reference range are flagged, not silently drawn
+  expect_true(any(wide$support == "extrapolated_lag"))
+  expect_error(fortify_thrive(dyn, "y", anchors = 1.2), "must lie in")
+  expect_error(fortify_thrive(dyn, "nope"), "not an outcome")
+  p <- autoplot(dyn, type = "thrive", outcome = "y", from = c(40, 55))
+  expect_builds(p)
+  expect_true("GeomRibbon" %in% layer_classes(p))
+})
+

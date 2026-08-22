@@ -35,9 +35,22 @@ ggplot2::autoplot
 #' the pointwise band even when the model is right.
 #'
 #' For a `ref_dynamics`, `"kernel"` draws the fitted process correlation
-#' against lag and `"calibration"` draws the same Q-Q chart of held-out
-#' innovation Z from [ref_transition()] on `data`; the latter needs
-#' `data`, `id`, and `time`.
+#' against lag, `"calibration"` draws the same Q-Q chart of held-out
+#' innovation Z from [ref_transition()] on `data` (which needs `data`,
+#' `id`, and `time`), and `"thrive"` overlays conditional forecast
+#' quantile paths on the centile chart. A thrive line starts on the
+#' `anchors` centile at each time in `from` and follows the `thrive`
+#' quantile of the forecast distribution `horizon` time units later; it is
+#' [ref_forecast()] on a grid of one-visit histories, so the shaded band
+#' is the `level` interval implied by the standard error of the estimated
+#' process correlation. Paths whose lag falls outside the range the
+#' dynamics were estimated on are drawn dotted.
+#'
+#' For a [ref_derivative], `"velocity"` draws the chart velocity of each
+#' centile against time with its pointwise delta-method interval. That
+#' interval is the sampling error of the fitted coefficients; it does not
+#' cover the bias of the spline itself, which dominates when the basis
+#' dimension `k` of the time smooth is too small. The subtitle says so.
 #'
 #' @param object A fit, assessment, score table, forecast, transition,
 #'   or dynamics object.
@@ -51,7 +64,16 @@ ggplot2::autoplot
 #' @param id Subject identifier column.
 #' @param time Time column.
 #' @param centiles Probability levels for centile and fan charts.
-#' @param level Coverage of the envelope on the Q-Q and worm plots.
+#' @param level Coverage of the envelope on the Q-Q and worm plots, of
+#'   the pointwise interval on a velocity plot, or of the correlation
+#'   interval around a thrive line.
+#' @param anchors Starting centiles for `type = "thrive"`.
+#' @param from Anchor times for `type = "thrive"` (default: a grid over
+#'   the reference range).
+#' @param horizon Forward step(s) for `type = "thrive"`; a vector traces a
+#'   continuous path rather than a single segment.
+#' @param thrive Conditional centile of the step for `type = "thrive"`;
+#'   `0.5` gives the pure regression-to-the-mean path.
 #' @param ... Unused.
 #' @return A ggplot.
 #' @examples
@@ -129,6 +151,13 @@ autoplot.ref_forecast <- function(object,
 
 #' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
+autoplot.ref_derivative <- function(object, type = c("velocity"), level = 0.95, ...) {
+  type <- match.arg(type)
+  plot_derivative(object, level = level)
+}
+
+#' @rdname autoplot.ref_fit
+#' @exportS3Method ggplot2::autoplot
 autoplot.ref_transition <- function(object, type = c("velocity", "innovation", "change"), ...) {
   type <- match.arg(type)
   plot_transition(object, type)
@@ -137,17 +166,29 @@ autoplot.ref_transition <- function(object, type = c("velocity", "innovation", "
 #' @rdname autoplot.ref_fit
 #' @exportS3Method ggplot2::autoplot
 autoplot.ref_dynamics <- function(object,
-                                   type = c("kernel", "calibration"),
+                                   type = c("kernel", "calibration", "thrive"),
                                    data = NULL,
                                    id = NULL,
                                    time = NULL,
-                                   level = 0.95,
+                                   level = NULL,
+                                   outcome = NULL,
+                                   x = NULL,
+                                   centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
+                                   anchors = c(0.05, 0.25, 0.5, 0.75, 0.95),
+                                   from = NULL,
+                                   horizon = 1,
+                                   thrive = 0.025,
                                    ...) {
   type <- match.arg(type)
   if (identical(type, "kernel")) {
     return(plot_kernel(object))
   }
-  plot_dynamics_calibration(object, data, rlang::enquo(id), rlang::enquo(time), level)
+  if (identical(type, "thrive")) {
+    return(plot_thrive(object, outcome, x, centiles, anchors, from,
+                       horizon, thrive, level %||% 0.9))
+  }
+  plot_dynamics_calibration(object, data, rlang::enquo(id), rlang::enquo(time),
+                            level %||% 0.95)
 }
 
 # --- shared centile geometry ----------------------------------------------
@@ -629,6 +670,75 @@ plot_heatmap <- function(scores) {
                    axis.line = ggplot2::element_blank())
 }
 
+# --- ref_dynamics: thrive lines ------------------------------------------
+
+plot_thrive <- function(dynamic, outcome, x, centiles, anchors, from,
+                        horizon, thrive, level) {
+  fit <- dynamic$reference
+  outcome <- outcome %||% dynamic$outcomes[[1]]
+  x_nm <- x %||% dynamic$time_name
+  built <- fortify_centiles(fit, outcome, x_nm, NULL, centiles)
+  th <- fortify_thrive(dynamic, outcome, anchors, from, horizon, thrive, level, x_nm)
+  cols <- referent_cols()
+  th$.dashed <- th$support != "in"
+  p <- ggplot2::ggplot() + centile_layers(built$lines, built$ribbons)
+  band <- th[is.finite(th$lower) & is.finite(th$upper), , drop = FALSE]
+  if (nrow(band)) {
+    p <- p + ggplot2::geom_ribbon(
+      data = band,
+      ggplot2::aes(x = .data$time, ymin = .data$lower, ymax = .data$upper,
+                   group = .data$.segment),
+      fill = cols$accent, colour = NA, alpha = 0.22
+    )
+  }
+  for (dash in c(FALSE, TRUE)) {
+    part <- th[th$.dashed == dash, , drop = FALSE]
+    if (!nrow(part)) {
+      next
+    }
+    p <- p + ggplot2::geom_line(
+      data = part,
+      ggplot2::aes(x = .data$time, y = .data$value, group = .data$.segment),
+      colour = cols$accent, linewidth = 0.55,
+      linetype = if (dash) "dotted" else "solid"
+    )
+  }
+  ends <- th[th$horizon == max(th$horizon), , drop = FALSE]
+  p <- p + ggplot2::geom_point(
+    data = ends,
+    ggplot2::aes(x = .data$time, y = .data$value),
+    colour = cols$accent, size = 0.9
+  )
+  y_rng <- fit$reference_baseline[[outcome]]$range %||% c(NA_real_, NA_real_)
+  n_out <- if (all(is.finite(y_rng))) {
+    sum(th$value < y_rng[[1]] | th$value > y_rng[[2]], na.rm = TRUE)
+  } else {
+    0L
+  }
+  n_extra <- sum(th$support != "in")
+  sub <- paste0(
+    "thrive line: ",
+    paste(format(100 * sort(unique(th$thrive)), trim = TRUE), collapse = "/"),
+    "th conditional centile ", format(max(th$horizon), trim = TRUE), " ",
+    x_nm, " units ahead"
+  )
+  if (nrow(band)) {
+    sub <- paste0(sub, "; band = ", format(100 * level, trim = TRUE),
+                  "% for the estimated correlation")
+  }
+  if (n_extra) {
+    sub <- paste0(sub, "; ", n_extra, " point", if (n_extra > 1) "s" else "",
+                  " outside the observed lag range (dotted)")
+  }
+  if (n_out > 0) {
+    sub <- paste0(sub, "; ", n_out, " outside the reference outcome range")
+  }
+  finish_plot(p + pretty_x() + pretty_y(), title = NULL,
+              subtitle = paste(strwrap(sub, width = 88), collapse = "
+"),
+              xlab = x_nm, ylab = outcome)
+}
+
 # --- ref_forecast ----------------------------------------------------------
 
 plot_fan <- function(forecast, centiles) {
@@ -707,7 +817,25 @@ plot_transition <- function(object, type) {
   df <- df[is.finite(df[[y_nm]]), , drop = FALSE]
   p <- ggplot2::ggplot(df, ggplot2::aes(.data$.dt, .data[[y_nm]])) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted)
-  if (type != "velocity") {
+  sub <- NULL
+  if (identical(type, "velocity")) {
+    # An observed velocity means nothing without the interval the model
+    # expected it to fall in; ref_transition() already carries it.
+    iv <- df[is.finite(df$velocity_lower) & is.finite(df$velocity_upper), , drop = FALSE]
+    if (nrow(iv)) {
+      p <- p + ggplot2::geom_linerange(
+        data = iv,
+        ggplot2::aes(x = .data$.dt, ymin = .data$velocity_lower, ymax = .data$velocity_upper),
+        inherit.aes = FALSE, colour = referent_cols()$band, alpha = 0.35, linewidth = 0.5
+      )
+      inside <- mean(iv$observed_velocity >= iv$velocity_lower &
+                       iv$observed_velocity <= iv$velocity_upper)
+      sub <- sprintf(
+        "bars: 90%% history-conditioned predictive interval; %.0f%% of the %d plotted velocities fall inside",
+        100 * inside, nrow(iv)
+      )
+    }
+  } else {
     p <- p + ggplot2::geom_hline(
       yintercept = c(-2, 2), linetype = "dotted", colour = referent_cols()$muted, linewidth = 0.4
     )
@@ -718,7 +846,66 @@ plot_transition <- function(object, type) {
   if (length(unique(df$.outcome)) > 1L) {
     p <- p + ggplot2::facet_wrap(~.outcome)
   }
-  finish_plot(p + pretty_x() + pretty_y(), title = NULL, xlab = "Elapsed time", ylab = ylab)
+  finish_plot(p + pretty_x() + pretty_y(), title = NULL, subtitle = sub,
+              xlab = "Elapsed time", ylab = ylab)
+}
+
+# --- ref_derivative --------------------------------------------------------
+
+# Chart velocity of each centile against time. The ribbon is the pointwise
+# delta-method interval carried by ref_derivative(); it is a sampling-error
+# interval only, and the subtitle says so, because the bias of a penalised
+# spline's derivative is not in Vp.
+plot_derivative <- function(object, level = 0.95) {
+  if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
+      level <= 0 || level >= 1) {
+    cli::cli_abort("{.arg level} must be a single number in (0, 1).")
+  }
+  df <- tibble::as_tibble(object)
+  df <- df[is.finite(df$chart_velocity), , drop = FALSE]
+  if (!nrow(df)) {
+    cli::cli_abort("No finite chart velocities to plot.")
+  }
+  df <- df[order(df$.outcome, df$centile, df$time), , drop = FALSE]
+  zq <- stats::qnorm(1 - (1 - level) / 2)
+  df$.ymin <- df$chart_velocity - zq * df$chart_velocity_se
+  df$.ymax <- df$chart_velocity + zq * df$chart_velocity_se
+  lev <- sort(unique(df$centile))
+  df$.label <- factor(centile_label(df$centile), levels = centile_label(lev))
+  band <- df[is.finite(df$.ymin) & is.finite(df$.ymax), , drop = FALSE]
+  n_no_se <- sum(!is.finite(df$chart_velocity_se))
+  p <- ggplot2::ggplot(df, ggplot2::aes(.data$time, .data$chart_velocity)) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", colour = referent_cols()$muted)
+  if (nrow(band)) {
+    p <- p + ggplot2::geom_ribbon(
+      data = band,
+      ggplot2::aes(x = .data$time, ymin = .data$.ymin, ymax = .data$.ymax,
+                   group = .data$.label),
+      inherit.aes = FALSE, fill = referent_cols()$band, alpha = 0.18
+    )
+  }
+  if (has_groups(df$.label)) {
+    p <- p +
+      ggplot2::geom_line(ggplot2::aes(colour = .data$.label), linewidth = 0.7) +
+      scale_colour_referent(name = "Centile")
+  } else {
+    p <- p + ggplot2::geom_line(colour = referent_cols()$band, linewidth = 0.8)
+  }
+  if (length(unique(df$.outcome)) > 1L) {
+    p <- p + ggplot2::facet_wrap(~.outcome, scales = "free_y")
+  }
+  sub <- paste0(
+    "shaded: pointwise ", format(100 * level, trim = TRUE),
+    "% delta-method interval (sampling error of the fitted coefficients only; ",
+    "it does not cover smoothing bias)"
+  )
+  if (n_no_se) {
+    sub <- paste0(sub, "; ", n_no_se, " point", if (n_no_se > 1L) "s" else "",
+                  " without a standard error")
+  }
+  finish_plot(p + pretty_x() + pretty_y(), title = NULL,
+              subtitle = paste(strwrap(sub, width = 88), collapse = "\n"),
+              xlab = "Time", ylab = "Chart velocity (units per unit time)")
 }
 
 # --- ref_dynamics ----------------------------------------------------------

@@ -19,6 +19,7 @@ centile. The term "abnormality score" is not part of the core API.
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://bbuchsbaum.github.io/referent}
   \item \url{https://github.com/bbuchsbaum/referent}
   \item Report bugs at \url{https://github.com/bbuchsbaum/referent/issues}
 }

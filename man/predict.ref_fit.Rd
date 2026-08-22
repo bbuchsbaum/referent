@@ -61,6 +61,8 @@ for failed outcomes).
 \description{
 One method serves plain, adapted, calibrated, and frozen fits. The
 steps are: engine prediction, then site adaptation (shifting location
-and scale, including any coefficient draws), then scoring, then PIT
-recalibration, and finally extrapolation masking.
+and scale, including any coefficient draws), then the response
+transform of \code{\link[=ref_spec]{ref_spec()}} (which puts the predictive back on the scale
+of \code{y}), then scoring, then PIT recalibration, and finally
+extrapolation masking.
 }

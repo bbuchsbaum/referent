@@ -39,6 +39,14 @@ error from the fitted coefficient covariance (\code{Vp}) applied to the
 finite-difference of the linear-predictor matrix. This is a
 population-chart derivative, not an individual longitudinal estimate.
 }
+\details{
+\code{chart_velocity_se} is the sampling error of the fitted coefficients.
+It does not cover the bias of the spline itself, which is the larger
+error whenever the basis of the \code{with_respect_to} smooth is too small
+to represent the trajectory. That case is detectable -- the smooth's
+effective degrees of freedom saturate its basis -- so it is warned
+about; refit with a larger \code{k} and compare.
+}
 \examples{
 ref <- ref_simulate(150, seed = 1)
 fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")

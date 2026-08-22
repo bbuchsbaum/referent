@@ -127,7 +127,7 @@
     Code
       print(cal$calibration)
     Message
-      <ref_calibration> method = rank, n = 50, by site
+      <ref_calibration> n = 50, by site
 
 ---
 

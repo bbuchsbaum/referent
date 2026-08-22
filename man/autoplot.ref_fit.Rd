@@ -5,6 +5,7 @@
 \alias{autoplot.ref_assessment}
 \alias{autoplot.ref_scores}
 \alias{autoplot.ref_forecast}
+\alias{autoplot.ref_derivative}
 \alias{autoplot.ref_transition}
 \alias{autoplot.ref_dynamics}
 \title{Graphics for reference models}
@@ -39,15 +40,24 @@
   ...
 )
 
+\method{autoplot}{ref_derivative}(object, type = c("velocity"), level = 0.95, ...)
+
 \method{autoplot}{ref_transition}(object, type = c("velocity", "innovation", "change"), ...)
 
 \method{autoplot}{ref_dynamics}(
   object,
-  type = c("kernel", "calibration"),
+  type = c("kernel", "calibration", "thrive"),
   data = NULL,
   id = NULL,
   time = NULL,
-  level = 0.95,
+  level = NULL,
+  outcome = NULL,
+  x = NULL,
+  centiles = c(0.05, 0.25, 0.5, 0.75, 0.95),
+  anchors = c(0.05, 0.25, 0.5, 0.75, 0.95),
+  from = NULL,
+  horizon = 1,
+  thrive = 0.025,
   ...
 )
 }
@@ -76,7 +86,20 @@ plots.}
 
 \item{...}{Unused.}
 
-\item{level}{Coverage of the envelope on the Q-Q and worm plots.}
+\item{level}{Coverage of the envelope on the Q-Q and worm plots, of
+the pointwise interval on a velocity plot, or of the correlation
+interval around a thrive line.}
+
+\item{anchors}{Starting centiles for \code{type = "thrive"}.}
+
+\item{from}{Anchor times for \code{type = "thrive"} (default: a grid over
+the reference range).}
+
+\item{horizon}{Forward step(s) for \code{type = "thrive"}; a vector traces a
+continuous path rather than a single segment.}
+
+\item{thrive}{Conditional centile of the step for \code{type = "thrive"};
+\code{0.5} gives the pure regression-to-the-mean path.}
 }
 \value{
 A ggplot.
@@ -115,9 +138,22 @@ both bands, since about \code{1 - level} of the points are expected outside
 the pointwise band even when the model is right.
 
 For a \code{ref_dynamics}, \code{"kernel"} draws the fitted process correlation
-against lag and \code{"calibration"} draws the same Q-Q chart of held-out
-innovation Z from \code{\link[=ref_transition]{ref_transition()}} on \code{data}; the latter needs
-\code{data}, \code{id}, and \code{time}.
+against lag, \code{"calibration"} draws the same Q-Q chart of held-out
+innovation Z from \code{\link[=ref_transition]{ref_transition()}} on \code{data} (which needs \code{data},
+\code{id}, and \code{time}), and \code{"thrive"} overlays conditional forecast
+quantile paths on the centile chart. A thrive line starts on the
+\code{anchors} centile at each time in \code{from} and follows the \code{thrive}
+quantile of the forecast distribution \code{horizon} time units later; it is
+\code{\link[=ref_forecast]{ref_forecast()}} on a grid of one-visit histories, so the shaded band
+is the \code{level} interval implied by the standard error of the estimated
+process correlation. Paths whose lag falls outside the range the
+dynamics were estimated on are drawn dotted.
+
+For a \link{ref_derivative}, \code{"velocity"} draws the chart velocity of each
+centile against time with its pointwise delta-method interval. That
+interval is the sampling error of the fitted coefficients; it does not
+cover the bias of the spline itself, which dominates when the basis
+dimension \code{k} of the time smooth is too small. The subtitle says so.
 }
 \examples{
 ref <- ref_simulate(150, seed = 1)

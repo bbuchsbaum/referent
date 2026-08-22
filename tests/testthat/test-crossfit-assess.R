@@ -125,3 +125,18 @@ test_that("ref_crossfit rejects one fold or one cluster clearly and scores NA st
   # each NA row has a fold, spread across folds like any stratum
   expect_gt(length(unique(attr(cf, "folds")[1:10])), 1L)
 })
+
+test_that("ref_crossfit can score the held-out fold with total uncertainty", {
+  dat <- ref_simulate(200, seed = 91)
+  set.seed(92)
+  cond <- ref_crossfit(simple_spec(), data = dat, outcomes = "y", folds = 4)
+  set.seed(92)
+  tot <- ref_crossfit(simple_spec(), data = dat, outcomes = "y", folds = 4,
+                       uncertainty = "total")
+  expect_equal(cond$.row, tot$.row)
+  # the total predictive is wider, so out-of-fold z shrink toward zero
+  expect_lt(stats::var(tot$z, na.rm = TRUE), stats::var(cond$z, na.rm = TRUE))
+  expect_gt(mean(tot$log_density, na.rm = TRUE), mean(cond$log_density, na.rm = TRUE))
+  expect_error(ref_crossfit(simple_spec(), data = dat, outcomes = "y",
+                             uncertainty = "epistemic"), "arg")
+})

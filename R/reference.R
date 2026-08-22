@@ -56,6 +56,10 @@ print.ref_freeze <- function(x, ...) {
   cli::cli_h1("referent model card")
   cli::cli_text("family: {x$spec$family$name}")
   cli::cli_text("engine: {x$spec$engine}")
+  tr <- spec_transform(x$spec)
+  if (!transform_is_identity(tr)) {
+    cli::cli_text("response transform: {tr$name}")
+  }
   cli::cli_text("outcomes: {.field {x$outcomes}}")
   cli::cli_text("covariates: {.field {x$covariates}}")
   cli::cli_text("n: {x$n}")
@@ -69,7 +73,7 @@ print.ref_freeze <- function(x, ...) {
     cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
   }
   if (!is.null(x$calibration)) {
-    cli::cli_text("calibrated: {x$calibration$method} on n = {x$calibration$n}")
+    cli::cli_text("calibrated: on n = {x$calibration$n}")
   }
   ranges <- x$support_ref$numeric
   if (length(ranges)) {

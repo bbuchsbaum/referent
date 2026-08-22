@@ -4,22 +4,30 @@
 \alias{ref_calibrate}
 \title{Held-out probability recalibration}
 \usage{
-ref_calibrate(fit, data, by = NULL)
+ref_calibrate(fit, data, by = NULL, uncertainty = c("conditional", "total"))
 }
 \arguments{
 \item{fit}{A \link{ref_fit}.}
 
-\item{data}{Calibration reference data, not reused for evaluation.}
+\item{data}{Calibration reference data, not reused for evaluation, or
+an out-of-fold \code{ref_scores} table from \code{\link[=ref_crossfit]{ref_crossfit()}}. Passing the
+cross-fitted scores calibrates on the reference sample itself
+without holding any of it out.}
 
 \item{by}{Optional grouping column (e.g. site). Groups absent from the
-calibration data fall back to the pooled map.}
+calibration data fall back to the pooled map. Not available when
+\code{data} is a score table.}
+
+\item{uncertainty}{Which predictive the calibration data are scored
+under, as in \code{\link[=ref_assess]{ref_assess()}}. A map corrects the predictive it was
+fitted on, so this should match the \code{uncertainty} that
+\code{\link[=predict.ref_fit]{predict.ref_fit()}} will later be asked for. Ignored when \code{data} is a
+score table, which already carries its own.}
 }
 \value{
 The fit with a \code{calibration} slot; \code{\link[=predict.ref_fit]{predict.ref_fit()}} applies
-the map to \code{centile}, \code{z}, and the tail columns and sets
-\code{calibrated = TRUE} on every row that was mapped. An outcome with
-fewer than two finite calibration PITs (overall, or in a group with
-no pooled map) has no map and its rows stay \code{calibrated = FALSE}.
+the map to \code{centile}, \code{z}, \code{log_density}, \code{median}, \code{residual}, and
+the tail columns and sets \code{calibrated = TRUE}.
 }
 \description{
 Maps PIT values through a monotone map estimated on a calibration
@@ -29,11 +37,26 @@ calibration, so pre-calibration diagnostics (the assessment tables,
 without the per-row scores) are kept in \code{fit$calibration$pre}.
 }
 \details{
-With calibration PITs \eqn{u_{(1)} \le \dots \le u_{(n)}}, the map
-interpolates linearly between the knots
-\eqn{(u_{(r)}, r/(n+1))} and continues linearly to \eqn{(0,0)} and
-\eqn{(1,1)} outside the observed range. Beyond the range the map is
-therefore a rescaled identity: extreme tails are compressed or
-stretched but never collapsed to 0 or 1, and the calibrated tail is
-evaluated in log space so very large \verb{|z|} remain distinguishable.
+The map is a sinh-arcsinh reference distribution for the normal score
+\eqn{z_0=\Phi^{-1}(F_0(y\mid x))}, that is
+\eqn{G(u)=P_{\mathrm{SHASH}}(\Phi^{-1}(u))}. Its four parameters move
+the location, spread, skew, and tail weight of \eqn{z}, and it nests
+the identity (\eqn{\mu=0,\sigma=1,\epsilon=0,\delta=1}), so a model
+that is already calibrated is left alone. It is smooth and strictly
+monotone on the whole line, so extreme observations keep extreme,
+finite, correctly ordered scores.
+
+Because \eqn{F^\star=G(F_0)}, the whole predictive moves, not just the
+centile: the density is \eqn{f^\star=g(F_0(y))f_0(y)}, so \code{log_density}
+and every density-based score change, and the calibrated median is
+\eqn{Q_0(G^{-1}(1/2))}, so \code{median} and \code{residual} change as well.
+
+The map is kept only where it earns its place: the fitted parameters are
+used when their log-likelihood beats the identity's by more than the four
+parameters they cost, which is the AIC comparison of the two, and the map
+falls back to the exact identity when they do not. On calibration scores
+that are already uniform the fitted map survives that comparison for about
+5 percent of samples, and is close to the identity when it does. A map is
+absent altogether, leaving \code{calibrated = FALSE}, only when there are fewer
+than twenty usable scores or the fit does not converge.
 }
