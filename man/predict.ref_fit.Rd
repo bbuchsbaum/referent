@@ -7,11 +7,13 @@
 \method{predict}{ref_fit}(
   object,
   newdata,
-  type = c("scores", "distribution"),
+  type = c("scores", "distribution", "harmonised"),
   uncertainty = c("total", "conditional"),
   outcomes = NULL,
   allow_extrapolation = FALSE,
   n_draw = NULL,
+  by = NULL,
+  to = NULL,
   ...
 )
 }
@@ -20,8 +22,18 @@
 
 \item{newdata}{Data frame of target observations.}
 
-\item{type}{\code{"scores"} or \code{"distribution"}. Distributions carry
-adaptation but not the calibration map, which acts on probabilities.}
+\item{type}{\code{"scores"}, \code{"distribution"}, or \code{"harmonised"}.
+Distributions carry adaptation but not the calibration map, which
+acts on probabilities. \code{"harmonised"} returns \code{newdata} with each
+outcome replaced by its conditional quantile mapping out of the
+group effect: \eqn{y_h = Q(F(y \mid x, g) \mid x, g_0)}, where
+\eqn{F} is the predictive for the row's own group (after adaptation)
+and the target \eqn{g_0} is either the model with the smooth terms
+of \code{by} excluded (a zero group effect; a parametric \code{by} term is set
+to its reference level) and no adaptation, or the level \code{to}. The map
+is deterministic and monotone, so harmonised values scored under the
+target predictive have exactly the original centiles; the other
+columns of \code{newdata} (including \code{by}) are returned unchanged.}
 
 \item{uncertainty}{\code{"total"} (default) integrates the scores over
 coefficient draws (or uses the analytic Gaussian total when the
@@ -47,6 +59,13 @@ With 200 draws the Monte Carlo error of a score is about 0.02 in
 extreme centiles. The constant-scale Gaussian uses the exact
 analytic total and is unaffected.}
 
+\item{by}{Grouping covariate for \code{"harmonised"}; defaults to the
+adaptation's \code{by} or, failing that, the single factor entering a
+smooth (such as \code{s(site, bs = "re")}).}
+
+\item{to}{Optional target level for \code{"harmonised"}; \code{NULL} (default)
+removes the group effect.}
+
 \item{...}{Unused.}
 }
 \value{
@@ -56,7 +75,8 @@ observation and outcome. \code{status} is \code{"ok"}, \code{"missing_predictor"
 the fit status of a failed outcome.
 For \code{"distribution"}, a tibble with \code{.id} and one
 \link[=dist_shash]{distribution} column per outcome (missing distributions
-for failed outcomes).
+for failed outcomes). For \code{"harmonised"}, \code{newdata} with
+harmonised outcome columns.
 }
 \description{
 One method serves plain, adapted, calibrated, and frozen fits. The
@@ -65,4 +85,16 @@ and scale, including any coefficient draws), then the response
 transform of \code{\link[=ref_spec]{ref_spec()}} (which puts the predictive back on the scale
 of \code{y}), then scoring, then PIT recalibration, and finally
 extrapolation masking.
+}
+\examples{
+ref <- ref_simulate(300, site_shift = c(0, 1, -1, 0), seed = 1)
+spec <- ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex + s(site, bs = "re"))
+fit <- ref_fit(spec, ref, outcomes = "y")
+# synthetic subjects from the reference: one draw per covariate-grid row
+grid <- expand.grid(age = c(30, 50, 70), sex = factor("F"), site = factor("A"))
+dists <- predict(fit, grid, type = "distribution")
+synthetic <- data.frame(grid, y = unlist(distributional::generate(dists$y, 1)))
+# site effects mapped out of the observed outcomes
+harm <- predict(fit, ref, type = "harmonised")
+tapply(harm$y - ref$y, ref$site, mean)
 }

@@ -26,6 +26,14 @@
 #' `rmse`, `mae`, `mean_log_score`, and `crps` are the usual proper and
 #' point scores.
 #'
+#' `marginal` reports the moments of \eqn{z} (`mean_z`, `var_z`,
+#' `skew_z`, `excess_kurtosis_z`), the Shapiro-Wilk statistic `shapiro_w`
+#' of \eqn{z} (on a fixed-seed subsample of 5000 when \eqn{n} is larger),
+#' the coverage of central intervals, and `mace`, PCNtoolkit's mean
+#' absolute centile error: the mean over the centiles 0.05, 0.25, 0.5,
+#' 0.75, and 0.95 of the absolute difference between the centile and the
+#' fraction of observations at or below its curve.
+#'
 #' `conditional` checks the scores against every covariate the model
 #' uses. For a numeric covariate it fits light diagnostic GAMs of
 #' \eqn{z} and \eqn{z^2 - 1} against it and reports the largest absolute
@@ -142,7 +150,9 @@ assess_marginal <- function(scores) {
       mean_z = mean(z),
       var_z = stats::var(z),
       skew_z = if (length(z) > 3) std_moment(z, 3) else NA_real_,
-      excess_kurtosis = if (length(z) > 4) std_moment(z, 4) - 3 else NA_real_,
+      excess_kurtosis_z = if (length(z) > 4) std_moment(z, 4) - 3 else NA_real_,
+      shapiro_w = shapiro_w(z),
+      mace = mace(u),
       cover_50 = mean(u > 0.25 & u < 0.75, na.rm = TRUE),
       cover_80 = mean(u > 0.10 & u < 0.90, na.rm = TRUE),
       cover_90 = mean(u > 0.05 & u < 0.95, na.rm = TRUE),
@@ -150,6 +160,28 @@ assess_marginal <- function(scores) {
       cover_99 = mean(u > 0.005 & u < 0.995, na.rm = TRUE)
     )
   })
+}
+
+# Mean absolute centile error (PCNtoolkit): the mean over the centile
+# grid of |q - (fraction of observations at or below the q-th centile
+# curve)|, which for PIT values u is |q - mean(u <= q)|.
+mace <- function(u, grid = c(0.05, 0.25, 0.5, 0.75, 0.95)) {
+  if (!length(u)) {
+    return(NA_real_)
+  }
+  mean(vapply(grid, function(q) abs(q - mean(u <= q)), numeric(1)))
+}
+
+# Shapiro-Wilk W of z. stats::shapiro.test() accepts at most 5000
+# values, so larger samples are subsampled once with a fixed seed.
+shapiro_w <- function(z) {
+  if (length(z) < 3L || stats::sd(z) == 0) {
+    return(NA_real_)
+  }
+  if (length(z) > 5000L) {
+    z <- withr::with_seed(1L, sample(z, 5000L))
+  }
+  unname(stats::shapiro.test(z)$statistic)
 }
 
 # k-th standardised moment; 0 when x has no spread.

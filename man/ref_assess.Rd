@@ -54,6 +54,14 @@ standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
 \code{rmse}, \code{mae}, \code{mean_log_score}, and \code{crps} are the usual proper and
 point scores.
 
+\code{marginal} reports the moments of \eqn{z} (\code{mean_z}, \code{var_z},
+\code{skew_z}, \code{excess_kurtosis_z}), the Shapiro-Wilk statistic \code{shapiro_w}
+of \eqn{z} (on a fixed-seed subsample of 5000 when \eqn{n} is larger),
+the coverage of central intervals, and \code{mace}, PCNtoolkit's mean
+absolute centile error: the mean over the centiles 0.05, 0.25, 0.5,
+0.75, and 0.95 of the absolute difference between the centile and the
+fraction of observations at or below its curve.
+
 \code{conditional} checks the scores against every covariate the model
 uses. For a numeric covariate it fits light diagnostic GAMs of
 \eqn{z} and \eqn{z^2 - 1} against it and reports the largest absolute
