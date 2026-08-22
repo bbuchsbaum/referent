@@ -11,6 +11,7 @@
   uncertainty = c("total", "conditional"),
   outcomes = NULL,
   allow_extrapolation = FALSE,
+  n_draw = NULL,
   ...
 )
 }
@@ -19,17 +20,33 @@
 
 \item{newdata}{Data frame of target observations.}
 
-\item{type}{\code{"scores"} or \code{"distribution"}.}
+\item{type}{\code{"scores"} or \code{"distribution"}. Distributions carry
+adaptation but not the calibration map, which acts on probabilities.}
 
-\item{uncertainty}{\code{"total"} (default for scores) or \code{"conditional"}.}
+\item{uncertainty}{\code{"total"} (default) integrates the scores over
+coefficient draws (or uses the analytic Gaussian total when the
+location is identity-linked with constant scale); \code{"conditional"}
+uses the point estimates.}
 
 \item{outcomes}{Optional subset of outcomes.}
 
 \item{allow_extrapolation}{If \code{FALSE} (default), severe out-of-support
 rows have \code{z = NA}.}
 
+\item{n_draw}{Number of coefficient draws for \code{"total"}; defaults to
+\code{spec$control$n_draw} or 200. Draws are seeded from
+\code{spec$control$seed} (default 1) so repeated calls agree exactly.}
+
 \item{...}{Unused.}
 }
+\value{
+For \code{"scores"}, a \code{norm_scores} tibble with one row per
+observation and outcome. \code{status} is \code{"ok"}, \code{"missing_predictor"}
+(a covariate is \code{NA}), or the fit status of a failed outcome.
+}
 \description{
-Predict distributions or scores from a reference fit
+One method serves plain, adapted, calibrated, and frozen fits. The
+steps are: engine prediction, then site adaptation (shifting location
+and scale, including any coefficient draws), then scoring, then PIT
+recalibration, and finally extrapolation masking.
 }

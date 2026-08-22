@@ -4,20 +4,37 @@
 \alias{norm_assess}
 \title{Assess a fitted reference model}
 \usage{
-norm_assess(fit, newdata = NULL, by = NULL)
+norm_assess(fit, newdata, by = NULL)
 }
 \arguments{
 \item{fit}{A \link{norm_fit}.}
 
-\item{newdata}{Held-out validation data. If omitted, training data
-scores are used and marked in-sample.}
+\item{newdata}{Held-out validation data (required; training data are
+not stored on the fit). For out-of-fold evaluation use
+\code{\link[=norm_crossfit]{norm_crossfit()}}.}
 
-\item{by}{Optional grouping column for conditional summaries.}
+\item{by}{Optional grouping column; the marginal calibration table is
+then reported per group (column \code{.group}).}
 }
 \value{
-An object of class \code{norm_assessment}.
+An object of class \code{norm_assessment} with \code{overall},
+\code{marginal}, \code{conditional}, and \code{tail} tibbles plus the scores.
 }
 \description{
 Reports overall probabilistic fit, marginal calibration, conditional
-calibration, and tail calibration. Phase 1 returns numbers, not plots.
+calibration, and tail calibration on held-out data.
+}
+\details{
+\code{overall} maps onto the PCNtoolkit evaluation metrics as follows:
+\code{standardized_log_score} is the negative MSLL (mean log score minus
+the log score of an unconditional Gaussian); \code{cor} is Rho (Pearson
+correlation of observed and predicted median); \code{smse} is the
+standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
+\code{ev} is explained variance \eqn{1 - \mathrm{var}(y - \hat y)/\mathrm{var}(y)}.
+\code{rmse}, \code{mae}, \code{mean_log_score}, and \code{crps} are the usual proper and
+point scores.
+
+\code{conditional} fits light diagnostic GAMs of \eqn{z} and \eqn{z^2 - 1}
+against every numeric covariate the model uses and reports the
+largest fitted drift with the GAM standard error at that point.
 }

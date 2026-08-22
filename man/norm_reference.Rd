@@ -6,7 +6,6 @@
 \usage{
 norm_reference(
   fit,
-  include_data = FALSE,
   criteria = NULL,
   units = NULL,
   missing_policy = "complete-case per outcome; predictors are never imputed"
@@ -15,15 +14,13 @@ norm_reference(
 \arguments{
 \item{fit}{A \link{norm_fit}.}
 
-\item{include_data}{If \code{TRUE}, store the training frame (not default).}
-
 \item{criteria, units, missing_policy}{Optional provenance fields.}
 }
 \value{
 An object of class \code{norm_reference} (also a \code{norm_fit}).
 }
 \description{
-The bundle omits raw training observations by default. It keeps what
-is required for prediction, support checks, calibration, and
+The bundle omits raw training observations. It keeps what is required
+for prediction, support checks, adaptation, calibration, and
 provenance. Printing a \code{norm_reference} shows the model card.
 }

@@ -34,8 +34,9 @@ in one fold.}
 \item{...}{Passed to \code{\link[=norm_fit]{norm_fit()}}.}
 }
 \value{
-A \code{norm_scores} object with \code{.in_sample = FALSE}, plus a
-\code{deployment} fit attribute.
+A \code{norm_scores} object with \code{.in_sample = FALSE}, \code{.row}
+indexing rows of \code{data}, a per-row \code{crps} column, and a \code{.fold}
+column, plus a \code{deployment} fit attribute.
 }
 \description{
 Every reference observation receives a score from a model that did not

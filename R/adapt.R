@@ -1,27 +1,47 @@
 #' Adapt a reference model to a new domain
 #'
 #' Freezes the shared trajectory and estimates shrunk location (and
-#' optionally scale) offsets. This is not recalibration and not a refit
-#' of the shared trajectory.
+#' optionally scale) offsets per group. This is not recalibration (see
+#' [norm_calibrate()]) and not a refit of the shared trajectory.
+#'
+#' @details
+#' Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
+#' (log scale) are estimated per outcome and group by penalised maximum
+#' likelihood on the reference family's own density with the shared
+#' trajectory frozen, so the estimates are correct for SHASH as well as
+#' Gaussian fits. The ridge penalties are worth `location_prior_n` and
+#' `scale_prior_n` pseudo-observations of Fisher information, giving a
+#' shrinkage factor of about \eqn{n/(n + \text{prior}_n)}. For a Gaussian
+#' fit this is the shrunk mean residual and
+#' \eqn{\tfrac12\log \mathrm{mean}(z^2)} with \eqn{z} the normal scores
+#' under the location-shifted reference; a site drawn from the reference
+#' generator has an expected offset of zero. Standard errors come from
+#' the penalised Hessian.
+#'
+#' Adaptation is applied inside [predict.norm_fit()]: the location of
+#' every predictive distribution (including coefficient draws under
+#' `uncertainty = "total"`) is shifted, the scale multiplied by
+#' \eqn{e^{\delta_\sigma}}, and the standard error of the location offset
+#' is added to the epistemic SD.
 #'
 #' @param fit A [norm_fit] or [norm_dynamics] object.
 #' @param data Local reference observations.
-#' @param by Grouping column (typically site).
-#' @param parameters Parameters to adapt. For a static fit: `location`
-#'   and optionally `scale`. For dynamics: also `measurement`.
-#' @param components Alias of `parameters` used by the dynamics API.
+#' @param by Grouping column (typically site). Rows whose group is not in
+#'   the adaptation data (or when `by` is `NULL`) use the pooled offset.
+#' @param parameters Parameters to adapt: `"location"` and optionally
+#'   `"scale"`.
 #' @param location_prior_n Ridge strength in observation units.
 #' @param scale_prior_n Stronger default shrinkage for scale.
-#' @return A `norm_adaptation` wrapping the original fit.
+#' @return The fit with an `adaptation` slot (class `norm_adaptation`)
+#'   recording the offsets, their standard errors, and local sample sizes.
 #' @export
 norm_adapt <- function(fit,
                        data,
                        by = NULL,
                        parameters = c("location"),
-                       components = NULL,
                        location_prior_n = 10,
                        scale_prior_n = 25) {
-  parameters <- unique(c(parameters, components))
+  parameters <- match.arg(parameters, c("location", "scale"), several.ok = TRUE)
   data <- tibble::as_tibble(data)
   by_quo <- rlang::enquo(by)
   by_vec <- pull_column(data, by_quo, default = rep(".all", nrow(data)))
@@ -31,154 +51,171 @@ norm_adapt <- function(fit,
     tryCatch(rlang::as_name(by_quo), error = function(e) NULL)
   }
   if (inherits(fit, "norm_dynamics")) {
-    return(adapt_dynamics(fit, data, by_vec, by_name, parameters,
-                          location_prior_n, scale_prior_n))
+    fit$reference <- norm_adapt(
+      fit$reference, data = data, by = !!by_quo, parameters = parameters,
+      location_prior_n = location_prior_n, scale_prior_n = scale_prior_n
+    )
+    return(fit)
   }
-  scores <- predict(fit, newdata = data, type = "scores",
-                    uncertainty = "conditional", allow_extrapolation = TRUE)
-  offsets <- lapply(unique(scores$.outcome), function(nm) {
-    sc <- scores[scores$.outcome == nm, , drop = FALSE]
-    groups <- split(seq_len(nrow(sc)), by_vec[sc$.row])
+  base <- fit
+  base$adaptation <- NULL
+  dists <- predict(base, newdata = data, type = "distribution",
+                   uncertainty = "conditional")
+  by_chr <- as.character(by_vec)
+  offsets <- lapply(names(dists), function(nm) {
+    d <- dists[[nm]]
+    if (is.null(d) || !nm %in% names(data)) {
+      return(NULL)
+    }
+    y <- data[[nm]]
+    groups <- split(seq_along(y), by_chr)
+    groups$.all <- seq_along(y)
     lapply(groups, function(idx) {
-      r <- sc$residual[idx]
-      s <- sc$aleatoric_sd[idx]
-      n_g <- sum(is.finite(r))
-      mu <- shrink_mean(r, n_g, location_prior_n)
-      log_s <- if ("scale" %in% parameters) {
-        shrink_mean(safe_log(pmax(abs(r), 1e-6)) - safe_log(pmax(s, 1e-6)),
-                    n_g, scale_prior_n)
-      } else {
-        0
-      }
-      list(
-        location = mu,
-        scale = log_s,
-        n = n_g,
-        location_se = se_mean(r[is.finite(r)]),
-        parameters = parameters
-      )
+      estimate_offsets(dist_slice(d, idx), y[idx], parameters,
+                       location_prior_n, scale_prior_n)
     })
   })
-  names(offsets) <- unique(scores$.outcome)
-  structure(
+  names(offsets) <- names(dists)
+  offsets <- Filter(Negate(is.null), offsets)
+  fit$adaptation <- structure(
     list(
-      fit = fit,
       by = by_name,
       parameters = parameters,
       offsets = offsets,
       n_local = nrow(data),
-      effective_n = tapply(by_vec, by_vec, length)
+      effective_n = table(by_chr),
+      location_prior_n = location_prior_n,
+      scale_prior_n = scale_prior_n
     ),
-    class = c("norm_adaptation", "norm_fit")
+    class = "norm_adaptation"
+  )
+  fit
+}
+
+# Penalised maximum-likelihood offsets on the family's own density. The
+# location offset is parameterised in units of the mean aleatoric SD and
+# the scale offset on the log scale, with ridge penalties equal to
+# `prior_n` pseudo-observations of Fisher information, so the shrinkage
+# factor is about n / (n + prior_n) for both. For a Gaussian family the
+# estimates are the shrunk mean residual and 0.5 * log(mean(z^2)).
+estimate_offsets <- function(d, y, parameters, location_prior_n, scale_prior_n) {
+  ok <- is.finite(y)
+  n <- sum(ok)
+  s_bar <- mean(field_or(d, "aleatoric_sd")[ok])
+  empty <- list(location = 0, scale = 0, n = n, location_se = NA_real_,
+                scale_se = NA_real_, parameters = parameters)
+  if (n < 2L || !is.finite(s_bar) || s_bar <= 0) {
+    return(empty)
+  }
+  d <- dist_slice(d, which(ok))
+  y <- y[ok]
+  fit_scale <- "scale" %in% parameters
+  objective <- function(theta) {
+    loc <- theta[[1L]] * s_bar
+    log_s <- if (fit_scale) theta[[2L]] else 0
+    ll <- sum(log_density(shift_dist(d, loc, log_s), y))
+    if (!is.finite(ll)) {
+      return(1e100)
+    }
+    -ll + 0.5 * location_prior_n * theta[[1L]]^2 +
+      (if (fit_scale) scale_prior_n * log_s^2 else 0)
+  }
+  start <- if (fit_scale) c(0, 0) else 0
+  opt <- if (fit_scale) {
+    stats::optim(start, objective, method = "BFGS", hessian = TRUE)
+  } else {
+    o <- stats::optimize(objective, interval = c(-20, 20))
+    h <- stats::optimHess(o$minimum, objective)
+    list(par = o$minimum, hessian = h)
+  }
+  se <- tryCatch(sqrt(diag(solve(opt$hessian))), error = function(e) rep(NA_real_, 2))
+  list(
+    location = opt$par[[1L]] * s_bar,
+    scale = if (fit_scale) opt$par[[2L]] else 0,
+    n = n,
+    location_se = se[[1L]] * s_bar,
+    scale_se = if (fit_scale) se[[2L]] else NA_real_,
+    parameters = parameters
   )
 }
 
-shrink_mean <- function(x, n, prior_n) {
-  x <- x[is.finite(x)]
-  if (!length(x)) {
-    return(0)
+# Shift location by `loc` and multiply scale by exp(`log_s`), keeping any
+# coefficient draws and the total-uncertainty bookkeeping consistent.
+shift_dist <- function(d, loc, log_s, loc_se = 0) {
+  n <- length(d)
+  loc <- recycle_to(loc, n)
+  log_s <- recycle_to(log_s, n)
+  loc_se <- recycle_to(loc_se, n)
+  p <- norm_params(d)
+  alea <- field_or(d, "aleatoric_sd") * exp(log_s)
+  ep <- sqrt(field_or(d, "epistemic_sd")^2 + loc_se^2)
+  total <- identical(attr(d, "uncertainty"), "total")
+  draws <- dist_draws(d)
+  scale <- if (total && is.null(draws)) {
+    sqrt(alea^2 + ep^2)
+  } else {
+    p$scale * exp(log_s)
   }
-  w <- n / (n + prior_n)
-  w * mean(x)
+  out <- norm_dist(
+    family = attr(d, "family"),
+    location = p$location + loc,
+    scale = scale,
+    skew = p$skew,
+    tail = p$tail,
+    aleatoric_sd = alea,
+    epistemic_sd = ep
+  )
+  if (!is.null(draws)) {
+    attr(out, "location_draws") <- draws$location + loc
+    attr(out, "scale_draws") <- draws$scale * exp(log_s)
+    attr(out, "skew_draws") <- draws$skew
+    attr(out, "tail_draws") <- draws$tail
+  }
+  if (total) {
+    attr(out, "uncertainty") <- "total"
+  }
+  out
+}
+
+apply_adaptation <- function(adaptation, dists, newdata) {
+  by_nm <- adaptation$by
+  grp <- if (!is.null(by_nm) && by_nm %in% names(newdata)) {
+    as.character(newdata[[by_nm]])
+  } else {
+    rep(".all", nrow(newdata))
+  }
+  grp[is.na(grp)] <- ".all"
+  out <- lapply(names(dists), function(nm) {
+    d <- dists[[nm]]
+    offs <- adaptation$offsets[[nm]]
+    if (is.null(d) || is.null(offs) || !length(d)) {
+      return(d)
+    }
+    pick <- function(g, what) {
+      off <- offs[[g]] %||% offs[[".all"]]
+      off[[what]] %||% 0
+    }
+    loc <- vapply(grp, pick, numeric(1), what = "location")
+    log_s <- vapply(grp, pick, numeric(1), what = "scale")
+    loc_se <- vapply(grp, pick, numeric(1), what = "location_se")
+    loc_se[!is.finite(loc_se)] <- 0
+    shift_dist(d, loc, log_s, loc_se)
+  })
+  names(out) <- names(dists)
+  out
 }
 
 #' @export
 print.norm_adaptation <- function(x, ...) {
   cli::cli_text("{.cls norm_adaptation} parameters: {paste(x$parameters, collapse = ', ')}")
   cli::cli_text("local n = {x$n_local}")
+  for (nm in names(x$offsets)) {
+    for (g in setdiff(names(x$offsets[[nm]]), ".all")) {
+      off <- x$offsets[[nm]][[g]]
+      cli::cli_text(
+        "  {nm} / {g}: location {signif(off$location, 3)}, scale x{signif(exp(off$scale), 3)} (n = {off$n})"
+      )
+    }
+  }
   invisible(x)
-}
-
-#' @export
-predict.norm_adaptation <- function(object,
-                                    newdata,
-                                    type = c("scores", "distribution"),
-                                    uncertainty = c("total", "conditional"),
-                                    ...) {
-  type <- match.arg(type)
-  uncertainty <- match.arg(uncertainty)
-  base <- object$fit
-  class(base) <- setdiff(class(base), "norm_adaptation")
-  dists <- predict(base, newdata = newdata, type = "distribution",
-                   uncertainty = uncertainty, ...)
-  by_nm <- object$by
-  grp <- if (!is.null(by_nm) && by_nm %in% names(newdata)) {
-    as.character(newdata[[by_nm]])
-  } else {
-    rep(".all", nrow(newdata))
-  }
-  adapted <- lapply(names(dists), function(nm) {
-    d <- dists[[nm]]
-    if (is.null(d)) {
-      return(NULL)
-    }
-    p <- norm_params(d)
-    loc <- p$location
-    sc <- p$scale
-    ep <- field_or(d, "epistemic_sd")
-    for (i in seq_along(loc)) {
-      off <- object$offsets[[nm]][[grp[[i]]]] %||% object$offsets[[nm]][[".all"]]
-      if (is.null(off)) {
-        next
-      }
-      loc[[i]] <- loc[[i]] + off$location
-      sc[[i]] <- sc[[i]] * exp(off$scale)
-      ep[[i]] <- sqrt(ep[[i]]^2 + (off$location_se %||% 0)^2)
-    }
-    norm_dist(
-      family = attr(d, "family"),
-      location = loc,
-      scale = sc,
-      skew = p$skew,
-      tail = p$tail,
-      aleatoric_sd = sc,
-      epistemic_sd = ep
-    )
-  })
-  names(adapted) <- names(dists)
-  if (identical(type, "distribution")) {
-    return(adapted)
-  }
-  support <- classify_support(object$fit$support_ref, newdata)$support
-  rows <- lapply(names(adapted), function(nm) {
-    d <- adapted[[nm]]
-    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, nrow(newdata))
-    if (is.null(d)) {
-      return(NULL)
-    }
-    sc <- as_scores(d, y)
-    sc$.row <- seq_len(nrow(newdata))
-    sc$.id <- seq_len(nrow(newdata))
-    sc$.outcome <- nm
-    sc$support <- support
-    sc$calibrated <- FALSE
-    sc$.in_sample <- FALSE
-    sc$status <- "ok"
-    sc
-  })
-  dplyr_bind(Filter(Negate(is.null), rows))
-}
-
-adapt_dynamics <- function(fit, data, by_vec, by_name, parameters,
-                           location_prior_n, scale_prior_n) {
-  static <- norm_adapt(
-    fit$reference,
-    data = data,
-    by = NULL,
-    parameters = intersect(parameters, c("location", "scale")),
-    location_prior_n = location_prior_n,
-    scale_prior_n = scale_prior_n
-  )
-  meas <- 0
-  if ("measurement" %in% parameters && !is.null(fit$process)) {
-    # local short-interval residuals inflate measurement variance
-    y0 <- data[[fit$outcomes[[1]]]]
-    meas <- stats::var(as.numeric(scale(y0)[, 1]), na.rm = TRUE)
-    meas <- shrink_mean(rep(meas, nrow(data)), nrow(data), scale_prior_n)
-  }
-  fit$adaptation <- static
-  fit$measurement_offset <- meas
-  fit$adapted_parameters <- parameters
-  class(fit) <- unique(c("norm_adaptation", class(fit)))
-  fit
 }

@@ -21,7 +21,8 @@ joint (Mahalanobis) spread of the reference data on the covariates the
 model actually uses. Statuses: \code{"in"}, \code{"edge"} (outside the central
 96\% of a covariate or beyond the 99\% Mahalanobis radius), \code{"out"}
 (outside the observed range or beyond twice that radius), and
-\code{"new_group"} (unseen factor level).
+\code{"new_group"} (unseen factor level), and \code{"unknown"} (a covariate is
+\code{NA}).
 }
 \examples{
 ref <- norm_simulate(80, seed = 1)

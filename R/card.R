@@ -1,16 +1,14 @@
 #' Frozen reference bundle and model card
 #'
-#' The bundle omits raw training observations by default. It keeps what
-#' is required for prediction, support checks, calibration, and
+#' The bundle omits raw training observations. It keeps what is required
+#' for prediction, support checks, adaptation, calibration, and
 #' provenance. Printing a `norm_reference` shows the model card.
 #'
 #' @param fit A [norm_fit].
-#' @param include_data If `TRUE`, store the training frame (not default).
 #' @param criteria,units,missing_policy Optional provenance fields.
 #' @return An object of class `norm_reference` (also a `norm_fit`).
 #' @export
 norm_reference <- function(fit,
-                           include_data = FALSE,
                            criteria = NULL,
                            units = NULL,
                            missing_policy = "complete-case per outcome; predictors are never imputed") {
@@ -22,6 +20,9 @@ norm_reference <- function(fit,
       covariates = fit$covariates,
       support_ref = fit$support_ref,
       calibration = fit$calibration,
+      adaptation = fit$adaptation,
+      id_name = fit$id_name,
+      data_hash = fit$data_hash,
       statuses = fit_statuses(fit),
       n = fit$n,
       criteria = criteria,
@@ -40,8 +41,7 @@ norm_reference <- function(fit,
         referent = as.character(utils::packageVersion("referent")),
         mgcv = as.character(utils::packageVersion("mgcv")),
         r = paste(R.version$major, R.version$minor, sep = ".")
-      ),
-      data = if (isTRUE(include_data)) fit$data else NULL
+      )
     ),
     class = c("norm_reference", "norm_fit")
   )
@@ -61,6 +61,12 @@ print.norm_reference <- function(x, ...) {
   )
   st <- x$statuses
   cli::cli_text("statuses: {paste(paste0(names(st), '=', st), collapse = ', ')}")
+  if (!is.null(x$adaptation)) {
+    cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
+  }
+  if (!is.null(x$calibration)) {
+    cli::cli_text("calibrated: {x$calibration$method} on n = {x$calibration$n}")
+  }
   if (length(x$ranges)) {
     cli::cli_text("Covariate ranges")
     for (nm in names(x$ranges)) {

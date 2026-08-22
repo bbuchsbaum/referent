@@ -21,15 +21,27 @@ covariate-dependent skew/tail model.}
 \item{...}{Passed to \code{\link[=norm_crossfit]{norm_crossfit()}}.}
 }
 \value{
-A list with the selected spec, scores, and a comparison table.
+A \code{norm_selection}: the selected spec and name, the selected
+model's cross-fit scores, and a \code{comparison} table with the
+out-of-fold log score, CRPS, and calibration gate values per model.
 }
 \description{
+Every criterion is computed from out-of-fold cross-fitted scores:
+}
+\details{
 \enumerate{
 \item Drop failed or unstable fits.
-\item Drop models with unacceptable calibration.
-\item Rank survivors by out-of-sample log score.
-\item Use CRPS as a secondary score.
-\item Choose the simplest model within one standard error of the best.
-\item Require extra evidence before covariate-dependent shape.
+\item Drop models whose out-of-fold calibration is unacceptable (see
+\code{\link[=acceptable_calibration]{acceptable_calibration()}}).
+\item Rank survivors by out-of-fold mean log score; ties are broken by
+out-of-fold CRPS.
+\item Keep the candidates within one standard error of the best, where
+the standard error is that of the \emph{paired} per-observation
+log-density difference against the best model. A candidate whose
+CRPS is worse than the best by more than one paired standard error
+is dropped as well.
+\item Require \code{shape_threshold} extra mean log score before accepting any
+spec with covariate-dependent skew or tail.
+\item Choose the simplest remaining model (lowest ladder level).
 }
 }

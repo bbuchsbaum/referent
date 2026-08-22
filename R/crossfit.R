@@ -13,8 +13,9 @@
 #'   in one fold.
 #' @param id Optional identifier stored on scores.
 #' @param ... Passed to [norm_fit()].
-#' @return A `norm_scores` object with `.in_sample = FALSE`, plus a
-#'   `deployment` fit attribute.
+#' @return A `norm_scores` object with `.in_sample = FALSE`, `.row`
+#'   indexing rows of `data`, a per-row `crps` column, and a `.fold`
+#'   column, plus a `deployment` fit attribute.
 #' @export
 norm_crossfit <- function(spec,
                           data,
@@ -37,13 +38,24 @@ norm_crossfit <- function(spec,
       return(NULL)
     }
     fit <- norm_fit(spec, data = train, outcomes = outcome_names, ...)
+    dists <- predict(fit, newdata = test, type = "distribution", uncertainty = "conditional")
     sc <- predict(fit, newdata = test, type = "scores", uncertainty = "conditional")
-    sc$.id <- id_vec[fold_id == k]
+    sc$crps <- NA_real_
+    for (nm in names(dists)) {
+      if (!is.null(dists[[nm]]) && nm %in% names(test)) {
+        sel <- sc$.outcome == nm
+        sc$crps[sel] <- crps_from_dist(dists[[nm]], test[[nm]])
+      }
+    }
+    rows <- which(fold_id == k)
+    sc$.id <- id_vec[rows][sc$.row]
+    sc$.row <- rows[sc$.row]
     sc$.in_sample <- FALSE
     sc$.fold <- k
     sc
   })
   scores <- dplyr_bind(Filter(Negate(is.null), pieces))
+  scores <- scores[order(scores$.outcome, scores$.row), , drop = FALSE]
   deployment <- norm_fit(spec, data = data, outcomes = outcome_names, id = id_vec, ...)
   structure(
     scores,

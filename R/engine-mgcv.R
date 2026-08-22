@@ -7,10 +7,10 @@ fit_engine <- function(spec, data, outcome, ...) {
 }
 
 predict_engine_dist <- function(fit_one, newdata, uncertainty = "conditional",
-                                n_draw = 64L) {
+                                n_draw = 200L, seed = 1L) {
   switch(
     fit_one$engine,
-    mgcv = predict_mgcv_dist(fit_one, newdata, uncertainty, n_draw),
+    mgcv = predict_mgcv_dist(fit_one, newdata, uncertainty, n_draw, seed),
     cli::cli_abort("Unknown engine {.val {fit_one$engine}}.")
   )
 }
@@ -20,9 +20,24 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
   n <- nrow(data)
   use_bam <- isTRUE(spec$use_bam) && n >= spec$bam_min_n &&
     fam_name == "gaussian" && formula_is_intercept_only(spec$scale)
-  fitter <- if (use_bam) mgcv::bam else mgcv::gam
+  fitter0 <- if (use_bam) mgcv::bam else mgcv::gam
+  # mgcv step-failure warnings are recorded on the fit rather than raised;
+  # `status` reflects convergence.
+  warnings <- character()
+  fitter <- function(...) {
+    withCallingHandlers(
+      fitter0(...),
+      warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
+    )
+  }
+  # The outcome is copied to a syntactic temporary column so that names
+  # such as "brain volume" fit; `y_name` keeps the real name.
+  data$.referent_y <- data[[outcome]]
   rhs_loc <- spec$location[[length(spec$location)]]
-  loc_f <- stats::as.formula(eval(bquote(.(as.name(outcome)) ~ .(rhs_loc))))
+  loc_f <- stats::as.formula(eval(bquote(.referent_y ~ .(rhs_loc))))
   model <- tryCatch(
     {
       if (fam_name == "gaussian" && formula_is_intercept_only(spec$scale)) {
@@ -73,7 +88,7 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
     family = spec$family,
     outcome = outcome,
     status = status,
-    message = NULL,
+    message = if (length(warnings)) paste(unique(warnings), collapse = "; ") else NULL,
     model = model,
     spec = spec,
     y_name = outcome
@@ -92,7 +107,7 @@ mgcv_converged <- function(model) {
 }
 
 predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "total"),
-                              n_draw = 64L) {
+                              n_draw = 200L, seed = 1L) {
   uncertainty <- match.arg(uncertainty)
   model <- fit_one$model
   fam <- fit_one$family$name
@@ -104,8 +119,21 @@ predict_mgcv_dist <- function(fit_one, newdata, uncertainty = c("conditional", "
   }
   pars <- mgcv_parameters(model, newdata, fam, fit_one)
   if (identical(uncertainty, "total") && !is.null(model$Vp)) {
-    pars <- mgcv_parameters_total(model, newdata, fam, fit_one, n_draw)
-    return(pars$dist)
+    if (is_plain_gaussian(model, fam)) {
+      # identity location, constant scale: the total predictive is exactly
+      # N(mu, sigma^2 + se^2), so no draws are needed.
+      total_scale <- sqrt(pars$scale^2 + (pars$epistemic_sd %||% 0)^2)
+      dist <- norm_dist(
+        family = fam,
+        location = pars$location,
+        scale = total_scale,
+        aleatoric_sd = pars$scale,
+        epistemic_sd = pars$epistemic_sd %||% 0
+      )
+      attr(dist, "uncertainty") <- "total"
+      return(dist)
+    }
+    return(mgcv_parameters_total(model, newdata, fam, fit_one, n_draw, seed)$dist)
   }
   norm_dist(
     family = fam,
@@ -129,6 +157,11 @@ predict_gam_quiet <- function(model, newdata, ...) {
       }
     }
   )
+}
+
+is_plain_gaussian <- function(model, fam) {
+  fam == "gaussian" && is.null(model$family$n.theta) &&
+    !inherits(model$family, "general.family")
 }
 
 mgcv_parameters <- function(model, newdata, fam, fit_one) {
@@ -222,7 +255,7 @@ residual_scale <- function(model) {
   sqrt(max(s, .Machine$double.eps))
 }
 
-mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw) {
+mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw, seed = 1L) {
   cond <- mgcv_parameters(model, newdata, fam, fit_one)
   n <- length(cond$location)
   lp <- tryCatch(
@@ -260,7 +293,7 @@ mgcv_parameters_total <- function(model, newdata, fam, fit_one, n_draw) {
     }
   }
   draws <- tryCatch(
-    mvtnorm_draw(n_draw, beta_hat, vp),
+    withr::with_seed(seed, mvtnorm_draw(n_draw, beta_hat, vp)),
     error = function(e) {
       matrix(beta_hat, nrow = n_draw, ncol = length(beta_hat), byrow = TRUE)
     }
@@ -356,34 +389,4 @@ mvtnorm_draw <- function(n, mean, sigma) {
   a <- ev$vectors %*% diag(sqrt(ev$values), nrow = length(ev$values))
   z <- matrix(stats::rnorm(n * length(mean)), n, length(mean))
   sweep(z %*% t(a), 2, mean, "+")
-}
-
-#' Total-uncertainty CDF by averaging over coefficient draws
-#'
-#' @param distribution A [norm_dist] possibly carrying location draws.
-#' @param y Observations.
-#' @export
-cdf_total <- function(distribution, y) {
-  draws <- attr(distribution, "location_draws")
-  if (is.null(draws)) {
-    return(cdf(distribution, y))
-  }
-  p <- norm_params(distribution)
-  y <- recycle_to(y, length(distribution))
-  scale_d <- attr(distribution, "scale_draws")
-  skew_d <- attr(distribution, "skew_draws")
-  tail_d <- attr(distribution, "tail_draws")
-  n_draw <- ncol(draws)
-  acc <- numeric(length(y))
-  for (j in seq_len(n_draw)) {
-    d <- norm_dist(
-      family = attr(distribution, "family"),
-      location = draws[, j],
-      scale = if (is.null(scale_d)) p$scale else scale_d[, j],
-      skew = if (is.null(skew_d)) p$skew else skew_d[, j],
-      tail = if (is.null(tail_d)) p$tail else tail_d[, j]
-    )
-    acc <- acc + cdf(d, y)
-  }
-  acc / n_draw
 }

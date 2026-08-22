@@ -9,7 +9,6 @@ norm_adapt(
   data,
   by = NULL,
   parameters = c("location"),
-  components = NULL,
   location_prior_n = 10,
   scale_prior_n = 25
 )
@@ -19,22 +18,42 @@ norm_adapt(
 
 \item{data}{Local reference observations.}
 
-\item{by}{Grouping column (typically site).}
+\item{by}{Grouping column (typically site). Rows whose group is not in
+the adaptation data (or when \code{by} is \code{NULL}) use the pooled offset.}
 
-\item{parameters}{Parameters to adapt. For a static fit: \code{location}
-and optionally \code{scale}. For dynamics: also \code{measurement}.}
-
-\item{components}{Alias of \code{parameters} used by the dynamics API.}
+\item{parameters}{Parameters to adapt: \code{"location"} and optionally
+\code{"scale"}.}
 
 \item{location_prior_n}{Ridge strength in observation units.}
 
 \item{scale_prior_n}{Stronger default shrinkage for scale.}
 }
 \value{
-A \code{norm_adaptation} wrapping the original fit.
+The fit with an \code{adaptation} slot (class \code{norm_adaptation})
+recording the offsets, their standard errors, and local sample sizes.
 }
 \description{
 Freezes the shared trajectory and estimates shrunk location (and
-optionally scale) offsets. This is not recalibration and not a refit
-of the shared trajectory.
+optionally scale) offsets per group. This is not recalibration (see
+\code{\link[=norm_calibrate]{norm_calibrate()}}) and not a refit of the shared trajectory.
+}
+\details{
+Offsets \eqn{\delta_\mu} (outcome units) and \eqn{\delta_\sigma}
+(log scale) are estimated per outcome and group by penalised maximum
+likelihood on the reference family's own density with the shared
+trajectory frozen, so the estimates are correct for SHASH as well as
+Gaussian fits. The ridge penalties are worth \code{location_prior_n} and
+\code{scale_prior_n} pseudo-observations of Fisher information, giving a
+shrinkage factor of about \eqn{n/(n + \text{prior}_n)}. For a Gaussian
+fit this is the shrunk mean residual and
+\eqn{\tfrac12\log \mathrm{mean}(z^2)} with \eqn{z} the normal scores
+under the location-shifted reference; a site drawn from the reference
+generator has an expected offset of zero. Standard errors come from
+the penalised Hessian.
+
+Adaptation is applied inside \code{\link[=predict.norm_fit]{predict.norm_fit()}}: the location of
+every predictive distribution (including coefficient draws under
+\code{uncertainty = "total"}) is shifted, the scale multiplied by
+\eqn{e^{\delta_\sigma}}, and the standard error of the location offset
+is added to the epistemic SD.
 }

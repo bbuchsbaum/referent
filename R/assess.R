@@ -1,23 +1,50 @@
 #' Assess a fitted reference model
 #'
 #' Reports overall probabilistic fit, marginal calibration, conditional
-#' calibration, and tail calibration. Phase 1 returns numbers, not plots.
+#' calibration, and tail calibration on held-out data.
+#'
+#' @details
+#' `overall` maps onto the PCNtoolkit evaluation metrics as follows:
+#' `standardized_log_score` is the negative MSLL (mean log score minus
+#' the log score of an unconditional Gaussian); `cor` is Rho (Pearson
+#' correlation of observed and predicted median); `smse` is the
+#' standardised mean squared error \eqn{\mathrm{MSE}/\mathrm{var}(y)};
+#' `ev` is explained variance \eqn{1 - \mathrm{var}(y - \hat y)/\mathrm{var}(y)}.
+#' `rmse`, `mae`, `mean_log_score`, and `crps` are the usual proper and
+#' point scores.
+#'
+#' `conditional` fits light diagnostic GAMs of \eqn{z} and \eqn{z^2 - 1}
+#' against every numeric covariate the model uses and reports the
+#' largest fitted drift with the GAM standard error at that point.
 #'
 #' @param fit A [norm_fit].
-#' @param newdata Held-out validation data. If omitted, training data
-#'   scores are used and marked in-sample.
-#' @param by Optional grouping column for conditional summaries.
-#' @return An object of class `norm_assessment`.
+#' @param newdata Held-out validation data (required; training data are
+#'   not stored on the fit). For out-of-fold evaluation use
+#'   [norm_crossfit()].
+#' @param by Optional grouping column; the marginal calibration table is
+#'   then reported per group (column `.group`).
+#' @return An object of class `norm_assessment` with `overall`,
+#'   `marginal`, `conditional`, and `tail` tibbles plus the scores.
 #' @export
-norm_assess <- function(fit, newdata = NULL, by = NULL) {
-  if (is.null(newdata)) {
-    cli::cli_warn("Assessing training data; prefer held-out or cross-fitted scores.")
-    newdata <- recover_newdata(fit)
+norm_assess <- function(fit, newdata, by = NULL) {
+  if (missing(newdata) || is.null(newdata)) {
+    cli::cli_abort("Supply {.arg newdata}: held-out data or a cross-fitted frame.")
   }
+  newdata <- tibble::as_tibble(newdata)
+  by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
   scores <- predict(fit, newdata = newdata, type = "scores", uncertainty = "conditional")
   dists <- predict(fit, newdata = newdata, type = "distribution", uncertainty = "conditional")
   overall <- assess_overall(scores, dists, newdata)
-  marginal <- assess_marginal(scores)
+  marginal <- if (is.null(by_vec)) {
+    assess_marginal(scores)
+  } else {
+    grp <- as.character(by_vec)[scores$.row]
+    parts <- lapply(split(seq_len(nrow(scores)), grp), function(idx) {
+      m <- assess_marginal(scores[idx, , drop = FALSE])
+      tibble::tibble(.group = grp[[idx[[1L]]]], m)
+    })
+    dplyr_bind(parts)
+  }
   conditional <- assess_conditional(scores, newdata, fit)
   tail <- assess_tail(scores)
   structure(
@@ -34,12 +61,6 @@ norm_assess <- function(fit, newdata = NULL, by = NULL) {
   )
 }
 
-recover_newdata <- function(fit) {
-  cli::cli_abort(
-    "Supply {.arg newdata} for assessment. Training frames are not stored on the fit by default."
-  )
-}
-
 assess_overall <- function(scores, dists, newdata) {
   by_out <- split(scores, scores$.outcome)
   rows <- lapply(names(by_out), function(nm) {
@@ -48,6 +69,7 @@ assess_overall <- function(scores, dists, newdata) {
     log_score <- mean(sc$log_density[ok])
     naive <- naive_log_score(sc$observed[ok])
     crps <- mean_crps(dists[[nm]], sc$observed)
+    var_y <- if (sum(ok) > 1) stats::var(sc$observed[ok]) else NA_real_
     tibble::tibble(
       .outcome = nm,
       mean_log_score = log_score,
@@ -55,6 +77,8 @@ assess_overall <- function(scores, dists, newdata) {
       crps = crps,
       mae = mean(abs(sc$residual[ok])),
       rmse = sqrt(mean(sc$residual[ok]^2)),
+      smse = mean(sc$residual[ok]^2) / var_y,
+      ev = 1 - stats::var(sc$residual[ok]) / var_y,
       cor = if (sum(ok) > 2) stats::cor(sc$observed[ok], sc$median[ok]) else NA_real_
     )
   })
@@ -88,9 +112,9 @@ crps_from_dist <- function(dist, y) {
     return(crps_norm(y, p$location, p$scale))
   }
   u <- (seq_len(99L) - 0.5) / 99
+  q <- quantile_matrix(dist, u)
   vapply(seq_along(y), function(i) {
-    di <- vctrs::vec_slice(dist, i)
-    qs <- dist_quantile(di, u)
+    qs <- q[i, ]
     mean(abs(qs - y[[i]])) - 0.5 * mean(abs(outer(qs, qs, `-`)))
   }, numeric(1))
 }
@@ -147,38 +171,50 @@ excess_kurtosis <- function(x) {
 assess_conditional <- function(scores, newdata, fit) {
   covs <- intersect(fit$covariates, names(newdata))
   numeric_covs <- covs[vapply(newdata[covs], is.numeric, logical(1))]
-  if (!length(numeric_covs) || !requireNamespace("mgcv", quietly = TRUE)) {
-    return(tibble::tibble(
-      .outcome = unique(scores$.outcome),
-      location_drift = 0,
-      scale_drift = 0
-    ))
+  empty <- tibble::tibble(
+    .outcome = character(), covariate = character(),
+    location_drift = numeric(), location_se = numeric(),
+    scale_drift = numeric(), scale_se = numeric()
+  )
+  if (!length(numeric_covs)) {
+    return(empty)
   }
-  rows <- lapply(unique(scores$.outcome), function(nm) {
+  rows <- list()
+  for (nm in unique(scores$.outcome)) {
     sc <- scores[scores$.outcome == nm, , drop = FALSE]
-    z <- sc$z
-    ok <- is.finite(z)
-    if (sum(ok) < 20L) {
-      return(tibble::tibble(.outcome = nm, location_drift = NA_real_, scale_drift = NA_real_))
+    for (cv in numeric_covs) {
+      x <- newdata[[cv]][sc$.row]
+      ok <- is.finite(sc$z) & is.finite(x)
+      if (sum(ok) < 20L) {
+        rows[[length(rows) + 1L]] <- tibble::tibble(
+          .outcome = nm, covariate = cv,
+          location_drift = NA_real_, location_se = NA_real_,
+          scale_drift = NA_real_, scale_se = NA_real_
+        )
+        next
+      }
+      dat <- data.frame(z = sc$z[ok], x = x[ok])
+      loc <- drift_gam(z ~ s(x, k = 5), dat)
+      sc2 <- drift_gam(I(z^2 - 1) ~ s(x, k = 5), dat)
+      rows[[length(rows) + 1L]] <- tibble::tibble(
+        .outcome = nm, covariate = cv,
+        location_drift = loc$drift, location_se = loc$se,
+        scale_drift = sc2$drift, scale_se = sc2$se
+      )
     }
-    dat <- cbind(z = z, newdata[sc$.row, numeric_covs[1], drop = FALSE])
-    names(dat)[2] <- "x"
-    dat <- dat[ok, , drop = FALSE]
-    loc <- tryCatch(
-      mgcv::gam(z ~ s(x, k = 5), data = dat),
-      error = function(e) NULL
-    )
-    sc2 <- tryCatch(
-      mgcv::gam(I(z^2 - 1) ~ s(x, k = 5), data = dat),
-      error = function(e) NULL
-    )
-    tibble::tibble(
-      .outcome = nm,
-      location_drift = if (is.null(loc)) NA_real_ else max(abs(stats::fitted(loc))),
-      scale_drift = if (is.null(sc2)) NA_real_ else max(abs(stats::fitted(sc2)))
-    )
-  })
+  }
   dplyr_bind(rows)
+}
+
+# Largest absolute fitted value of a diagnostic GAM and its SE there.
+drift_gam <- function(formula, dat) {
+  m <- tryCatch(mgcv::gam(formula, data = dat), error = function(e) NULL)
+  if (is.null(m)) {
+    return(list(drift = NA_real_, se = NA_real_))
+  }
+  pr <- stats::predict(m, se.fit = TRUE)
+  i <- which.max(abs(pr$fit))
+  list(drift = abs(pr$fit[[i]]), se = as.numeric(pr$se.fit[[i]]))
 }
 
 assess_tail <- function(scores) {
@@ -205,12 +241,4 @@ print.norm_assessment <- function(x, ...) {
   cli::cli_text("{.cls norm_assessment} n = {x$n}")
   print(x$overall)
   invisible(x)
-}
-
-acceptable_calibration <- function(assessment, var_lo = 0.5, var_hi = 1.8,
-                                   mean_z_max = 0.35) {
-  m <- assessment$marginal
-  ok <- is.finite(m$mean_z) & abs(m$mean_z) <= mean_z_max &
-    is.finite(m$var_z) & m$var_z >= var_lo & m$var_z <= var_hi
-  all(ok)
 }

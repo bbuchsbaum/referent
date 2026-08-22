@@ -145,6 +145,12 @@ print.norm_fit <- function(x, ...) {
   cli::cli_text("{length(x$outcomes)} outcome{?s}, n = {x$n}")
   cli::cli_text("covariates: {.field {x$covariates}}")
   cli::cli_text("status: {status_txt}")
+  if (!is.null(x$adaptation)) {
+    cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
+  }
+  if (!is.null(x$calibration)) {
+    cli::cli_text("calibrated: {x$calibration$method}{if (is.null(x$calibration$by)) '' else paste0(' by ', x$calibration$by)}")
+  }
   failed <- names(st)[st != "ok"]
   if (length(failed)) {
     cli::cli_alert_warning("Failed or flagged outcome{?s}: {.field {failed}}")
@@ -169,14 +175,29 @@ fit_ok <- function(fit_one) {
 
 #' Predict distributions or scores from a reference fit
 #'
+#' One method serves plain, adapted, calibrated, and frozen fits. The
+#' steps are: engine prediction, then site adaptation (shifting location
+#' and scale, including any coefficient draws), then scoring, then PIT
+#' recalibration, and finally extrapolation masking.
+#'
 #' @param object A [norm_fit].
 #' @param newdata Data frame of target observations.
-#' @param type `"scores"` or `"distribution"`.
-#' @param uncertainty `"total"` (default for scores) or `"conditional"`.
+#' @param type `"scores"` or `"distribution"`. Distributions carry
+#'   adaptation but not the calibration map, which acts on probabilities.
+#' @param uncertainty `"total"` (default) integrates the scores over
+#'   coefficient draws (or uses the analytic Gaussian total when the
+#'   location is identity-linked with constant scale); `"conditional"`
+#'   uses the point estimates.
 #' @param outcomes Optional subset of outcomes.
 #' @param allow_extrapolation If `FALSE` (default), severe out-of-support
 #'   rows have `z = NA`.
+#' @param n_draw Number of coefficient draws for `"total"`; defaults to
+#'   `spec$control$n_draw` or 200. Draws are seeded from
+#'   `spec$control$seed` (default 1) so repeated calls agree exactly.
 #' @param ... Unused.
+#' @return For `"scores"`, a `norm_scores` tibble with one row per
+#'   observation and outcome. `status` is `"ok"`, `"missing_predictor"`
+#'   (a covariate is `NA`), or the fit status of a failed outcome.
 #' @export
 predict.norm_fit <- function(object,
                              newdata,
@@ -184,6 +205,7 @@ predict.norm_fit <- function(object,
                              uncertainty = c("total", "conditional"),
                              outcomes = NULL,
                              allow_extrapolation = FALSE,
+                             n_draw = NULL,
                              ...) {
   type <- match.arg(type)
   uncertainty <- match.arg(uncertainty)
@@ -192,70 +214,84 @@ predict.norm_fit <- function(object,
   if (!is.null(outcomes)) {
     nms <- intersect(as.character(outcomes), nms)
   }
+  ctrl <- object$spec$control %||% list()
+  n_draw <- as.integer(n_draw %||% ctrl$n_draw %||% 200L)
+  seed <- ctrl$seed %||% 1L
   dists <- lapply(nms, function(nm) {
     m <- object$models[[nm]]
     if (!fit_ok(m)) {
       return(NULL)
     }
-    predict_engine_dist(m, newdata, uncertainty = uncertainty)
+    predict_engine_dist(m, newdata, uncertainty = uncertainty,
+                        n_draw = n_draw, seed = seed)
   })
   names(dists) <- nms
+  if (!is.null(object$adaptation)) {
+    dists <- apply_adaptation(object$adaptation, dists, newdata)
+  }
   if (identical(type, "distribution")) {
     return(dists)
   }
+  scores <- scores_from_dists(object, dists, newdata)
+  if (!is.null(object$calibration)) {
+    scores <- apply_calibration(object, scores, newdata)
+  }
+  if (!isTRUE(allow_extrapolation)) {
+    scores$z[scores$support %in% "out"] <- NA_real_
+  }
+  scores
+}
+
+# Assemble the long score table from per-outcome distributions.
+scores_from_dists <- function(object, dists, newdata) {
+  n <- nrow(newdata)
   support <- classify_support(object$support_ref, newdata)$support
   in_sample <- is_in_sample_data(object, newdata)
-  rows <- lapply(nms, function(nm) {
+  ids <- score_ids(object, newdata)
+  covs <- intersect(object$covariates, names(newdata))
+  missing_cov <- if (length(covs)) {
+    !stats::complete.cases(newdata[, covs, drop = FALSE])
+  } else {
+    rep(FALSE, n)
+  }
+  rows <- lapply(names(dists), function(nm) {
     d <- dists[[nm]]
-    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, nrow(newdata))
+    y <- if (nm %in% names(newdata)) newdata[[nm]] else rep(NA_real_, n)
     if (is.null(d)) {
-      return(tibble::tibble(
-        .row = seq_len(nrow(newdata)),
-        .id = score_ids(object, newdata),
-        .outcome = nm,
-        observed = y,
-        median = NA_real_,
-        centile = NA_real_,
-        z = NA_real_,
-        tail_prob = NA_real_,
-        tail_surprisal = NA_real_,
-        residual = NA_real_,
-        log_density = NA_real_,
-        aleatoric_sd = NA_real_,
-        epistemic_sd = NA_real_,
-        support = support,
-        calibrated = FALSE,
-        .in_sample = in_sample,
-        status = object$models[[nm]]$status %||% "nonconverged"
-      ))
+      sc <- tibble::tibble(
+        observed = as.numeric(y), median = NA_real_, centile = NA_real_,
+        z = NA_real_, tail_prob = NA_real_, tail_surprisal = NA_real_,
+        residual = NA_real_, log_density = NA_real_,
+        aleatoric_sd = NA_real_, epistemic_sd = NA_real_
+      )
+      status <- rep(object$models[[nm]]$status %||% "nonconverged", n)
+    } else {
+      sc <- as_scores(d, y)
+      status <- ifelse(missing_cov, "missing_predictor", "ok")
     }
-    sc <- as_scores(d, y)
-    if (identical(uncertainty, "total") && !is.null(attr(d, "location_draws"))) {
-      sc$centile <- cdf_total(d, y)
-      sc$z <- stats::qnorm(clamp_prob(sc$centile))
-      sc$tail_prob <- 2 * pmin(sc$centile, 1 - sc$centile)
-      sc$tail_surprisal <- -safe_log(sc$tail_prob)
-    }
-    sc$.row <- seq_len(nrow(newdata))
-    sc$.id <- score_ids(object, newdata)
-    sc$.outcome <- nm
-    sc$support <- support
-    sc$calibrated <- FALSE
-    sc$.in_sample <- in_sample
-    sc$status <- "ok"
-    if (!isTRUE(allow_extrapolation)) {
-      severe <- support %in% c("out")
-      sc$z[severe] <- NA_real_
-    }
-    sc
+    tibble::tibble(
+      .row = seq_len(n),
+      .id = ids,
+      .outcome = nm,
+      sc,
+      support = support,
+      calibrated = FALSE,
+      .in_sample = in_sample,
+      status = status
+    )
   })
   out <- dplyr_bind(rows)
-  out <- out[, c(
-    ".row", ".id", ".outcome", "observed", "median", "centile", "z",
-    "tail_prob", "tail_surprisal", "residual", "log_density",
-    "aleatoric_sd", "epistemic_sd", "support", "calibrated",
-    ".in_sample", "status"
-  )]
+  if (!nrow(out)) {
+    out <- tibble::tibble(
+      .row = integer(), .id = ids[0], .outcome = character(),
+      observed = numeric(), median = numeric(), centile = numeric(),
+      z = numeric(), tail_prob = numeric(), tail_surprisal = numeric(),
+      residual = numeric(), log_density = numeric(),
+      aleatoric_sd = numeric(), epistemic_sd = numeric(),
+      support = character(), calibrated = logical(),
+      .in_sample = logical(), status = character()
+    )
+  }
   structure(out, class = c("norm_scores", class(out)), in_sample = in_sample)
 }
 

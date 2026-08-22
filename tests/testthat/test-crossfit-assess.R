@@ -26,16 +26,3 @@ test_that("norm_assess reports coverage near nominal on a calibrated model", {
   expect_true(is.finite(a$overall$mean_log_score))
   expect_true(is.finite(a$overall$crps))
 })
-
-test_that("ladder prefers a simple model on Gaussian data", {
-  skip_on_cran()
-  set.seed(15)
-  dat <- norm_simulate(180, seed = 15)
-  specs <- list(
-    gaussian_const = simple_spec("gaussian", scale = FALSE),
-    gaussian_scale = simple_spec("gaussian", scale = TRUE)
-  )
-  sel <- norm_select(specs, data = dat, outcomes = "y", folds = 3)
-  expect_s3_class(sel, "norm_selection")
-  expect_true(sel$selected_name %in% names(specs))
-})

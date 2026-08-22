@@ -2,6 +2,7 @@
 % Please edit documentation in R/joint.R
 \name{norm_joint}
 \alias{norm_joint}
+\alias{predict.norm_joint}
 \title{Gaussian-copula joint deviation layer}
 \usage{
 norm_joint(
@@ -10,24 +11,45 @@ norm_joint(
   covariance = c("shrinkage", "identity"),
   value = NULL
 )
+
+\method{predict}{norm_joint}(object, newdata, ...)
 }
 \arguments{
-\item{scores}{A \code{norm_scores} or \code{norm_transition} table.}
+\item{scores}{A \code{norm_scores} or \code{norm_transition} table of reference
+scores (out-of-fold for honest calibration).}
 
 \item{method}{Must be \code{"gaussian_copula"}.}
 
 \item{covariance}{\code{"shrinkage"} or \code{"identity"}.}
 
 \item{value}{Score column (\code{"z"} or \code{"innovation_z"}).}
+
+\item{object}{A \code{norm_joint}.}
+
+\item{newdata}{A score table for new subjects (same outcomes).}
+
+\item{...}{Unused.}
 }
 \value{
-A \code{norm_joint} object.
+A \code{norm_joint} model. \code{predict(joint, scores)} returns one row
+per subject with \code{d2}, \code{n_observed}, \code{joint_centile}, and \code{joint_z};
+\code{joint$reference} holds the reference rows scored leave-one-out.
 }
 \description{
+Fits a second-stage model on reference normal scores and scores new
+subjects against it:
+}
+\details{
 \enumerate{
-\item Take out-of-fold (or transition) normal scores.
-\item Estimate a shrinkage correlation matrix.
-\item Compute \eqn{D_i^2 = z_i^\top R^{-1} z_i}.
-\item Calibrate \eqn{D_i} empirically on the reference subjects.
+\item Take out-of-fold (or transition) normal scores of the reference.
+\item Estimate a Ledoit-Wolf / Schäfer-Strimmer shrinkage correlation
+matrix \eqn{R}.
+\item For a subject with observed outcomes \eqn{o}, compute
+\eqn{D^2 = z_o^\top R_{oo}^{-1} z_o} on the observed submatrix.
+\item Base PIT \eqn{p = P(\chi^2_{|o|} \le D^2)}, which already accounts
+for how many outcomes were observed.
+\item Correct that PIT through its empirical distribution on the
+reference (leave-one-out ranks, \eqn{(\mathrm{rank}-0.5)/n}), so
+the joint centile is calibrated even when the copula is imperfect.
 }
 }

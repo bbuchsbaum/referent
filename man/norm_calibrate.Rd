@@ -11,16 +11,29 @@ norm_calibrate(fit, data, method = c("rank"), by = NULL)
 
 \item{data}{Calibration reference data, not reused for evaluation.}
 
-\item{method}{\code{"rank"} empirical CDF.}
+\item{method}{\code{"rank"} (rank-interpolated empirical CDF).}
 
-\item{by}{Optional grouping column (e.g. site).}
+\item{by}{Optional grouping column (e.g. site). Groups absent from the
+calibration data fall back to the pooled map.}
 }
 \value{
-A \code{norm_fit} with a calibration map attached.
+The fit with a \code{calibration} slot; \code{\link[=predict.norm_fit]{predict.norm_fit()}} applies
+the map to \code{centile}, \code{z}, and the tail columns and sets
+\code{calibrated = TRUE}.
 }
 \description{
-Maps PIT values through an empirical CDF estimated on a calibration
+Maps PIT values through a monotone map estimated on a calibration
 sample: \eqn{F^\star(y\mid x)=G(F_0(y\mid x))}. This targets global
 (or group-specific) calibration. It does not create full conditional
-calibration.
+calibration, so pre-calibration diagnostics are kept in
+\code{fit$calibration$pre}.
+}
+\details{
+With calibration PITs \eqn{u_{(1)} \le \dots \le u_{(n)}}, the map
+interpolates linearly between the knots
+\eqn{(u_{(r)}, r/(n+1))} and continues linearly to \eqn{(0,0)} and
+\eqn{(1,1)} outside the observed range. Beyond the range the map is
+therefore a rescaled identity: extreme tails are compressed or
+stretched but never collapsed to 0 or 1, and the calibrated tail is
+evaluated in log space so very large \verb{|z|} remain distinguishable.
 }

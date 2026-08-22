@@ -38,7 +38,8 @@ support_reference <- function(data, covariate_names) {
 #' model actually uses. Statuses: `"in"`, `"edge"` (outside the central
 #' 96% of a covariate or beyond the 99% Mahalanobis radius), `"out"`
 #' (outside the observed range or beyond twice that radius), and
-#' `"new_group"` (unseen factor level).
+#' `"new_group"` (unseen factor level), and `"unknown"` (a covariate is
+#' `NA`).
 #'
 #' @param fit A [norm_fit].
 #' @param newdata Target data.
@@ -71,8 +72,13 @@ classify_support <- function(ref, newdata) {
     if (!nm %in% names(newdata)) {
       next
     }
-    unseen <- !as.character(newdata[[nm]]) %in% ref$factor_levels[[nm]]
+    lev <- as.character(newdata[[nm]])
+    unseen <- !is.na(lev) & !lev %in% ref$factor_levels[[nm]]
     status[unseen] <- "new_group"
+  }
+  used <- intersect(c(ref$numeric_names, ref$factor_names), names(newdata))
+  if (length(used)) {
+    status[!stats::complete.cases(newdata[, used, drop = FALSE])] <- "unknown"
   }
   if (!is.null(ref$cov) && length(ref$numeric_names) &&
       all(ref$numeric_names %in% names(newdata))) {

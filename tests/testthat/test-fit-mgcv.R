@@ -44,10 +44,16 @@ test_that("total uncertainty inflates epistemic sd", {
   tot <- predict(fit, newdata = dat[1:8, ], type = "distribution",
                  uncertainty = "total")$y
   expect_gt(mean(field_or(tot, "epistemic_sd")), 0)
-  expect_false(is.null(attr(tot, "location_draws")))
-  expect_gt(stats::sd(attr(tot, "location_draws")[1, ]), 0)
+  # identity-location, constant-scale Gaussian: analytic total N(mu, s^2 + se^2)
+  expect_true(is.null(attr(tot, "location_draws")))
+  expect_equal(attr(tot, "uncertainty"), "total")
+  expect_equal(
+    field_or(tot, "scale"),
+    sqrt(field_or(cond, "scale")^2 + field_or(tot, "epistemic_sd")^2)
+  )
   y <- dat$y[1:8]
-  expect_true(all(cdf_total(tot, y) >= 0 & cdf_total(tot, y) <= 1))
+  expect_true(all(cdf(tot, y) >= 0 & cdf(tot, y) <= 1))
+  expect_true(all(abs(cdf(tot, y) - 0.5) <= abs(cdf(cond, y) - 0.5) + 1e-12))
 })
 
 test_that("save/read round trip reproduces scores", {
