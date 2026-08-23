@@ -3,6 +3,7 @@
 # dependencies = [
 #   "arviz==0.23.4",
 #   "numpy==2.4.6",
+#   "nutpie==0.16.8",
 #   "pandas==3.0.5",
 #   "pcntoolkit==1.3.0",
 #   "pymc==5.28.5",

@@ -23,6 +23,11 @@ HBR and new-site transfer stay marked `non_equivalent`. Release evidence must
 include convergence receipts and every site's calibration result. The release
 job fails if any HBR stage misses its R-hat, effective-sample-size, or
 divergence gate; a pooled site average cannot override a failing small site.
+The separate release superiority job also generates 20 independent comparison
+replicates, requires every SHASH fit to converge, gates calibration on
+replicate-bootstrap non-inferiority with a per-replicate fail-closed ceiling,
+and gates the claim on the replicate-level paired log-score interval rather
+than the single checked-in fixture.
 
 Regenerate these tables with:
 

@@ -32,7 +32,8 @@ pcn_scenario_spec <- function(scenario) {
   )
 }
 
-pcn_referent_predictions <- function(inputs, scenario, n_draw = 2000L) {
+pcn_referent_predictions <- function(inputs, scenario, n_draw = 2000L,
+                                     return_fit = FALSE) {
   dat <- inputs[inputs$scenario == scenario, , drop = FALSE]
   dat$site <- factor(dat$site)
   train <- dat[dat$split == "train", , drop = FALSE]
@@ -51,7 +52,7 @@ pcn_referent_predictions <- function(inputs, scenario, n_draw = 2000L) {
     probs, function(p) referent:::dist_quantile(dist, p), numeric(nrow(test))
   )
   colnames(quantiles) <- paste0("q", c("05", "25", "50", "75", "95"))
-  data.frame(
+  predictions <- data.frame(
     scenario = scenario,
     row_id = test$row_id,
     observed = test$y,
@@ -64,6 +65,10 @@ pcn_referent_predictions <- function(inputs, scenario, n_draw = 2000L) {
     quantiles,
     check.names = FALSE
   )
+  if (isTRUE(return_fit)) {
+    return(list(predictions = predictions, fit = fit))
+  }
+  predictions
 }
 
 pcn_concordance_registry <- function() {

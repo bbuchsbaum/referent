@@ -24,7 +24,11 @@ test_that("the locked skew-heavy test supports a guarded superiority claim", {
   comparator <- utils::read.csv(
     file.path(root, "fitted_predictions.csv"), stringsAsFactors = FALSE
   )
-  referent <- pcn_referent_predictions(inputs, "skew_heavy", n_draw = 2000L)
+  fitted <- pcn_referent_predictions(
+    inputs, "skew_heavy", n_draw = 2000L, return_fit = TRUE
+  )
+  expect_identical(fitted$fit$models$y$status, "ok")
+  referent <- fitted$predictions
   comparator <- comparator[comparator$scenario == "skew_heavy", , drop = FALSE]
   comparator <- comparator[match(referent$row_id, comparator$row_id), , drop = FALSE]
   result <- pcn_compare_predictions(
@@ -72,4 +76,44 @@ test_that("controlled location perturbations worsen proper score monotonically",
   shifts <- c(0, 0.2, 0.5, 1)
   score <- vapply(shifts, function(shift) mean(stats::dnorm(y, shift, 1, log = TRUE)), numeric(1))
   expect_true(all(diff(score) < 0))
+})
+
+test_that("release superiority requires replicated convergence and calibration", {
+  results <- data.frame(
+    replicate = seq_len(8),
+    log_score_difference = seq(0.12, 0.26, length.out = 8),
+    referent_coverage90 = 0.90,
+    pcntoolkit_coverage90 = 0.92,
+    referent_mace = 0.01,
+    pcntoolkit_mace = 0.05,
+    referent_tail05 = 0.05,
+    pcntoolkit_tail05 = 0.06,
+    fit_status = "ok",
+    fit_converged = TRUE
+  )
+  passed <- pcn_release_superiority_summary(results, B = 999L, seed = 14L)
+  expect_identical(passed$classification, "superior")
+  expect_true(passed$pass)
+  expect_gt(passed$ci_lower, 0)
+  expect_true(passed$calibration_noninferior)
+  expect_true(passed$no_critical_replicate_regression)
+
+  failed_fit <- results
+  failed_fit$fit_status[[3L]] <- "nonconverged"
+  fit_summary <- pcn_release_superiority_summary(failed_fit, B = 999L, seed = 14L)
+  expect_identical(fit_summary$classification, "fit_failure")
+  expect_false(fit_summary$pass)
+
+  failed_calibration <- results
+  failed_calibration$referent_coverage90[[5L]] <- 0.70
+  failed_calibration$pcntoolkit_coverage90[[5L]] <- 0.90
+  calibration_summary <- pcn_release_superiority_summary(
+    failed_calibration, B = 999L, seed = 14L
+  )
+  expect_identical(calibration_summary$classification, "tradeoff")
+  expect_false(calibration_summary$pass)
+  expect_error(
+    pcn_release_superiority_summary(results[1:4, ], B = 999L),
+    "at least five unique replicates"
+  )
 })

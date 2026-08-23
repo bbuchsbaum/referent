@@ -97,3 +97,76 @@ pcn_compare_predictions <- function(referent, comparator, cluster,
     stringsAsFactors = FALSE
   )
 }
+
+pcn_release_superiority_summary <- function(results, B = 4999L,
+                                            seed = 20260823L) {
+  required <- c(
+    "replicate", "log_score_difference", "referent_coverage90",
+    "pcntoolkit_coverage90", "referent_mace", "pcntoolkit_mace",
+    "referent_tail05", "pcntoolkit_tail05", "fit_status", "fit_converged"
+  )
+  if (!all(required %in% names(results))) {
+    stop("release results are missing required fields", call. = FALSE)
+  }
+  if (nrow(results) < 5L || anyDuplicated(results$replicate)) {
+    stop("release superiority requires at least five unique replicates", call. = FALSE)
+  }
+  numeric_evidence <- results[c(
+    "log_score_difference", "referent_coverage90", "pcntoolkit_coverage90",
+    "referent_mace", "pcntoolkit_mace", "referent_tail05", "pcntoolkit_tail05"
+  )]
+  if (any(!is.finite(as.matrix(numeric_evidence))) || anyNA(results$fit_converged)) {
+    stop("release results contain incomplete evidence", call. = FALSE)
+  }
+  interval <- pcn_cluster_bootstrap(
+    results$log_score_difference, results$replicate, B = B, seed = seed
+  )
+  fit_pass <- all(results$fit_status == "ok" & results$fit_converged)
+  calibration_regret <- cbind(
+    coverage90 = abs(results$referent_coverage90 - 0.90) -
+      abs(results$pcntoolkit_coverage90 - 0.90),
+    mace = results$referent_mace - results$pcntoolkit_mace,
+    tail05 = abs(results$referent_tail05 - 0.05) -
+      abs(results$pcntoolkit_tail05 - 0.05)
+  )
+  calibration_limits <- c(coverage90 = 0.01, mace = 0.01, tail05 = 0.01)
+  critical_limits <- c(coverage90 = 0.05, mace = 0.05, tail05 = 0.05)
+  calibration_upper <- vapply(seq_len(ncol(calibration_regret)), function(j) {
+    pcn_cluster_bootstrap(
+      calibration_regret[, j], results$replicate, B = B,
+      seed = seed + j
+    )[["upper"]]
+  }, numeric(1))
+  names(calibration_upper) <- colnames(calibration_regret)
+  mean_regret <- colMeans(calibration_regret)
+  max_regret <- apply(calibration_regret, 2L, max)
+  calibration_pass <- all(calibration_upper <= calibration_limits)
+  critical_pass <- all(max_regret <= critical_limits)
+  classification <- if (fit_pass) {
+    pcn_classify_benchmark(
+      interval[["estimate"]], interval[["lower"]], interval[["upper"]],
+      calibration_pass = calibration_pass && critical_pass
+    )
+  } else {
+    "fit_failure"
+  }
+  data.frame(
+    replicates = nrow(results),
+    log_score_difference = unname(interval[["estimate"]]),
+    ci_lower = unname(interval[["lower"]]),
+    ci_upper = unname(interval[["upper"]]),
+    all_shash_fits_converged = fit_pass,
+    coverage_regret = mean_regret[["coverage90"]],
+    coverage_regret_upper = calibration_upper[["coverage90"]],
+    mace_regret = mean_regret[["mace"]],
+    mace_regret_upper = calibration_upper[["mace"]],
+    tail_regret = mean_regret[["tail05"]],
+    tail_regret_upper = calibration_upper[["tail05"]],
+    maximum_replicate_regret = max(max_regret),
+    calibration_noninferior = calibration_pass,
+    no_critical_replicate_regression = critical_pass,
+    classification = classification,
+    pass = identical(classification, "superior"),
+    stringsAsFactors = FALSE
+  )
+}

@@ -185,6 +185,15 @@ and are regenerated only by the pinned script under `tools/pcntoolkit/`.
 - Release/manual: run stochastic HBR, SHASH-fitting, multi-site transport, and
   the replicated superiority benchmark with convergence receipts.
 
+The release superiority gate uses 20 independently seeded `skew_heavy`
+train/validation/test simulations. PCNtoolkit predictions are generated before
+Referent is fit. Every Referent SHASH fit must converge. For coverage, MACE,
+and tail calibration, the 95% replicate-bootstrap upper bound on mean regret
+must be at most 0.01, and no single-replicate regret may exceed 0.05. The
+replicate-level bootstrap interval for the mean paired response-scale log-score
+contrast must lie above zero. The generation receipt records the seeds,
+dependency versions, row identities, optimizer warnings, and file hashes.
+
 Machine-readable results are retained alongside a human-readable evidence
 table. Documentation may say “matches PCNtoolkit” only for a named evidence
 class and scenario, and may say “outperforms” only for a locked held-out

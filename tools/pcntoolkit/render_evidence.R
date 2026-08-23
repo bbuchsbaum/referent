@@ -1,11 +1,11 @@
 # Render checked-in, machine-readable evidence from pinned fixtures.
 
-source("tools/pcntoolkit/compare_results.R")
-source("tools/pcntoolkit/run_concordance.R")
-source("tools/pcntoolkit/run_superiority.R")
+source("tools/pcntoolkit/compare_results.R", local = TRUE)
+source("tools/pcntoolkit/run_concordance.R", local = TRUE)
+source("tools/pcntoolkit/run_superiority.R", local = TRUE)
 
-render_pcntoolkit_evidence <- function(output_dir) {
-  root <- pcn_fixture_root()
+render_pcntoolkit_evidence <- function(output_dir, fixture_root = pcn_fixture_root()) {
+  root <- fixture_root
   manifest <- pcn_validate_fixture(root)
   concordance <- pcn_run_concordance(root)
   superiority <- pcn_run_superiority(root)
@@ -64,7 +64,14 @@ render_pcntoolkit_evidence <- function(output_dir) {
 
 if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
-  output <- if (length(args)) args[[1L]] else
+  if (length(args) > 3L ||
+      (length(args) >= 2L && !identical(args[[2L]], "--fixture-root")) ||
+      length(args) == 2L) {
+    stop("usage: render_evidence.R [OUTPUT_DIR [--fixture-root FIXTURE_DIR]]")
+  }
+  output <- if (length(args)) args[[1L]] else {
     file.path("docs", "evidence", "pcntoolkit", "v1.3.0")
-  print(render_pcntoolkit_evidence(output), row.names = FALSE)
+  }
+  fixture_root <- if (length(args) == 3L) args[[3L]] else pcn_fixture_root()
+  print(render_pcntoolkit_evidence(output, fixture_root), row.names = FALSE)
 }

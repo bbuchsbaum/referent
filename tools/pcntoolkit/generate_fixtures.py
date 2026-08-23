@@ -182,9 +182,13 @@ def metric_semantics() -> pd.DataFrame:
 
 
 def scenario_frame(
-    name: str, n_train: int = 500, n_validation: int = 100, n_test: int = 501
+    name: str,
+    n_train: int = 500,
+    n_validation: int = 100,
+    n_test: int = 501,
+    seed: int | None = None,
 ) -> pd.DataFrame:
-    rng = np.random.default_rng(SEEDS[name])
+    rng = np.random.default_rng(SEEDS[name] if seed is None else seed)
     n = n_train + n_validation + n_test
     split_counts = (("train", n_train), ("validation", n_validation), ("test", n_test))
     split = np.concatenate([np.repeat(part, count) for part, count in split_counts])

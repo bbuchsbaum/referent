@@ -61,6 +61,7 @@ jobs:
     name: Regenerate PCNtoolkit fixture and evidence
     if: >-
       github.event_name == 'schedule' ||
+      github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' &&
        (inputs.tier == 'weekly' || inputs.tier == 'release'))
     runs-on: ubuntu-latest
@@ -83,7 +84,10 @@ jobs:
           Rscript tools/pcntoolkit/check_fixture_drift.R
           tests/fixtures/pcntoolkit/v1.3.0 /tmp/pcntoolkit-v1.3.0
       - name: Render machine-readable evidence
-        run: Rscript tools/pcntoolkit/render_evidence.R evidence/pcntoolkit/v1.3.0
+        run: >-
+          Rscript tools/pcntoolkit/render_evidence.R
+          evidence/pcntoolkit/v1.3.0
+          --fixture-root /tmp/pcntoolkit-v1.3.0
       - uses: actions/upload-artifact@v4
         with:
           name: pcntoolkit-weekly-evidence
@@ -126,3 +130,37 @@ jobs:
         with:
           name: pcntoolkit-release-hbr-site-evidence
           path: evidence/hbr-site
+
+  release-shash-superiority:
+    name: Release SHASH fitting and replicated superiority evidence
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tier == 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: local::.
+          needs: check
+      - name: Generate independent PCNtoolkit comparison replicates
+        run: >-
+          uv run tools/pcntoolkit/generate_release_superiority.py
+          --output evidence/release-superiority --replicates 20
+          --seed-start 20260824
+      - name: Fit SHASH models and enforce replicated held-out gates
+        run: >-
+          Rscript tools/pcntoolkit/run_release_superiority.R
+          evidence/release-superiority evidence/release-superiority
+          499 4999 2000
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pcntoolkit-release-shash-superiority-evidence
+          path: evidence/release-superiority

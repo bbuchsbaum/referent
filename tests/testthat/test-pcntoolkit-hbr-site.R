@@ -45,6 +45,7 @@ test_that("HBR release runner records mandatory convergence and aggregation fiel
     script_path, warn = FALSE
   )
   text <- paste(script, collapse = "\n")
+  expect_match(text, '"nutpie==0.16.8"', fixed = TRUE)
   expect_match(text, '"max_rhat": 1.01', fixed = TRUE)
   expect_match(text, '"min_ess_bulk": 400', fixed = TRUE)
   expect_match(text, '"divergences": 0', fixed = TRUE)
