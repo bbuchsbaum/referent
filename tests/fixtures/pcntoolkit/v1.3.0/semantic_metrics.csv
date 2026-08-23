@@ -1,0 +1,15 @@
+metric,value
+rmse,0.4869731585445517
+smse_population,0.054162393959168442
+ev,0.94882073273049317
+rho_spearman,1
+pearson,0.98685439766820615
+mace_no_batch,0.065714285714285711
+skew_bias_corrected,0.41271789557188532
+skew_unadjusted,0.31841876938023356
+skew_referent_sample_sd,0.2526844258603379
+excess_kurtosis_bias_corrected,0.15507750499914774
+excess_kurtosis_unadjusted,-0.6853843729170217
+excess_kurtosis_referent_sample_sd,-1.2994660698982199
+mace_equal_batch_average,0.27749999999999997
+mace_pooled_rows,0.12

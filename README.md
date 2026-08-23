@@ -112,7 +112,9 @@ velocity centiles, and conditional forecasts off the same process.
   forecasts.
 - [Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/): concept and metric
   mapping (warped BLR, HBR batch effects and random slopes, harmonised
-  outputs, MSLL/SMSE/EV/MACE), and what is deliberately missing.
+  outputs, MSLL/SMSE/EV/MACE), numerical-validation policy, and what is
+  deliberately missing. The scoped, machine-readable evidence is in
+  [docs/evidence/pcntoolkit/v1.3.0](docs/evidence/pcntoolkit/v1.3.0/README.md).
 - [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/):
   missing and unsupported covariates, transported unseen sites, small local
   samples, partial panel fits, honest assessment, and unidentified dynamics.
@@ -121,3 +123,4 @@ Contributor design notes:
 
 - [A design for an R normative-modeling library](docs/design/distributional-reference-models.md)
 - [Velocity should be a core consequence of the model, not a bolt-on](docs/design/longitudinal-velocity.md)
+- [PCNtoolkit validation contract](docs/design/pcntoolkit-validation-contract.md)

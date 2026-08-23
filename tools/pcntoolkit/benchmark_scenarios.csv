@@ -1,0 +1,11 @@
+scenario,evidence_class,truth,site_structure,covariate_distribution,n_train,n_validation,n_test,selection_rule,execution_tier
+linear_gaussian,matched_estimator,linear Gaussian,none,same,500,100,500,prespecified linear Gaussian,weekly
+nonlinear_mean,same_estimand,smooth nonlinear Gaussian,none,same,500,100,500,validation log score among prespecified smooth bases,release
+heteroskedastic,same_estimand,linear mean and smooth log scale,none,same,500,100,500,validation log score among scale formulas,release
+skew_heavy,same_estimand,smooth SHASH,none,same,500,100,500,prespecified SHASH after family validation,weekly
+unequal_sites,same_estimand,linear Gaussian with site location and scale,unequal,same,800,160,800,prespecified site model,release
+site_slopes,same_estimand,site-specific age slopes,balanced,same,800,160,800,validation log score among site slope specifications,release
+covariate_shift,matched_estimator,linear Gaussian,none,shifted test support,500,100,500,prespecified linear Gaussian,weekly
+unseen_site,non_equivalent,new site location scale and slope,one test-only site,same,800,160,800,prespecified transport policy,release
+small_n,same_estimand,smooth heteroskedastic SHASH,balanced,same,120,60,500,validation log score with complexity cap,release
+large_n,same_estimand,smooth heteroskedastic SHASH,balanced,same,3000,500,1000,validation log score among prespecified families,release

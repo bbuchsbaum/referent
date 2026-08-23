@@ -34,7 +34,7 @@ assessment <- ref_assess(fit, newdata = val)
 
 | PCNtoolkit | referent | Notes |
 |---|---|---|
-| normative model (`BLR`, `HBR`, `GPR`) | [`ref_spec()`](https://bbuchsbaum.github.io/referent/reference/ref_spec/) + [`ref_fit()`](https://bbuchsbaum.github.io/referent/reference/ref_fit/) | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter |
+| normative model (`BLR`, `HBR`) | [`ref_spec()`](https://bbuchsbaum.github.io/referent/reference/ref_spec/) + [`ref_fit()`](https://bbuchsbaum.github.io/referent/reference/ref_fit/) | one `mgcv` model per outcome; Gaussian or SHASH families with formulas per parameter; GPR belongs to the legacy PCNtoolkit interface, not 1.x |
 | response variable | `outcomes =` | several outcomes fit as a panel, kept wide |
 | covariates, batch effects | formula terms | `s(site, bs = "re")` plays the role of a batch random effect |
 | `predict()` / `estimate()` | `predict(fit, newdata)` | returns scores or `<distribution>` columns |
@@ -119,10 +119,17 @@ not the legacy 0.35 interface.
 | `EV` (`EXPV`) | `ev` | Algebraically equivalent on nonconstant complete data | Both compute `1 - var(residual) / var(y)`. Constant outcomes and filtering of non-finite rows can produce different edge behaviour. |
 | `Rho` | no exact column | Different statistic | PCNtoolkit 1.x reports Spearman rank correlation. `cor` is Pearson correlation of the observed value and predictive median. |
 | `RMSE` | `rmse` | Exact on the same included rows | Missing and non-finite row handling must also match. |
-| `MACE` | `mace` | Same definition | Mean over the centiles 0.05, 0.25, 0.5, 0.75, 0.95 of the absolute gap between the centile and the fraction of observations at or below its curve. |
+| `MACE` | `mace` | Exact only without batch effects | Both use the mean absolute calibration gap on a centile grid. With batch combinations, PCNtoolkit 1.3.0 averages the batch-level values equally; `referent` currently pools rows. |
 | `ShapiroW` | `shapiro_w` | Same statistic | Shapiro-Wilk W of Z; `referent` subsamples 5000 scores with a fixed seed when n is larger, because `shapiro.test()` accepts no more. |
-| `Skew`, `Kurtosis` | `skew_z`, `excess_kurtosis_z` | Exact up to the kurtosis convention | Both are standardised moments of Z. PCNtoolkit reports kurtosis; `referent` reports excess kurtosis (kurtosis minus 3). |
+| `Skew`, `Kurtosis` | `skew_z`, `excess_kurtosis_z` | Related, not exact | PCNtoolkit 1.3.0 uses SciPy's bias-corrected skewness and excess kurtosis. `referent` reports unadjusted standardised moments (and also uses excess kurtosis). The difference is material for small samples. |
 | (none) | `mean_log_score`, `crps` | referent additions | Proper scores of the full predictive distribution; larger log score and smaller CRPS are better. |
+
+One implementation detail matters for external rescoring: with outcome
+standardisation enabled, PCNtoolkit 1.3.0 maps predictions and centiles back to
+the outcome scale but returns `logp` on the standardised scale. Subtract
+`log(sd(y_train))` (using the population standard deviation used by the
+scaler), plus any response-transform Jacobian, before comparing response-scale
+log scores.
 
 ```{r metrics}
 assessment$overall[, c("standardized_log_score", "smse", "ev", "cor", "rmse", "crps")]
@@ -190,8 +197,27 @@ data.frame(
 `Z` here includes uncertainty in the fitted curves (`uncertainty = "total"`,
 the default). That is closest to legacy BLR's coefficient-aware predictive
 variance, but it is not a general claim of numerical equivalence across
-PCNtoolkit model families. `uncertainty = "conditional"` gives the plug-in
-score.
+PCNtoolkit model families. In particular, PCNtoolkit HBR averages
+draw-specific Z scores and quantiles, while `referent` derives them from a
+predictive mixture. Those are different estimands even with identical draws.
+`uncertainty = "conditional"` gives the plug-in score.
+
+## What numerical agreement means
+
+The executable comparison target is PCNtoolkit 1.3.0. Fixed Gaussian
+distributions and transformed-distribution algebra are checked as exact;
+SHASH distributions are checked after an explicit parameter conversion;
+deliberately matched fitted models use prediction-level tolerances. When the
+estimators differ, agreement is assessed by held-out proper scores and
+calibration rather than by forcing their parameters or predictions to match.
+
+These are independent claims: better held-out performance cannot excuse a
+failure of shared distribution algebra, and numerical agreement does not by
+itself establish superiority. The complete classifications, tolerances, and
+CI tiers are recorded in the repository's
+`docs/design/pcntoolkit-validation-contract.md`, with current machine-readable
+results under `docs/evidence/pcntoolkit/v1.3.0/`. Both paths are linked from
+the repository README.
 
 # Site adaptation
 
