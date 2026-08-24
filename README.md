@@ -12,10 +12,13 @@ a threshold exceedance with a known chance rate, not an abnormality.
 The package is CDF-first: a Z-score is one representation of a centile, not a
 raw standardized residual.
 
-> **Development status:** `referent` is an early development package
-> (`0.0.0.9000`). The current fitting surface supports numeric outcomes with
+> **Development status:** `referent` 0.1.0 is an initial, deliberately scoped
+> release candidate. The current fitting surface supports numeric outcomes with
 > Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
-> are reported as unsupported instead of being silently coerced.
+> are reported as unsupported instead of being silently coerced. Exact and
+> matched-estimator PCNtoolkit lanes pass, while the current release-candidate
+> HBR/site and skew-heavy replicated gates retain explicit failing receipts;
+> do not generalise those comparison claims beyond their named scenarios.
 
 Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
 (or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep
@@ -87,7 +90,7 @@ generics above rather than depend on an internal representation.
 | Remove site effects from the data themselves | `predict(type = "harmonised")` |
 | Joint deviation across outcomes | `ref_joint()` |
 | Threshold exceedances with FDR | `ref_flag()` |
-| Freeze and document a reference | `ref_freeze()` |
+| Freeze, validate, and exchange a versioned reference | `ref_freeze()`, `ref_write()`, `ref_read()` |
 | Longitudinal change | `ref_dynamics()`, `ref_transition()`, `ref_forecast()`, `ref_derivative()` |
 | Graphics | `autoplot()` methods, `fortify_centiles()`, `theme_referent()` |
 
@@ -115,6 +118,9 @@ velocity centiles, and conditional forecasts off the same process.
   outputs, MSLL/SMSE/EV/MACE), numerical-validation policy, and what is
   deliberately missing. The scoped, machine-readable evidence is in
   [docs/evidence/pcntoolkit/v1.3.0](docs/evidence/pcntoolkit/v1.3.0/README.md).
+- [NHANES external-cohort evidence](docs/evidence/nhanes/README.md): a
+  reproducible 2015-2016 to 2017-2018 transport lane with retained calibration
+  diagnostics and source hashes.
 - [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/):
   missing and unsupported covariates, transported unseen sites, small local
   samples, partial panel fits, honest assessment, and unidentified dynamics.

@@ -99,11 +99,13 @@ pcn_compare_predictions <- function(referent, comparator, cluster,
 }
 
 pcn_release_superiority_summary <- function(results, B = 4999L,
-                                            seed = 20260823L) {
+                                            seed = 20260823L,
+                                            accepted_classifications = "superior") {
   required <- c(
     "replicate", "log_score_difference", "referent_coverage90",
     "pcntoolkit_coverage90", "referent_mace", "pcntoolkit_mace",
-    "referent_tail05", "pcntoolkit_tail05", "fit_status", "fit_converged"
+    "referent_tail05", "pcntoolkit_tail05", "comparator_valid",
+    "fit_status", "fit_converged"
   )
   if (!all(required %in% names(results))) {
     stop("release results are missing required fields", call. = FALSE)
@@ -122,6 +124,7 @@ pcn_release_superiority_summary <- function(results, B = 4999L,
     results$log_score_difference, results$replicate, B = B, seed = seed
   )
   fit_pass <- all(results$fit_status == "ok" & results$fit_converged)
+  comparator_pass <- all(results$comparator_valid)
   calibration_regret <- cbind(
     coverage90 = abs(results$referent_coverage90 - 0.90) -
       abs(results$pcntoolkit_coverage90 - 0.90),
@@ -142,7 +145,9 @@ pcn_release_superiority_summary <- function(results, B = 4999L,
   max_regret <- apply(calibration_regret, 2L, max)
   calibration_pass <- all(calibration_upper <= calibration_limits)
   critical_pass <- all(max_regret <= critical_limits)
-  classification <- if (fit_pass) {
+  classification <- if (!comparator_pass) {
+    "comparator_failure"
+  } else if (fit_pass) {
     pcn_classify_benchmark(
       interval[["estimate"]], interval[["lower"]], interval[["upper"]],
       calibration_pass = calibration_pass && critical_pass
@@ -155,7 +160,8 @@ pcn_release_superiority_summary <- function(results, B = 4999L,
     log_score_difference = unname(interval[["estimate"]]),
     ci_lower = unname(interval[["lower"]]),
     ci_upper = unname(interval[["upper"]]),
-    all_shash_fits_converged = fit_pass,
+    all_referent_fits_valid = fit_pass,
+    all_comparator_fits_valid = comparator_pass,
     coverage_regret = mean_regret[["coverage90"]],
     coverage_regret_upper = calibration_upper[["coverage90"]],
     mace_regret = mean_regret[["mace"]],
@@ -166,7 +172,8 @@ pcn_release_superiority_summary <- function(results, B = 4999L,
     calibration_noninferior = calibration_pass,
     no_critical_replicate_regression = critical_pass,
     classification = classification,
-    pass = identical(classification, "superior"),
+    accepted_classifications = paste(accepted_classifications, collapse = ";"),
+    pass = classification %in% accepted_classifications,
     stringsAsFactors = FALSE
   )
 }

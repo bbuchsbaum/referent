@@ -4,7 +4,14 @@
 \alias{ref_assess}
 \title{Assess a fitted reference model}
 \usage{
-ref_assess(fit, newdata, by = NULL, uncertainty = c("conditional", "total"))
+ref_assess(
+  fit,
+  newdata,
+  by = NULL,
+  uncertainty = c("total", "conditional"),
+  allow_in_sample = FALSE,
+  allow_calibration_reuse = FALSE
+)
 }
 \arguments{
 \item{fit}{A \link{ref_fit}.}
@@ -17,11 +24,16 @@ not stored on the fit). For out-of-fold evaluation use
 then reported per group (column \code{.group}).}
 
 \item{uncertainty}{Passed to \code{\link[=predict.ref_fit]{predict.ref_fit()}}. \code{"conditional"}
-(the default, and the historical behaviour) scores the point-estimate
-predictive; \code{"total"} integrates over the coefficient draws, matching
-what \code{\link[=predict.ref_fit]{predict.ref_fit()}} itself returns by default. Without this
-argument the scores in \code{overall} cannot be reproduced from
-\code{predict()}.}
+scores the point-estimate predictive; \code{"total"} (the default) integrates
+over coefficient uncertainty and matches \code{\link[=predict.ref_fit]{predict.ref_fit()}}.}
+
+\item{allow_in_sample}{Set to \code{TRUE} only for explicitly labelled training
+diagnostics. The default aborts if \code{newdata} exactly matches the fitting
+data; use \code{\link[=ref_crossfit]{ref_crossfit()}} for honest reference-sample assessment.}
+
+\item{allow_calibration_reuse}{Set to \code{TRUE} only for an explicitly labelled
+diagnostic on the same rows used to estimate a calibration map. The
+default requires evaluation data independent of fitting and calibration.}
 }
 \value{
 An object of class \code{ref_assessment} with \code{overall},

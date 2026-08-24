@@ -22,12 +22,14 @@
 #' \eqn{n} out-of-fold scores, \eqn{|\bar z| \le 0.10 + 2/\sqrt{n}},
 #' \eqn{0.80 - 2\sqrt{2/n} \le \mathrm{var}(z) \le 1.25 + 2\sqrt{2/n}},
 #' the 95% coverage lies in \eqn{[0.93, 0.97] \pm 2\sqrt{0.05 \cdot 0.95/n}},
-#' and the observed 5% two-sided tail rate lies in
-#' \eqn{0.05 \pm (0.015 + 2\sqrt{0.05 \cdot 0.95/n})}. The fixed margins
+#' and each reported two-sided tail rate lies within its binomial
+#' tolerance. The gate also checks MACE, skewness, excess kurtosis, and
+#' material conditional location/scale drift. The fixed margins
 #' are practical tolerances; the \eqn{2/\sqrt{n}} terms are two standard
 #' errors under perfect calibration, so small samples are not rejected
 #' for noise alone. The `calibrated` column of `comparison` records the
-#' gate's verdict per model.
+#' gate's verdict per model. If every usable candidate fails, selection
+#' aborts unless the caller explicitly opts into an uncalibrated result.
 #'
 #' @param specs A named list of [ref_spec] objects, simplest first.
 #' @param data Reference data.
@@ -35,6 +37,9 @@
 #' @param folds Cross-fit folds.
 #' @param shape_threshold Extra log-score gain required to accept a
 #'   covariate-dependent skew/tail model.
+#' @param allow_uncalibrated If `FALSE` (the default), abort when no usable
+#'   candidate passes every calibration gate. Set to `TRUE` only for an
+#'   explicitly labelled exploratory comparison.
 #' @param ... Passed to [ref_crossfit()].
 #' @return A `ref_selection`: the selected spec and name, the selected
 #'   model's cross-fit scores, and a `comparison` table with the
@@ -46,6 +51,7 @@ ref_select <- function(specs,
                         outcomes,
                         folds = 5,
                         shape_threshold = 0.02,
+                        allow_uncalibrated = FALSE,
                         ...) {
   if (inherits(specs, "ref_spec")) {
     specs <- list(model = specs)
@@ -70,12 +76,17 @@ ref_select <- function(specs,
         model = nm, level = level, status = "nonconverged", shape = shape,
         mean_log_score = -Inf, crps = Inf,
         n = 0L, mean_z = NA_real_, var_z = NA_real_, cover_95 = NA_real_,
-        tail_05 = NA_real_, calibrated = FALSE, selected = FALSE
+        tail_05 = NA_real_, mace = NA_real_, skew_z = NA_real_,
+        excess_kurtosis_z = NA_real_, max_location_drift = NA_real_,
+        max_scale_drift = NA_real_, conditional_pass = FALSE,
+        calibrated = FALSE, selected = FALSE
       ))
     }
     marg <- assess_marginal(cf)
     tail <- assess_tail(cf)
+    cond <- assess_conditional(cf, data, attr(cf, "deployment"))
     ok <- is.finite(cf$log_density)
+    cond_pass <- conditional_calibration_ok(cond)
     tibble::tibble(
       model = nm,
       level = level,
@@ -89,17 +100,31 @@ ref_select <- function(specs,
       cover_95 = stats::weighted.mean(marg$cover_95, marg$n),
       tail_05 = stats::weighted.mean(tail$observed[tail$tail_level == 0.05],
                                      tail$n[tail$tail_level == 0.05]),
-      calibrated = acceptable_calibration(list(marginal = marg, tail = tail)),
+      mace = stats::weighted.mean(marg$mace, marg$n),
+      skew_z = stats::weighted.mean(marg$skew_z, marg$n),
+      excess_kurtosis_z = stats::weighted.mean(marg$excess_kurtosis_z, marg$n),
+      max_location_drift = max_abs_or_na(cond$location_drift),
+      max_scale_drift = max_abs_or_na(cond$scale_drift),
+      conditional_pass = cond_pass,
+      calibrated = acceptable_calibration(list(
+        marginal = marg, tail = tail, conditional = cond
+      )),
       selected = FALSE
     )
   })
   tab <- dplyr_bind(rows)
   tab$shape <- as.logical(tab$shape)
   tab$calibrated <- as.logical(tab$calibrated)
-  usable <- tab$status %in% c("ok", "partial")
+  usable <- tab$status == "ok"
   survivors <- tab[usable & tab$calibrated, , drop = FALSE]
   if (!nrow(survivors)) {
-    cli::cli_warn("No ladder candidate passed the calibration gate; ranking all usable fits.")
+    if (!isTRUE(allow_uncalibrated)) {
+      cli::cli_abort(c(
+        "No ladder candidate passed the calibration gate.",
+        "i" = "Inspect the comparison diagnostics or set {.arg allow_uncalibrated = TRUE} for an explicitly uncalibrated exploratory result."
+      ))
+    }
+    cli::cli_warn("No ladder candidate passed the calibration gate; an uncalibrated result was explicitly allowed.")
     survivors <- tab[usable, , drop = FALSE]
   }
   if (!nrow(survivors)) {
@@ -166,15 +191,39 @@ acceptable_calibration <- function(assessment) {
   se_cov <- sqrt(0.05 * 0.95 / n)
   ok <- is.finite(m$mean_z) & abs(m$mean_z) <= 0.10 + 2 * se_mean &
     is.finite(m$var_z) & m$var_z >= 0.80 - 2 * se_var & m$var_z <= 1.25 + 2 * se_var &
-    is.finite(m$cover_95) & m$cover_95 >= 0.93 - 2 * se_cov & m$cover_95 <= 0.97 + 2 * se_cov
-  t5 <- assessment$tail
-  if (!is.null(t5)) {
-    t5 <- t5[t5$tail_level == 0.05, , drop = FALSE]
-    t5 <- t5[match(m$.outcome, t5$.outcome), , drop = FALSE]
-    tol <- 0.015 + 2 * sqrt(0.05 * 0.95 / pmax(t5$n, 1))
-    ok <- ok & (is.na(t5$observed) | abs(t5$observed - 0.05) <= tol)
+    is.finite(m$cover_95) & m$cover_95 >= 0.93 - 2 * se_cov & m$cover_95 <= 0.97 + 2 * se_cov &
+    is.finite(m$mace) & m$mace <= 0.02 + se_mean &
+    is.finite(m$skew_z) & abs(m$skew_z) <= 0.50 + 2 * sqrt(6 / n) &
+    is.finite(m$excess_kurtosis_z) &
+      abs(m$excess_kurtosis_z) <= 1 + 2 * sqrt(24 / n)
+  tails <- assessment$tail
+  if (!is.null(tails) && nrow(tails)) {
+    expected <- tails$expected %||% tails$tail_level
+    tol <- 0.01 + 2 * sqrt(expected * (1 - expected) / pmax(tails$n, 1))
+    ok <- ok & all(is.finite(tails$observed) & abs(tails$observed - expected) <= tol)
   }
-  all(ok)
+  all(ok) && conditional_calibration_ok(assessment$conditional)
+}
+
+conditional_calibration_ok <- function(x) {
+  if (is.null(x) || !nrow(x)) {
+    return(TRUE)
+  }
+  complete <- x$n >= 5L & is.finite(x$location_drift) &
+    is.finite(x$location_se) & is.finite(x$location_p) &
+    is.finite(x$scale_drift) & is.finite(x$scale_se) & is.finite(x$scale_p)
+  if (!all(complete)) {
+    return(FALSE)
+  }
+  bad_location <- x$location_p <= 0.01 &
+    abs(x$location_drift) > 0.20 + 2 * x$location_se
+  bad_scale <- x$scale_p <= 0.01 &
+    abs(x$scale_drift) > 0.30 + 2 * x$scale_se
+  !any(bad_location | bad_scale)
+}
+
+max_abs_or_na <- function(x) {
+  if (!length(x) || !any(is.finite(x))) NA_real_ else max(abs(x), na.rm = TRUE)
 }
 
 #' @export

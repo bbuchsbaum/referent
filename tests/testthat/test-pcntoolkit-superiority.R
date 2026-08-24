@@ -88,6 +88,7 @@ test_that("release superiority requires replicated convergence and calibration",
     pcntoolkit_mace = 0.05,
     referent_tail05 = 0.05,
     pcntoolkit_tail05 = 0.06,
+    comparator_valid = TRUE,
     fit_status = "ok",
     fit_converged = TRUE
   )
@@ -97,12 +98,23 @@ test_that("release superiority requires replicated convergence and calibration",
   expect_gt(passed$ci_lower, 0)
   expect_true(passed$calibration_noninferior)
   expect_true(passed$no_critical_replicate_regression)
+  expect_true(passed$all_referent_fits_valid)
+  expect_true(passed$all_comparator_fits_valid)
 
   failed_fit <- results
   failed_fit$fit_status[[3L]] <- "nonconverged"
   fit_summary <- pcn_release_superiority_summary(failed_fit, B = 999L, seed = 14L)
   expect_identical(fit_summary$classification, "fit_failure")
   expect_false(fit_summary$pass)
+
+  failed_comparator <- results
+  failed_comparator$comparator_valid[[4L]] <- FALSE
+  comparator_summary <- pcn_release_superiority_summary(
+    failed_comparator, B = 999L, seed = 14L
+  )
+  expect_identical(comparator_summary$classification, "comparator_failure")
+  expect_false(comparator_summary$all_comparator_fits_valid)
+  expect_false(comparator_summary$pass)
 
   failed_calibration <- results
   failed_calibration$referent_coverage90[[5L]] <- 0.70

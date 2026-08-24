@@ -52,6 +52,7 @@
     Message
       
       -- referent model card ---------------------------------------------------------
+      bundle schema: 1.0.0
       family: gaussian
       engine: mgcv
       outcomes: y, marker_01, and marker_bad
@@ -83,7 +84,9 @@
     Code
       print(dyn)
     Message
-      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample, total
+      uncertainty
+      kernel uncertainty: plug-in (not propagated)
       subjects: 200; time range [#, #]; lag range [2, 2]
       ! measurement not separated: no short-interval repeats; measurement noise is not separated from rank dynamics
     Output
@@ -99,7 +102,9 @@
     Code
       print(dyn0)
     Message
-      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample, total
+      uncertainty
+      kernel uncertainty: plug-in (not propagated)
       subjects: 200; time range [#, #]; lag range [0, 0]
       ! change not identified: too few repeated observations to identify within-person dependence
     Output
@@ -127,7 +132,7 @@
     Code
       print(cal$calibration)
     Message
-      <ref_calibration> n = 50, by site
+      <ref_calibration> total uncertainty, n = 50, by site
 
 ---
 

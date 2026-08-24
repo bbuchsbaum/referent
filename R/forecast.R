@@ -8,9 +8,9 @@
 #' identified (see [ref_dynamics()]): a history-conditioned distribution
 #' from an unestimated kernel would be silently wrong. History rows with a
 #' non-finite time or outcome are dropped and the number actually used is
-#' returned as `history_n`. Epistemic uncertainty of the reference location
-#' is carried in the marginal distributions but the uncertainty of the
-#' kernel parameters is not propagated into the forecast.
+#' returned as `history_n`. The exact marginal uncertainty estimand stored by
+#' [ref_dynamics()] is reused. Kernel parameters remain plug-in estimates;
+#' their uncertainty is explicitly recorded but not propagated.
 #'
 #' @param dynamic A [ref_dynamics] object.
 #' @param history Subject history data frame. Must contain the time column
@@ -58,8 +58,11 @@ ref_forecast <- function(dynamic, history, times, outcome = NULL) {
   new_grid <- history[rep(nrow(history), length(times)), , drop = FALSE]
   new_grid[[time_nm]] <- times
   new_grid[[outcome]] <- NA_real_
-  marg <- predict_dists(dynamic$reference, new_grid, uncertainty = "conditional")[[outcome]]
-  hist_marg <- predict_dists(dynamic$reference, history, uncertainty = "conditional")[[outcome]]
+  marg <- predict_dists(dynamic$reference, new_grid, uncertainty = dynamic$uncertainty,
+                        n_draw = dynamic$n_draw)[[outcome]]
+  hist_marg <- predict_dists(dynamic$reference, history,
+                             uncertainty = dynamic$uncertainty,
+                             n_draw = dynamic$n_draw)[[outcome]]
   z_hist <- dist_z(hist_marg, y_hist)
   cond <- condition_history(z_hist, t_hist, times, pr)
   dists <- dist_conditioned(marg, m = cond$m, s = cond$s)
@@ -82,7 +85,9 @@ ref_forecast <- function(dynamic, history, times, outcome = NULL) {
       history = history,
       time_name = time_nm,
       history_n = length(z_hist),
-      lag_support = lag_support
+      lag_support = lag_support,
+      reference_uncertainty = dynamic$uncertainty,
+      kernel_uncertainty = dynamic$kernel_uncertainty
     ),
     class = "ref_forecast"
   )

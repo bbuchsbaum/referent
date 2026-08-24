@@ -50,6 +50,7 @@ support_reference <- function(data, covariate_names) {
 #' ref_support(fit, ref[1:3, ])
 #' @export
 ref_support <- function(fit, newdata) {
+  validate_ref_bundle(fit)
   classify_support(fit$support_ref, tibble::as_tibble(newdata))
 }
 

@@ -13,6 +13,8 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
   expect_s3_class(cf, "ref_scores")
   expect_false(any(cf$.in_sample))
   expect_s3_class(attr(cf, "deployment"), "ref_fit")
+  expect_identical(attr(cf, "uncertainty"), "conditional")
+  expect_true(is.character(attr(cf, "data_hash")))
   expect_equal(sort(cf$.row), seq_len(nrow(dat)))
   expect_equal(sort(unique(cf$.fold)), 1:4)
   # clusters stay together
@@ -28,6 +30,22 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
   # whose expectation under calibration is sigma / sqrt(pi) with sigma = 1.3
   expect_true(all(is.finite(cf$crps)))
   expect_lt(abs(mean(cf$crps) - 1.3 / sqrt(pi)), 0.1)
+})
+
+test_that("assessment requires held-out provenance and hashes full row content", {
+  train <- ref_simulate(140, seed = 81)
+  fit <- ref_fit(simple_spec(), train, "y")
+
+  expect_error(ref_assess(fit, train), "training data")
+  allowed <- ref_assess(fit, train, allow_in_sample = TRUE)
+  expect_true(allowed$in_sample)
+  expect_match(paste(cli::cli_fmt(print(allowed)), collapse = "\n"), "IN-SAMPLE")
+
+  changed <- train
+  changed$age[c(1, 2)] <- rev(changed$age[c(1, 2)])
+  expect_false(identical(digest_data(changed), digest_data(train)))
+  sc <- predict(fit, changed, uncertainty = "conditional", allow_extrapolation = TRUE)
+  expect_false(any(sc$.in_sample))
 })
 
 test_that("ref_assess recovers nominal coverage and a positive log-score gain", {
@@ -73,7 +91,7 @@ test_that("standardized_log_score is the negative MSLL against the reference sam
 
   for (rows in list(seq_len(120), seq_len(40))) {
     a <- ref_assess(fit, new[rows, ])
-    sc <- predict(fit, new[rows, ], type = "scores", uncertainty = "conditional")
+    sc <- predict(fit, new[rows, ], type = "scores", uncertainty = "total")
     expect_equal(
       -a$overall$standardized_log_score,
       msll_longhand(sc, ref$y),
@@ -97,15 +115,16 @@ test_that("ref_assess() honours the uncertainty argument", {
   new <- ref_simulate(80, seed = 26)
   fit <- ref_fit(ref_spec(ref_gaussian(), ~ s(age, k = 5) + sex), ref, "y")
 
-  expect_equal(ref_assess(fit, new)$overall, ref_assess(fit, new, uncertainty = "conditional")$overall)
   total <- ref_assess(fit, new, uncertainty = "total")
+  conditional <- ref_assess(fit, new, uncertainty = "conditional")
+  expect_equal(ref_assess(fit, new)$overall, total$overall)
   expect_equal(
     -total$overall$standardized_log_score,
     msll_longhand(predict(fit, new, type = "scores", uncertainty = "total"), ref$y),
     tolerance = 1e-12
   )
   expect_false(isTRUE(all.equal(
-    total$overall$mean_log_score,
+    conditional$overall$mean_log_score,
     ref_assess(fit, new)$overall$mean_log_score
   )))
 })

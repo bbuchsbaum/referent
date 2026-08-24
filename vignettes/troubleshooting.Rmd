@@ -189,7 +189,8 @@ map, so no row is reported as calibrated.
 tiny_calibration <- ref_calibrate(
   site_fit,
   data = local_controls[1, , drop = FALSE],
-  by = site
+  by = site,
+  uncertainty = "conditional"
 )
 tiny_scores <- predict(
   tiny_calibration,
@@ -276,10 +277,11 @@ acceptable for the study.
 ## Symptom
 
 The model looks well calibrated when assessed on the same rows used to fit it.
-The assessment object records this reuse rather than treating it as validation.
+`ref_assess()` now rejects this reuse by default. An explicitly requested
+training diagnostic remains labelled `in_sample`; it is not validation.
 
 ```{r compare-assessment-sources}
-training_assessment <- ref_assess(fit, newdata = reference)
+training_assessment <- ref_assess(fit, newdata = reference, allow_in_sample = TRUE)
 held_out_assessment <- ref_assess(fit, newdata = held_out)
 
 data.frame(

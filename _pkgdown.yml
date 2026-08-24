@@ -50,6 +50,7 @@ reference:
   - ref_adapt
   - ref_calibrate
   - ref_freeze
+  - ref_write
 - title: Model longitudinal change
   desc: Estimate within-person dependence, transitions, forecasts, and chart velocity.
   contents:

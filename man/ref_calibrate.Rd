@@ -4,7 +4,13 @@
 \alias{ref_calibrate}
 \title{Held-out probability recalibration}
 \usage{
-ref_calibrate(fit, data, by = NULL, uncertainty = c("conditional", "total"))
+ref_calibrate(
+  fit,
+  data,
+  by = NULL,
+  uncertainty = c("total", "conditional"),
+  n_draw = NULL
+)
 }
 \arguments{
 \item{fit}{A \link{ref_fit}.}
@@ -21,8 +27,11 @@ calibration data fall back to the pooled map. Not available when
 \item{uncertainty}{Which predictive the calibration data are scored
 under, as in \code{\link[=ref_assess]{ref_assess()}}. A map corrects the predictive it was
 fitted on, so this should match the \code{uncertainty} that
-\code{\link[=predict.ref_fit]{predict.ref_fit()}} will later be asked for. Ignored when \code{data} is a
-score table, which already carries its own.}
+\code{\link[=predict.ref_fit]{predict.ref_fit()}} will later be asked for. Defaults to \code{"total"},
+matching prediction. A score table supplies this provenance itself.}
+
+\item{n_draw}{Number of coefficient draws for total uncertainty. This is
+retained and must match later score predictions.}
 }
 \value{
 The fit with a \code{calibration} slot; \code{\link[=predict.ref_fit]{predict.ref_fit()}} applies

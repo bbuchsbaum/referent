@@ -153,7 +153,7 @@ test_that("ref_support reports unknown for NA covariates", {
 test_that("augment matches the long score table", {
   d <- perf_data()
   fit <- ref_calibrate(ref_fit(perf_specs()$gaulss, d$ref, c("y", "marker_01")),
-                        d$new, by = site)
+                        d$new, by = site, uncertainty = "conditional")
   long <- predict(fit, d$new, uncertainty = "conditional")
   wide <- augment(fit, d$new, uncertainty = "conditional")
   for (nm in c("y", "marker_01")) {
@@ -240,7 +240,8 @@ test_that("calibration leaves calibrated = FALSE where no map could be estimated
   cal <- dat[121:160, ]
   cal$site <- as.character(cal$site)
   cal$site[1] <- "solo" # one row: no map for this group, pooled map applies
-  fit_by <- ref_calibrate(fit, data = cal, by = site)
+  fit_by <- ref_calibrate(fit, data = cal, by = site,
+                          uncertainty = "conditional")
   expect_null(fit_by$calibration$maps$y$solo)
   new <- dat[161:170, ]
   new$site <- as.character(new$site)
@@ -248,7 +249,7 @@ test_that("calibration leaves calibrated = FALSE where no map could be estimated
   sc <- predict(fit_by, new, uncertainty = "conditional")
   expect_true(all(sc$calibrated))
   # an outcome with a single calibration row has no map at all
-  fit1 <- ref_calibrate(fit, data = dat[121, ])
+  fit1 <- ref_calibrate(fit, data = dat[121, ], uncertainty = "conditional")
   expect_null(fit1$calibration$maps$y$.global)
   sc1 <- predict(fit1, new, uncertainty = "conditional")
   expect_true(all(!sc1$calibrated))

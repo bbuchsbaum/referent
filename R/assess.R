@@ -52,25 +52,50 @@
 #' @param by Optional grouping column; the marginal calibration table is
 #'   then reported per group (column `.group`).
 #' @param uncertainty Passed to [predict.ref_fit()]. `"conditional"`
-#'   (the default, and the historical behaviour) scores the point-estimate
-#'   predictive; `"total"` integrates over the coefficient draws, matching
-#'   what [predict.ref_fit()] itself returns by default. Without this
-#'   argument the scores in `overall` cannot be reproduced from
-#'   `predict()`.
+#'   scores the point-estimate predictive; `"total"` (the default) integrates
+#'   over coefficient uncertainty and matches [predict.ref_fit()].
+#' @param allow_in_sample Set to `TRUE` only for explicitly labelled training
+#'   diagnostics. The default aborts if `newdata` exactly matches the fitting
+#'   data; use [ref_crossfit()] for honest reference-sample assessment.
+#' @param allow_calibration_reuse Set to `TRUE` only for an explicitly labelled
+#'   diagnostic on the same rows used to estimate a calibration map. The
+#'   default requires evaluation data independent of fitting and calibration.
 #' @return An object of class `ref_assessment` with `overall`,
 #'   `marginal`, `conditional`, and `tail` tibbles plus the scores.
 #' @export
 ref_assess <- function(fit, newdata, by = NULL,
-                        uncertainty = c("conditional", "total")) {
+                        uncertainty = c("total", "conditional"),
+                        allow_in_sample = FALSE,
+                        allow_calibration_reuse = FALSE) {
   if (missing(newdata) || is.null(newdata)) {
     cli::cli_abort("Supply {.arg newdata}: held-out data or a cross-fitted frame.")
   }
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
+  if (is_in_sample_data(fit, newdata) && !isTRUE(allow_in_sample)) {
+    cli::cli_abort(
+      "{.arg newdata} are the model's training data; use {.fn ref_crossfit} or set {.arg allow_in_sample = TRUE} for a labelled diagnostic."
+    )
+  }
+  if (is_calibration_data(fit, newdata) && !isTRUE(allow_calibration_reuse)) {
+    cli::cli_abort(
+      "{.arg newdata} are the calibration data; use an independent evaluation set or set {.arg allow_calibration_reuse = TRUE} for a labelled diagnostic."
+    )
+  }
   by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
   dists <- predict_dists(fit, newdata, uncertainty = uncertainty)
   scores <- scores_from_dists(fit, dists, newdata, allow_extrapolation = FALSE)
   assess_from_scores(fit, scores, dists, newdata, by_vec)
+}
+
+is_calibration_data <- function(fit, newdata) {
+  cal <- fit$calibration
+  cols <- unique(c(fit$covariates, fit$outcomes))
+  if (is.null(cal) || is.null(cal$data_hash) || !all(cols %in% names(newdata)) ||
+      nrow(newdata) != cal$n) {
+    return(FALSE)
+  }
+  identical(digest_data(newdata[, cols, drop = FALSE]), cal$data_hash)
 }
 
 assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {
@@ -305,6 +330,9 @@ assess_tail <- function(scores) {
 #' @export
 print.ref_assessment <- function(x, ...) {
   cli::cli_text("{.cls ref_assessment} n = {x$n}")
+  if (isTRUE(x$in_sample)) {
+    cli::cli_alert_warning("IN-SAMPLE diagnostic: do not report as held-out performance.")
+  }
   print(x$overall)
   invisible(x)
 }

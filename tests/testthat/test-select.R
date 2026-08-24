@@ -24,7 +24,7 @@ test_that("the ladder picks a Gaussian level on Gaussian constant-scale data", {
   expect_true(all(is.finite(tab$crps[tab$status == "ok"])))
   # gate values are out-of-fold: they differ from the in-sample assessment
   fit <- attr(sel$crossfit, "deployment")
-  ins <- ref_assess(fit, newdata = dat)
+  ins <- ref_assess(fit, newdata = dat, allow_in_sample = TRUE)
   oof <- tab[tab$selected, ]
   expect_false(isTRUE(all.equal(oof$var_z, ins$marginal$var_z)))
   expect_equal(oof$var_z, stats::var(sel$crossfit$z, na.rm = TRUE))
@@ -49,11 +49,16 @@ test_that("the ladder picks SHASH on strongly skewed data", {
 })
 
 test_that("acceptable_calibration scales its tolerance with n", {
-  make <- function(n, mean_z, var_z, cover_95, tail_05 = 0.05) {
+  make <- function(n, mean_z, var_z, cover_95, tail_05 = 0.05,
+                   mace = 0.01, skew_z = 0, excess_kurtosis_z = 0,
+                   conditional = NULL) {
     list(
       marginal = tibble::tibble(.outcome = "y", n = n, mean_z = mean_z, var_z = var_z,
-                                cover_95 = cover_95),
-      tail = tibble::tibble(.outcome = "y", tail_level = 0.05, observed = tail_05, n = n)
+                                skew_z = skew_z, excess_kurtosis_z = excess_kurtosis_z,
+                                mace = mace, cover_95 = cover_95),
+      tail = tibble::tibble(.outcome = "y", tail_level = 0.05, expected = 0.05,
+                            observed = tail_05, n = n),
+      conditional = conditional
     )
   }
   expect_true(acceptable_calibration(make(1000, 0.05, 1.05, 0.95)))
@@ -61,8 +66,52 @@ test_that("acceptable_calibration scales its tolerance with n", {
   expect_false(acceptable_calibration(make(1000, 0.0, 1.6, 0.95)))
   expect_false(acceptable_calibration(make(1000, 0.0, 1.0, 0.90)))
   expect_false(acceptable_calibration(make(1000, 0.0, 1.0, 0.95, tail_05 = 0.10)))
+  expect_false(acceptable_calibration(make(1000, 0.0, 1.0, 0.95, mace = 0.08)))
+  expect_false(acceptable_calibration(make(1000, 0.0, 1.0, 0.95, skew_z = 1.2)))
   # the same deviations are within noise at n = 30
   expect_true(acceptable_calibration(make(30, 0.3, 1.6, 0.90)))
+})
+
+test_that("the ladder rejects material conditional drift", {
+  set.seed(913)
+  n <- 600
+  dat <- tibble::tibble(
+    age = seq(20, 80, length.out = n),
+    y = ((age - 50) / 10)^2 + stats::rnorm(n, sd = 0.35)
+  )
+  specs <- list(linear = ref_spec(ref_gaussian(), location = ~ age, scale = ~ 1))
+
+  expect_warning(
+    sel <- ref_select(specs, dat, "y", folds = 5, allow_uncalibrated = TRUE),
+    "explicitly allowed"
+  )
+  row <- sel$comparison[1, ]
+  expect_false(row$conditional_pass)
+  expect_false(row$calibrated)
+  expect_gt(row$max_location_drift, 0.5)
+})
+
+test_that("the ladder fails closed when every usable candidate is uncalibrated", {
+  set.seed(914)
+  n <- 500
+  dat <- tibble::tibble(
+    age = stats::runif(n, 20, 80),
+    y = ifelse(stats::runif(n) < 0.1,
+               stats::rnorm(n, 10, 0.2),
+               stats::rnorm(n, 0, 0.2))
+  )
+  specs <- list(gaussian = ref_spec(ref_gaussian(), location = ~ 1, scale = ~ 1))
+
+  expect_error(
+    ref_select(specs, dat, "y", folds = 5),
+    "No ladder candidate passed the calibration gate"
+  )
+  expect_warning(
+    sel <- ref_select(specs, dat, "y", folds = 5, allow_uncalibrated = TRUE),
+    "explicitly allowed"
+  )
+  expect_false(sel$comparison$calibrated)
+  expect_true(sel$comparison$selected)
 })
 
 test_that("the comparison table carries the paired standard errors the one-SE rule uses", {

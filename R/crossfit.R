@@ -18,6 +18,8 @@
 #'   predictive that [predict.ref_fit()] returns by default, which is
 #'   what a map fitted on these scores by [ref_calibrate()] will be
 #'   applied to.
+#' @param n_draw Number of coefficient draws when `uncertainty = "total"`.
+#'   The value is retained as calibration provenance.
 #' @param ... Passed to [ref_fit()].
 #' @return A `ref_scores` object with `.in_sample = FALSE`, `.row`
 #'   indexing rows of `data`, a per-row `crps` column, and a `.fold`
@@ -31,6 +33,7 @@ ref_crossfit <- function(spec,
                           cluster = NULL,
                           id = NULL,
                           uncertainty = c("conditional", "total"),
+                          n_draw = NULL,
                           ...) {
   uncertainty <- match.arg(uncertainty)
   data <- tibble::as_tibble(data)
@@ -47,7 +50,7 @@ ref_crossfit <- function(spec,
       return(NULL)
     }
     fit <- ref_fit(spec, data = train, outcomes = outcome_names, ...)
-    dists <- predict_dists(fit, test, uncertainty = uncertainty)
+    dists <- predict_dists(fit, test, uncertainty = uncertainty, n_draw = n_draw)
     sc <- scores_from_dists(fit, dists, test, allow_extrapolation = FALSE)
     sc$crps <- NA_real_
     for (nm in names(dists)) {
@@ -70,7 +73,14 @@ ref_crossfit <- function(spec,
     scores,
     class = c("ref_scores", class(scores)),
     deployment = deployment,
-    folds = fold_id
+    folds = fold_id,
+    uncertainty = uncertainty,
+    n_draw = if (identical(uncertainty, "total")) {
+      as.integer(n_draw %||% deployment$spec$control$n_draw %||% 200L)
+    } else {
+      NA_integer_
+    },
+    data_hash = deployment$data_hash
   )
 }
 

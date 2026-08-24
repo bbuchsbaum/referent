@@ -1,0 +1,36 @@
+{
+  "estimand": "separate adaptation and transfer policies; no rowwise parity claim",
+  "referent_version": "0.1.0",
+  "r_version": "R version 4.5.1 (2025-06-13)",
+  "all_sites_pass": false,
+  "failed_sites": {
+    "referent_adaptation": "site-5"
+  },
+  "referent_adaptation": {
+    "by": "site",
+    "parameters": ["location", "scale"],
+    "offsets": {
+      "y": {
+        "site-5": {
+          "location": 0.9082,
+          "scale": 0.2071,
+          "n": 25,
+          "location_se": 0.1689,
+          "scale_se": 0.0941,
+          "parameters": ["location", "scale"]
+        },
+        ".all": {
+          "location": 0.9082,
+          "scale": 0.2071,
+          "n": 25,
+          "location_se": 0.1689,
+          "scale_se": 0.0941,
+          "parameters": ["location", "scale"]
+        }
+      }
+    },
+    "n_local": 25,
+    "location_prior_n": 10,
+    "scale_prior_n": 25
+  }
+}

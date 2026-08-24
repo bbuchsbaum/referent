@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0.0",
+  "estimand": "unweighted adult cohort transport, conditional predictive distribution",
+  "train_cohort": "NHANES 2015-2016",
+  "evaluation_cohort": "NHANES 2017-2018",
+  "age_range": [18, 79],
+  "outcomes": ["height_cm", "weight_kg", "bmi", "waist_cm"],
+  "train_rows": 5392,
+  "evaluation_population_rows": 5151,
+  "evaluation_rows": 2000,
+  "evaluation_sampling": "fixed-seed simple random sample without replacement (seed 20260824)",
+  "uncertainty": "total",
+  "n_draw": 1000,
+  "package_version": "0.1.0",
+  "r_version": "R version 4.5.1 (2025-06-13)",
+  "input_files": {
+    "demo_train": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/DEMO_I.XPT",
+      "sha256": "c9297c6c37ae8f78f29be9568fa2a03cf3b112616a39afee04030fc775a66a0d",
+      "bytes": 3756480
+    },
+    "body_train": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/BMX_I.XPT",
+      "sha256": "d31da84e14212b4e58e8340598a5b8e2144fac83333563e966eb1b332e4141d6",
+      "bytes": 1989600
+    },
+    "demo_test": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/DEMO_J.XPT",
+      "sha256": "c0b46e0345ea19404928656277c8b0d10b0cca348a9b2fe4fc3c67e8b7ee73ec",
+      "bytes": 3412720
+    },
+    "body_test": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/BMX_J.XPT",
+      "sha256": "8d675e42d8826ac98714b2c3dd4c5138a5e353fb4424f7eff5e6db4a01ce838a",
+      "bytes": 1466000
+    }
+  },
+  "output_files": {
+    "overall": {
+      "sha256": "f60d540ad442fbbf1fe1a449caf0489ddfd4a253ce4f409a5e66cbbef5fc765c",
+      "rows": 4
+    },
+    "marginal": {
+      "sha256": "5852e9a5bf735d22061cbbe17ad6cc2645ab5caa7fd6c0e398956c5ecc640803",
+      "rows": 4
+    },
+    "conditional": {
+      "sha256": "0a2cb534c5dbb0f82a7d24286a3959953452f729734d3c2c86f81eeecf775ce1",
+      "rows": 36
+    },
+    "tail": {
+      "sha256": "02c5b2561140fc3ea220cf267a99e5aa32a3188a81bb484f150c07a7b0895174",
+      "rows": 16
+    },
+    "gate": {
+      "sha256": "f79f91124ac447061906e540a1f855e49e3d1028632bf18eae73530fef3876c5",
+      "rows": 1
+    }
+  },
+  "all_fits_valid": true,
+  "calibration_pass": false,
+  "pass": false
+}

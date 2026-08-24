@@ -1,6 +1,6 @@
 #' Longitudinal dependence process
 #'
-#' Attaches a Gaussian-copula process on calibrated normal scores
+#' Attaches a Gaussian-copula process on marginal normal scores
 #' \eqn{Z=\Phi^{-1}(F(y\mid x))}. The default kernel is stable rank plus
 #' a Matern-3/2 process plus a measurement nugget, which is positive
 #' semidefinite for every irregular visit schedule.
@@ -24,6 +24,11 @@
 #' @param crossfit Number of subject-level folds used to obtain
 #'   out-of-fold Z scores via [ref_crossfit()] (whole subjects stay in one
 #'   fold). `0` or `NULL` uses in-sample scores from `reference`.
+#' @param uncertainty Marginal predictive estimand used to create every Z
+#'   score and every downstream transition or forecast. Defaults to
+#'   `"total"`, matching [predict.ref_fit()].
+#' @param n_draw Coefficient draws for total marginal uncertainty. The value
+#'   is stored and reused downstream.
 #' @return An object of class `ref_dynamics` with, per outcome, a fitted
 #'   process (`$processes`), and a `components` table of normalised
 #'   variance fractions with approximate standard errors.
@@ -33,24 +38,41 @@ ref_dynamics <- function(reference,
                           id,
                           time,
                           process = ref_process(),
-                          crossfit = 5) {
+                          crossfit = 5,
+                          uncertainty = c("total", "conditional"),
+                          n_draw = NULL) {
+  uncertainty <- match.arg(uncertainty)
   data <- tibble::as_tibble(data)
-  id_vec <- pull_column(data, rlang::enquo(id))
+  id_quo <- rlang::enquo(id)
+  id_vec <- pull_column(data, id_quo)
+  id_name <- as_col_name(id_quo, "id")
   time_quo <- rlang::enquo(time)
   time_vec <- pull_column(data, time_quo)
   time_name <- as_col_name(time_quo, "time")
   if (!inherits(process, "ref_process")) {
     cli::cli_abort("{.arg process} must be created by {.fn ref_process}.")
   }
+  if (!is.null(reference$calibration)) {
+    cli::cli_abort(
+      "Longitudinal conditioning does not yet support a PIT-calibrated reference; use the uncalibrated fit and validate its marginal scores independently."
+    )
+  }
   crossfit <- as.integer(crossfit %||% 0L)
+  if (crossfit >= 2L && !is.null(reference$adaptation)) {
+    cli::cli_abort(
+      "Site adaptation cannot be reproduced inside subject-level cross-fitting; use an unadapted reference or set {.arg crossfit = 0} for a labelled in-sample process fit."
+    )
+  }
   scores <- if (crossfit >= 2L) {
     # Subject-level out-of-fold Z; `.row` indexes rows of `data`.
     data$.dyn_id <- as.character(id_vec)
     ref_crossfit(reference$spec, data = data, outcomes = reference$outcomes,
-                  folds = crossfit, cluster = !!rlang::sym(".dyn_id"))
+                  folds = crossfit, cluster = !!rlang::sym(".dyn_id"),
+                  uncertainty = uncertainty, n_draw = n_draw)
   } else {
     predict(reference, newdata = data, type = "scores",
-            uncertainty = "conditional", allow_extrapolation = TRUE)
+            uncertainty = uncertainty, n_draw = n_draw,
+            allow_extrapolation = TRUE)
   }
   ident <- process_identifiability(id_vec, time_vec)
   processes <- lapply(reference$outcomes, function(nm) {
@@ -71,6 +93,18 @@ ref_dynamics <- function(reference,
       n_subject = length(unique(id_vec)),
       identifiability = ident,
       z_source = if (crossfit >= 2L) "out_of_fold" else "in_sample",
+      uncertainty = uncertainty,
+      n_draw = if (identical(uncertainty, "total")) {
+        as.integer(n_draw %||% reference$spec$control$n_draw %||% 200L)
+      } else {
+        NA_integer_
+      },
+      kernel_uncertainty = "plug_in",
+      data_hash = digest_data(data[, unique(c(id_name, time_name, reference$covariates,
+                                               reference$outcomes)), drop = FALSE]),
+      data_columns = unique(c(id_name, time_name, reference$covariates,
+                              reference$outcomes)),
+      data_n = nrow(data),
       components = process_components(processes)
     ),
     class = "ref_dynamics"
@@ -458,8 +492,9 @@ classify_temporal_support <- function(dyn, t_from, t_to, history_n) {
 #' @export
 print.ref_dynamics <- function(x, ...) {
   cli::cli_text(
-    "{.cls ref_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}; Z: {x$z_source}"
+    "{.cls ref_dynamics} {length(x$outcomes)} outcome{?s}; requested kernel: {x$process$name}; Z: {x$z_source}, {x$uncertainty} uncertainty"
   )
+  cli::cli_text("kernel uncertainty: plug-in (not propagated)")
   cli::cli_text(
     "subjects: {x$n_subject}; time range [{signif(x$time_range[1], 4)}, {signif(x$time_range[2], 4)}]; lag range [{signif(x$lag_range[1], 3)}, {signif(x$lag_range[2], 3)}]"
   )

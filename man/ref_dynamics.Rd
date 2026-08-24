@@ -4,7 +4,16 @@
 \alias{ref_dynamics}
 \title{Longitudinal dependence process}
 \usage{
-ref_dynamics(reference, data, id, time, process = ref_process(), crossfit = 5)
+ref_dynamics(
+  reference,
+  data,
+  id,
+  time,
+  process = ref_process(),
+  crossfit = 5,
+  uncertainty = c("total", "conditional"),
+  n_draw = NULL
+)
 }
 \arguments{
 \item{reference}{A \link{ref_fit}.}
@@ -20,6 +29,13 @@ ref_dynamics(reference, data, id, time, process = ref_process(), crossfit = 5)
 \item{crossfit}{Number of subject-level folds used to obtain
 out-of-fold Z scores via \code{\link[=ref_crossfit]{ref_crossfit()}} (whole subjects stay in one
 fold). \code{0} or \code{NULL} uses in-sample scores from \code{reference}.}
+
+\item{uncertainty}{Marginal predictive estimand used to create every Z
+score and every downstream transition or forecast. Defaults to
+\code{"total"}, matching \code{\link[=predict.ref_fit]{predict.ref_fit()}}.}
+
+\item{n_draw}{Coefficient draws for total marginal uncertainty. The value
+is stored and reused downstream.}
 }
 \value{
 An object of class \code{ref_dynamics} with, per outcome, a fitted
@@ -27,7 +43,7 @@ process (\verb{$processes}), and a \code{components} table of normalised
 variance fractions with approximate standard errors.
 }
 \description{
-Attaches a Gaussian-copula process on calibrated normal scores
+Attaches a Gaussian-copula process on marginal normal scores
 \eqn{Z=\Phi^{-1}(F(y\mid x))}. The default kernel is stable rank plus
 a Matern-3/2 process plus a measurement nugget, which is positive
 semidefinite for every irregular visit schedule.

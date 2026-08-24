@@ -8,26 +8,33 @@ equivalence.
 - `concordance.csv` contains every fitted comparison scenario and discrepancy.
 - `superiority.csv` contains the paired held-out proper-score interval and
   calibration guardrails for the locked skew/heavy-tail case.
+- `release_superiority_summary.csv` and `release_superiority_replicates.csv` contain the
+  20-replicate, five-scenario 0.1.0 release-candidate result.
+- `release_generation_receipt.json` and `release_matrix_receipt.json` bind the
+  comparator warnings, dependencies, seeds, row/file identities, package
+  version, and release verdict.
+- `hbr_receipt.json`, `hbr_convergence.csv`, `site_comparison.csv`, and
+  `site_referent_receipt.json` retain the HBR/transport result.
 
 The exact and converted distribution lanes pass their strict semantic gates.
 Five deliberately matched fitted scenarios pass all prediction, scale, Z, and
 coverage margins. Estimator-divergent scenarios remain diagnostics.
 
-In the locked skew/heavy-tail case, Referent's prespecified SHASH model is
-called superior only because the paired response-scale log-score interval is
-above zero and the coverage, MACE, and tail-calibration non-inferiority gates
-all pass. This result is scenario-specific; it is not a general claim that
-Referent dominates PCNtoolkit.
+The single checked-in skew/heavy-tail fixture remains a diagnostic result. In
+the stronger replicated release matrix, linear Gaussian, nonlinear
+heteroskedastic, unequal-site, and covariate-shift scenarios are all classified
+`equivalent`. The skew-heavy log-score contrast favours Referent by 0.397
+(95% replicate-bootstrap interval 0.377 to 0.416), with passing calibration
+guardrails, but the claim is classified `comparator_failure`: PCNtoolkit
+emitted critical ill-conditioning, non-positive-definite, and optimizer-retry
+warnings in one or more replicates. A numerically favourable contrast against
+an invalid comparator fit is not called superiority.
 
-HBR and new-site transfer stay marked `non_equivalent`. Release evidence must
-include convergence receipts and every site's calibration result. The release
-job fails if any HBR stage misses its R-hat, effective-sample-size, or
-divergence gate; a pooled site average cannot override a failing small site.
-The separate release superiority job also generates 20 independent comparison
-replicates, requires every SHASH fit to converge, gates calibration on
-replicate-bootstrap non-inferiority with a per-replicate fail-closed ceiling,
-and gates the claim on the replicate-level paired log-score interval rather
-than the single checked-in fixture.
+HBR and new-site transfer stay marked `non_equivalent`. The 0.1.0
+release-candidate HBR run failed with 10 divergences in the base stage and 5 in
+transfer, despite acceptable R-hat and effective sample sizes. Referent passed
+the four observed-site gates but failed the independently evaluated site-5
+adaptation gate. A pooled average cannot override either failure.
 
 Regenerate these tables with:
 

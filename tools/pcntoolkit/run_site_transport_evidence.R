@@ -68,6 +68,8 @@ run_referent_site_evidence <- function(input_dir, output_dir) {
   utils::write.csv(gated, file.path(output_dir, "site_comparison.csv"), row.names = FALSE)
   receipt <- list(
     estimand = "separate adaptation and transfer policies; no rowwise parity claim",
+    referent_version = as.character(utils::packageVersion("referent")),
+    r_version = R.version.string,
     all_sites_pass = all(gated$pass),
     failed_sites = split(gated$site[!gated$pass], gated$method[!gated$pass]),
     referent_adaptation = unclass(adapted$adaptation)

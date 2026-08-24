@@ -29,10 +29,15 @@ test_that("release workflow runs every declared evidence lane", {
   expect_match(workflow, "generate_release_superiority.py", fixed = TRUE)
   expect_match(workflow, "--replicates 20", fixed = TRUE)
   expect_match(workflow, "run_release_superiority.R", fixed = TRUE)
+  expect_match(
+    workflow,
+    "--scenarios linear_gaussian,nonlinear_heteroskedastic,skew_heavy,unequal_site,covariate_shift",
+    fixed = TRUE
+  )
   expect_match(workflow, "github.event_name == 'release'", fixed = TRUE)
   expect_match(
     workflow,
-    "Release SHASH fitting and replicated superiority evidence",
+    "Release replicated scenario-matrix evidence",
     fixed = TRUE
   )
 })

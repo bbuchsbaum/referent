@@ -131,8 +131,8 @@ jobs:
           name: pcntoolkit-release-hbr-site-evidence
           path: evidence/hbr-site
 
-  release-shash-superiority:
-    name: Release SHASH fitting and replicated superiority evidence
+  release-scenario-matrix:
+    name: Release replicated scenario-matrix evidence
     if: >-
       github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' && inputs.tier == 'release')
@@ -154,7 +154,8 @@ jobs:
           uv run tools/pcntoolkit/generate_release_superiority.py
           --output evidence/release-superiority --replicates 20
           --seed-start 20260824
-      - name: Fit SHASH models and enforce replicated held-out gates
+          --scenarios linear_gaussian,nonlinear_heteroskedastic,skew_heavy,unequal_site,covariate_shift
+      - name: Fit Referent models and enforce scenario-specific held-out gates
         run: >-
           Rscript tools/pcntoolkit/run_release_superiority.R
           evidence/release-superiority evidence/release-superiority
@@ -162,5 +163,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pcntoolkit-release-shash-superiority-evidence
+          name: pcntoolkit-release-scenario-matrix-evidence
           path: evidence/release-superiority

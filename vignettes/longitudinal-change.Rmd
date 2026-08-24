@@ -52,9 +52,11 @@ head(long[, c("participant_id", "visit", "age", "sex", "y")])
 # The marginal reference, then the process
 
 The marginal model is the usual cross-sectional fit. `ref_dynamics()`
-then estimates the process on the normal scores. By default it uses
+then estimates the process on total-uncertainty normal scores. By default it uses
 out-of-fold scores from a subject-level cross-fit, so that in-sample
-shrinkage does not masquerade as within-person dependence.
+shrinkage does not masquerade as within-person dependence. The chosen
+uncertainty mode and draw count are stored on `dyn` and reused by every
+transition and forecast.
 
 ```{r fit}
 spec <- ref_spec(ref_gaussian(), location = ~ s(age, k = 6) + sex, scale = ~1)
@@ -221,10 +223,11 @@ fc$summary
 autoplot(fc, type = "fan")
 ```
 
-The fan conditions on the fitted process parameters. It includes uncertainty
-in the marginal reference curve, but it does not propagate uncertainty in the
-estimated kernel parameters; that omission matters most when repeat counts or
-lag coverage are weak.
+The fan conditions on the fitted process parameters. Its marginal component
+uses the same total uncertainty selected by `ref_dynamics()`, while
+`kernel_uncertainty = "plug_in"` records that uncertainty in the estimated
+dependence kernel is not propagated. That omission matters most when repeat
+counts or lag coverage are weak.
 
 The forecast distribution obeys every generic of the package: a later
 observation can be scored against it with `as_scores()`, which gives
@@ -243,11 +246,18 @@ as_scores(fc$dist[2], 10.5)[, c("centile", "z", "tail_prob")]
 * `r_median_lag` with its SE: the one number the data identify most
   directly. If the SE is large, do not interpret `ell`.
 * `support` on transitions and forecasts: `in`, `extrapolated_lag`,
-  `unsupported_age`, `insufficient_history`, or `unidentified`. Only
-  `in` rows have a calibrated innovation Z.
-* `calibrated` on transitions is `TRUE` only when measurement noise was
-  separable; otherwise the innovation Z still conditions on history but
-  treats all short-lag dependence as rank dynamics.
+  `unsupported_age`, `insufficient_history`, or `unidentified`. This records
+  temporal support, not empirical calibration.
+* `inferential_status` on transitions distinguishes held-out rows from reused
+  training rows, an unidentified process, and measurement noise that could not
+  be separated. `reference_uncertainty` and `kernel_uncertainty` make the two
+  uncertainty layers explicit.
+
+PIT-calibrated reference fits are refused by `ref_dynamics()` for now: the
+longitudinal inverse-CDF transformation cannot yet reproduce that map in a
+forecast distribution. An adapted reference can be used with `crossfit = 0`,
+but adaptation is refused during cross-fitting because the local map cannot be
+re-estimated honestly inside each fold.
 
 Continue with [Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/)
 (`vignette("pcntoolkit", package = "referent")`), or use

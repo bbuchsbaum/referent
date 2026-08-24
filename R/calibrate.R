@@ -41,14 +41,18 @@
 #' @param uncertainty Which predictive the calibration data are scored
 #'   under, as in [ref_assess()]. A map corrects the predictive it was
 #'   fitted on, so this should match the `uncertainty` that
-#'   [predict.ref_fit()] will later be asked for. Ignored when `data` is a
-#'   score table, which already carries its own.
+#'   [predict.ref_fit()] will later be asked for. Defaults to `"total"`,
+#'   matching prediction. A score table supplies this provenance itself.
+#' @param n_draw Number of coefficient draws for total uncertainty. This is
+#'   retained and must match later score predictions.
 #' @return The fit with a `calibration` slot; [predict.ref_fit()] applies
 #'   the map to `centile`, `z`, `log_density`, `median`, `residual`, and
 #'   the tail columns and sets `calibrated = TRUE`.
 #' @export
 ref_calibrate <- function(fit, data, by = NULL,
-                          uncertainty = c("conditional", "total")) {
+                          uncertainty = c("total", "conditional"),
+                          n_draw = NULL) {
+  uncertainty_supplied <- !missing(uncertainty)
   uncertainty <- match.arg(uncertainty)
   by_quo <- rlang::enquo(by)
   base <- fit
@@ -57,18 +61,44 @@ ref_calibrate <- function(fit, data, by = NULL,
     if (!rlang::quo_is_null(by_quo)) {
       cli::cli_abort("{.arg by} needs calibration {.arg data}, not a score table.")
     }
+    if (!".in_sample" %in% names(data) || any(data$.in_sample)) {
+      cli::cli_abort("Calibration score tables must contain only out-of-fold scores.")
+    }
+    score_uncertainty <- attr(data, "uncertainty")
+    if (is.null(score_uncertainty)) {
+      cli::cli_abort("Calibration scores have no uncertainty provenance; recreate them with {.fn ref_crossfit}.")
+    }
+    if (uncertainty_supplied && !identical(uncertainty, score_uncertainty)) {
+      cli::cli_abort("The score table uses {.val {score_uncertainty}} uncertainty, not {.val {uncertainty}}.")
+    }
+    deployment <- attr(data, "deployment")
+    if (is.null(deployment) || !identical(deployment$data_hash, fit$data_hash)) {
+      cli::cli_abort("Calibration scores do not belong to this deployment fit.")
+    }
+    uncertainty <- score_uncertainty
+    n_draw <- attr(data, "n_draw")
+    calibration_hash <- attr(data, "data_hash")
+    calibration_source <- "crossfit"
     scores <- data
     by_vec <- NULL
     pre <- NULL
     n <- length(unique(scores$.row))
   } else {
     data <- tibble::as_tibble(data)
+    if (is_in_sample_data(base, data)) {
+      cli::cli_abort("Calibration data are the model's training data; use held-out data or out-of-fold scores.")
+    }
     by_vec <- pull_column(data, by_quo, default = NULL)
-    dists <- predict_dists(base, data, uncertainty = uncertainty)
+    dists <- predict_dists(base, data, uncertainty = uncertainty, n_draw = n_draw)
     scores <- scores_from_dists(base, dists, data)
     pre <- assess_from_scores(base, scores, dists, data, by_vec = NULL)
     pre$scores <- NULL
     n <- nrow(data)
+    n_draw <- attr(dists, "n_draw")
+    calibration_hash <- digest_data(
+      data[, unique(c(base$covariates, base$outcomes)), drop = FALSE]
+    )
+    calibration_source <- "heldout"
   }
   maps <- lapply(split(scores, scores$.outcome), function(sc) {
     out <- list(.global = pit_map(sc$z))
@@ -83,6 +113,10 @@ ref_calibrate <- function(fit, data, by = NULL,
       by = if (is.null(by_vec)) NULL else as_col_name(by_quo),
       maps = maps,
       n = n,
+      uncertainty = uncertainty,
+      n_draw = if (identical(uncertainty, "total")) as.integer(n_draw) else NA_integer_,
+      data_hash = calibration_hash,
+      source = calibration_source,
       pre = pre
     ),
     class = "ref_calibration"
@@ -220,6 +254,6 @@ calibrate_scores <- function(cal, outcome, grp, sc, d) {
 
 #' @export
 print.ref_calibration <- function(x, ...) {
-  cli::cli_text("{.cls ref_calibration} n = {x$n}{if (is.null(x$by)) '' else paste0(', by ', x$by)}")
+  cli::cli_text("{.cls ref_calibration} {x$uncertainty %||% 'unknown'} uncertainty, n = {x$n}{if (is.null(x$by)) '' else paste0(', by ', x$by)}")
   invisible(x)
 }

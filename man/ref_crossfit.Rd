@@ -13,6 +13,7 @@ ref_crossfit(
   cluster = NULL,
   id = NULL,
   uncertainty = c("conditional", "total"),
+  n_draw = NULL,
   ...
 )
 }
@@ -38,6 +39,9 @@ fold is scored, as in \code{\link[=ref_assess]{ref_assess()}}. Use \code{"total"
 predictive that \code{\link[=predict.ref_fit]{predict.ref_fit()}} returns by default, which is
 what a map fitted on these scores by \code{\link[=ref_calibrate]{ref_calibrate()}} will be
 applied to.}
+
+\item{n_draw}{Number of coefficient draws when \code{uncertainty = "total"}.
+The value is retained as calibration provenance.}
 
 \item{...}{Passed to \code{\link[=ref_fit]{ref_fit()}}.}
 }

@@ -1,0 +1,42 @@
+{
+  "aggregation": {
+    "mixture_outputs": "CDF and density averaged over posterior draws, then transformed",
+    "reported_logp": "mean of draw-specific log densities",
+    "reported_quantile": "mean of draw-specific quantiles",
+    "reported_z": "mean of draw-specific z"
+  },
+  "all_stages_pass": false,
+  "chains": 4,
+  "comparator": "pcntoolkit",
+  "convergence_thresholds": {
+    "divergences": 0,
+    "max_rhat": 1.01,
+    "min_ess_bulk": 400,
+    "min_ess_tail": 400
+  },
+  "cores": 4,
+  "draws": 1500,
+  "hbr_public_random_seed_argument": false,
+  "nuts_sampler": "nutpie",
+  "requested_seed": 20260823,
+  "stages": [
+    {
+      "divergences": 10,
+      "max_rhat": 1.0,
+      "min_ess_bulk": 1563.0,
+      "min_ess_tail": 1930.0,
+      "pass": false,
+      "stage": "base"
+    },
+    {
+      "divergences": 5,
+      "max_rhat": 1.0,
+      "min_ess_bulk": 2023.0,
+      "min_ess_tail": 2639.0,
+      "pass": false,
+      "stage": "transfer"
+    }
+  ],
+  "tune": 500,
+  "version": "1.3.0"
+}

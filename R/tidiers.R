@@ -36,6 +36,7 @@ generics::augment
 #' @rdname tidy.ref_fit
 #' @export
 tidy.ref_fit <- function(x, ...) {
+  validate_ref_bundle(x)
   rows <- lapply(x$outcomes, function(nm) {
     m <- x$models[[nm]]
     model <- m$model
@@ -68,6 +69,7 @@ smooth_edf <- function(model) {
 #' @rdname tidy.ref_fit
 #' @export
 glance.ref_fit <- function(x, ...) {
+  validate_ref_bundle(x)
   st <- fit_statuses(x)
   tibble::tibble(
     family = x$spec$family$name,
