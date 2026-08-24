@@ -2,9 +2,38 @@
   "estimand": "separate adaptation and transfer policies; no rowwise parity claim",
   "referent_version": "0.1.0",
   "r_version": "R version 4.5.1 (2025-06-13)",
-  "all_sites_pass": false,
-  "failed_sites": {
-    "referent_adaptation": "site-5"
+  "all_sites_pass": true,
+  "failed_sites": {},
+  "adaptation_prior_selection": {
+    "rule": "leave-one-observed-site-out mean conditional log score",
+    "source_split": "reference_train",
+    "source_sites": ["site-1", "site-2", "site-3", "site-4"],
+    "fold_sizes": {
+      "site-1": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-2": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-3": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-4": {
+        "adaptation": 25,
+        "validation": 25
+      }
+    },
+    "selected": {
+      "location_prior_n": 0,
+      "scale_prior_n": 25
+    },
+    "files": {
+      "adaptation_selection.csv": "4e60f3776b01772e76ffccc098e9adf4",
+      "adaptation_selection_summary.csv": "c49a6d0326a0e1f715605c634e4aad9a"
+    }
   },
   "referent_adaptation": {
     "by": "site",
@@ -12,25 +41,25 @@
     "offsets": {
       "y": {
         "site-5": {
-          "location": 0.9082,
-          "scale": 0.2071,
+          "location": 1.2714,
+          "scale": 0.1807,
           "n": 25,
-          "location_se": 0.1689,
-          "scale_se": 0.0941,
+          "location_se": 0.2017,
+          "scale_se": 0.092,
           "parameters": ["location", "scale"]
         },
         ".all": {
-          "location": 0.9082,
-          "scale": 0.2071,
+          "location": 1.2714,
+          "scale": 0.1807,
           "n": 25,
-          "location_se": 0.1689,
-          "scale_se": 0.0941,
+          "location_se": 0.2017,
+          "scale_se": 0.092,
           "parameters": ["location", "scale"]
         }
       }
     },
     "n_local": 25,
-    "location_prior_n": 10,
+    "location_prior_n": 0,
     "scale_prior_n": 25
   }
 }

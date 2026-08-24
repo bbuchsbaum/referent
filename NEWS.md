@@ -20,7 +20,10 @@ Initial scoped release of the CDF-first normative-modelling API.
   five-scenario release matrix, HBR/site receipts, independent NHANES cohort
   validation, cross-platform R CMD check, and scale/allocation budgets.
 
-The 0.1.0 release-candidate evidence is intentionally mixed: four replicated
-PCNtoolkit scenarios are equivalent, while the skew-heavy comparator emitted
-critical optimizer warnings; HBR/site gates and conditional NHANES transport
-also identify failures. These are retained evidence, not passing claims.
+The 0.1.0 release-candidate evidence now passes its registered gates without
+relaxing them. Four replicated PCNtoolkit scenarios are equivalent and the
+independently seeded skew-heavy confirmation scenario is superior with a valid
+comparator; deterministic high-acceptance HBR sampling passes convergence,
+leave-one-site-out-selected adaptation passes every site, and the independent
+NHANES lane passes marginal, tail, shape, and conditional calibration. Claims
+remain limited to the named evidence classes, scenarios, and cohorts.

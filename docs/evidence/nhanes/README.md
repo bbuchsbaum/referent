@@ -17,12 +17,13 @@ conditional calibration contract. Artifacts are uploaded even when the gate
 fails, so cohort drift remains visible rather than disappearing from CI.
 
 The retained 0.1.0 run used all 5,392 eligible training rows and a fixed-seed
-sample of 2,000 of 5,151 eligible evaluation rows. All fits were valid.
-Marginal performance was strong across the four outcomes: MACE ranged from
-0.005 to 0.015 and 95% coverage from 0.942 to 0.951. The full gate nevertheless
-failed because conditional scale drift by race/ethnicity exceeded the declared
-practical thresholds. The result supports marginal cohort transport for this
-sample, but not a blanket conditional-calibration claim.
+sample of 2,000 of 5,151 eligible evaluation rows. All fits were valid. The
+scale model conditions on age, sex, and race/ethnicity, matching the declared
+conditional diagnostic contract. MACE ranged from 0.0048 to 0.0176 and 95%
+coverage from 0.947 to 0.950 across the four outcomes. Marginal, tail, shape,
+and conditional gates all passed. This supports conditional cohort transport
+for this unweighted evaluation sample; it is still not a nationally
+representative prevalence claim.
 
 Run with:
 

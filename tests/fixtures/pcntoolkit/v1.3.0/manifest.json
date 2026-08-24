@@ -47,7 +47,7 @@
         "q75",
         "q95"
       ],
-      "md5": "a2fc4c8de1db4f5f908f12b5e2974075",
+      "md5": "ee8f4abf17e7fafdcf01d63840112217",
       "rows": 4509
     },
     "semantic_gaussian.csv": {
@@ -108,6 +108,12 @@
     "log_density": "PCNtoolkit logp minus log(population SD of the fitted outcome); log-transformed scenarios also minus log(y)",
     "predictive_sd": "(q95 - q05) / (2 * qnorm(0.95)) on the reported outcome scale"
   },
+  "optimizer_controls": {
+    "skew_heavy": {
+      "l_bfgs_b_epsilon": 0.01,
+      "optimizer": "l-bfgs-b"
+    }
+  },
   "python": "3.12.11",
   "scenario_classes": {
     "balanced_site": "same_estimand",
@@ -120,7 +126,7 @@
     "skew_heavy": "same_estimand",
     "unequal_site": "same_estimand"
   },
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "seeds": {
     "balanced_site": 1106,
     "covariate_shift": 1109,

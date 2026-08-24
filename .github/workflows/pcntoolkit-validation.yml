@@ -114,8 +114,8 @@ jobs:
       - name: Run HBR and PCNtoolkit transfer with convergence receipts
         run: >-
           uv run tools/pcntoolkit/run_hbr_site_evidence.py
-          --output evidence/hbr-site --draws 1500 --tune 500
-          --chains 4 --cores 4 --nuts-sampler nutpie
+          --output evidence/hbr-site --draws 1500 --tune 1000
+          --chains 4 --cores 4 --nuts-sampler nutpie --target-accept 0.99
       - name: Run Referent adaptation and per-site gates
         run: >-
           Rscript tools/pcntoolkit/run_site_transport_evidence.R
@@ -153,7 +153,7 @@ jobs:
         run: >-
           uv run tools/pcntoolkit/generate_release_superiority.py
           --output evidence/release-superiority --replicates 20
-          --seed-start 20260824
+          --seed-start 20260924
           --scenarios linear_gaussian,nonlinear_heteroskedastic,skew_heavy,unequal_site,covariate_shift
       - name: Fit Referent models and enforce scenario-specific held-out gates
         run: >-

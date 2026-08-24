@@ -39,7 +39,8 @@ from pcntoolkit.regression_model.blr import BLR
 
 
 COMPARATOR_VERSION = "1.3.0"
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
+SKEW_HEAVY_LBFGSB_EPSILON = 0.01
 SEEDS = {
     "null_linear": 1101,
     "linear_gaussian": 1102,
@@ -294,6 +295,13 @@ def fit_scenario(frame: pd.DataFrame, name: str) -> pd.DataFrame:
         )
     if name in ("balanced_site", "unequal_site"):
         kwargs.update(fixed_effect=True, fixed_effect_var=True)
+    if name == "skew_heavy":
+        # PCNtoolkit 1.3.0 defaults to a very large 0.1 finite-difference
+        # step. On the registered skew-heavy matrix that makes otherwise
+        # valid L-BFGS-B fits probe ill-conditioned posterior matrices. A
+        # 0.01 step retains the pinned model and optimizer while avoiding
+        # those invalid probes across the preregistered replicate set.
+        kwargs["l_bfgs_b_epsilon"] = SKEW_HEAVY_LBFGSB_EPSILON
 
     fit_data = NormData.from_dataframe(
         f"{name}-train",
@@ -414,6 +422,12 @@ def write_fixture(output: Path) -> None:
             "skew_heavy": "same_estimand",
             "unequal_site": "same_estimand",
             "covariate_shift": "matched_estimator",
+        },
+        "optimizer_controls": {
+            "skew_heavy": {
+                "optimizer": "l-bfgs-b",
+                "l_bfgs_b_epsilon": SKEW_HEAVY_LBFGSB_EPSILON,
+            }
         },
         "normalisations": {
             "log_density": "PCNtoolkit logp minus log(population SD of the fitted outcome); log-transformed scenarios also minus log(y)",

@@ -27,12 +27,15 @@ pcn_validate_release_generation <- function(input_dir) {
     stop("missing release generation receipt", call. = FALSE)
   }
   receipt <- jsonlite::read_json(receipt_path, simplifyVector = FALSE)
-  if (!identical(receipt$schema_version, "1.1.0") ||
+  optimizer <- receipt$optimizer_controls$skew_heavy
+  if (!identical(receipt$schema_version, "1.2.0") ||
       !identical(receipt$comparator$package, "pcntoolkit") ||
       !identical(receipt$comparator$version, "1.3.0") ||
       !identical(unlist(receipt$scenarios, use.names = FALSE),
                  pcn_release_scenarios()) ||
-      !setequal(names(receipt$selection_rules), pcn_release_scenarios())) {
+      !setequal(names(receipt$selection_rules), pcn_release_scenarios()) ||
+      !identical(optimizer$optimizer, "l-bfgs-b") ||
+      !isTRUE(all.equal(optimizer$l_bfgs_b_epsilon, 0.01))) {
     stop("release generation receipt does not match the declared contract", call. = FALSE)
   }
   if (is.null(receipt$warning_policy) || is.null(receipt$fit_warnings) ||

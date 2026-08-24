@@ -119,7 +119,7 @@ run_nhanes_external_validation <- function(output_dir, cache_dir) {
   spec <- referent::ref_spec(
     referent::ref_shash(),
     location = ~ s(age, k = 8) + sex + race_ethnicity,
-    scale = ~ s(age, k = 5),
+    scale = ~ s(age, k = 5) + sex + race_ethnicity,
     skew = ~ 1,
     tail = ~ 1,
     control = list(seed = 20260824L, n_draw = 1000L)

@@ -24,6 +24,7 @@ import argparse
 import importlib.metadata
 import json
 from pathlib import Path
+from typing import Callable, TypeVar
 
 import arviz as az
 import numpy as np
@@ -34,6 +35,33 @@ from scipy import optimize, special, stats
 from pcntoolkit import NormativeModel
 from pcntoolkit.dataio.norm_data import NormData
 from pcntoolkit.regression_model.hbr import HBR
+
+
+T = TypeVar("T")
+
+
+def with_sampling_controls(
+    action: Callable[[], T], *, target_accept: float, random_seed: int
+) -> T:
+    """Run one PCNtoolkit HBR sampling stage with explicit PyMC controls.
+
+    PCNtoolkit 1.3.0 does not forward ``target_accept`` or ``random_seed``
+    through HBR.fit/transfer. The scoped bridge leaves its likelihood and
+    transfer implementation unchanged while making the release run both
+    reproducible and strict enough for the registered zero-divergence gate.
+    """
+    original_sample = pm.sample
+
+    def controlled_sample(*args, **kwargs):
+        kwargs["target_accept"] = target_accept
+        kwargs["random_seed"] = random_seed
+        return original_sample(*args, **kwargs)
+
+    pm.sample = controlled_sample
+    try:
+        return action()
+    finally:
+        pm.sample = original_sample
 
 
 def simulate(seed: int) -> pd.DataFrame:
@@ -201,13 +229,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--draws", type=int, default=1500)
-    parser.add_argument("--tune", type=int, default=500)
+    parser.add_argument("--tune", type=int, default=1000)
     parser.add_argument("--chains", type=int, default=4)
     parser.add_argument("--cores", type=int, default=4)
     parser.add_argument("--nuts-sampler", default="nutpie")
+    parser.add_argument("--target-accept", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=20260823)
     parser.add_argument("--progressbar", action="store_true")
     args = parser.parse_args()
+    if not 0.5 < args.target_accept < 1:
+        parser.error("--target-accept must be strictly between 0.5 and 1")
     args.output.mkdir(parents=True, exist_ok=True)
 
     data = simulate(args.seed)
@@ -230,21 +261,29 @@ def main() -> None:
         hbr, savemodel=False, evaluate_model=False, saveresults=False, saveplots=False,
         inscaler="standardize", outscaler="standardize", name="hbr-site-evidence"
     )
-    base.fit(norm_data("reference-train", reference_train))
+    with_sampling_controls(
+        lambda: base.fit(norm_data("reference-train", reference_train)),
+        target_accept=args.target_accept,
+        random_seed=args.seed,
+    )
     base_convergence, base_receipt = convergence(base, "base")
     observed_predictions = predict_with_mixture(
         base, observed_test, "observed_site", outcome_mean, outcome_sd
     )
 
-    transferred = base.transfer(
-        norm_data("site-5-adaptation", adaptation),
-        save_dir=str(args.output / "transfer_model"),
-        draws=args.draws,
-        tune=args.tune,
-        chains=args.chains,
-        cores=args.cores,
-        nuts_sampler=args.nuts_sampler,
-        progressbar=args.progressbar,
+    transferred = with_sampling_controls(
+        lambda: base.transfer(
+            norm_data("site-5-adaptation", adaptation),
+            save_dir=str(args.output / "transfer_model"),
+            draws=args.draws,
+            tune=args.tune,
+            chains=args.chains,
+            cores=args.cores,
+            nuts_sampler=args.nuts_sampler,
+            progressbar=args.progressbar,
+        ),
+        target_accept=args.target_accept,
+        random_seed=args.seed + 1,
     )
     transfer_convergence, transfer_receipt = convergence(transferred, "transfer")
     transport_predictions = predict_with_mixture(
@@ -265,8 +304,14 @@ def main() -> None:
         "chains": args.chains,
         "cores": args.cores,
         "nuts_sampler": args.nuts_sampler,
+        "target_accept": args.target_accept,
         "requested_seed": args.seed,
         "hbr_public_random_seed_argument": False,
+        "sampling_seeds": {"base": args.seed, "transfer": args.seed + 1},
+        "sampling_control_bridge": (
+            "scoped pymc.sample controls because PCNtoolkit HBR 1.3.0 "
+            "does not forward target_accept or random_seed"
+        ),
         "aggregation": {
             "reported_z": "mean of draw-specific z",
             "reported_quantile": "mean of draw-specific quantiles",

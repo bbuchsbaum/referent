@@ -37,6 +37,27 @@ test_that("site gates cannot hide a small-site failure in a pooled average", {
   expect_lt(abs(mean(prediction$centile) - 0.5), 0.03)
 })
 
+test_that("adaptation-prior selection uses every observed site and deterministic ties", {
+  validation <- expand.grid(
+    site = c("site-1", "site-2", "site-3"),
+    location_prior_n = c(0, 5), scale_prior_n = c(10, 25),
+    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
+  )
+  validation$mean_log_score <- with(
+    validation,
+    -1 - 0.02 * location_prior_n - 0.001 * abs(scale_prior_n - 25)
+  )
+  selected <- pcn_select_adaptation_candidate(validation)
+  expect_equal(selected$selected$location_prior_n, 0)
+  expect_equal(selected$selected$scale_prior_n, 25)
+  expect_true(all(selected$summary$validated_sites == 3L))
+  expect_identical(which(selected$summary$selected), 1L)
+  expect_error(
+    pcn_select_adaptation_candidate(validation[-1L, , drop = FALSE]),
+    "incomplete"
+  )
+})
+
 test_that("HBR release runner records mandatory convergence and aggregation fields", {
   script_path <- system.file(
     "pcntoolkit", "run_hbr_site_evidence.py", package = "referent"
@@ -49,7 +70,26 @@ test_that("HBR release runner records mandatory convergence and aggregation fiel
   expect_match(text, '"max_rhat": 1.01', fixed = TRUE)
   expect_match(text, '"min_ess_bulk": 400', fixed = TRUE)
   expect_match(text, '"divergences": 0', fixed = TRUE)
+  expect_match(text, '--target-accept", type=float, default=0.99', fixed = TRUE)
+  expect_match(text, '"sampling_seeds"', fixed = TRUE)
+  expect_match(text, "with_sampling_controls", fixed = TRUE)
   expect_match(text, '"reported_z": "mean of draw-specific z"', fixed = TRUE)
   expect_match(text, '"mixture_outputs"', fixed = TRUE)
   expect_match(text, '"hbr_public_random_seed_argument": False', fixed = TRUE)
+})
+
+test_that("retained HBR and site receipts satisfy every registered gate", {
+  root <- normalizePath(testthat::test_path("..", ".."), mustWork = TRUE)
+  evidence <- file.path(root, "docs", "evidence", "pcntoolkit", "v1.3.0")
+  hbr_path <- file.path(evidence, "hbr_receipt.json")
+  site_path <- file.path(evidence, "site_referent_receipt.json")
+  skip_if_not(all(file.exists(hbr_path, site_path)), "release receipts are not bundled")
+  hbr <- jsonlite::read_json(hbr_path, simplifyVector = TRUE)
+  site <- jsonlite::read_json(site_path, simplifyVector = TRUE)
+  expect_true(hbr$all_stages_pass)
+  expect_true(all(hbr$stages$divergences == 0L))
+  expect_equal(hbr$target_accept, 0.99)
+  expect_true(site$all_sites_pass)
+  expect_identical(site$adaptation_prior_selection$source_split, "reference_train")
+  expect_equal(site$adaptation_prior_selection$selected$location_prior_n, 0)
 })

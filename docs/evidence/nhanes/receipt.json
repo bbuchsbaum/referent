@@ -37,27 +37,27 @@
   },
   "output_files": {
     "overall": {
-      "sha256": "f60d540ad442fbbf1fe1a449caf0489ddfd4a253ce4f409a5e66cbbef5fc765c",
+      "sha256": "23b4f9f8e6ed7321e44e738c7f295c2434365e5d7a2f9fa59fa3bcd84cf70d6a",
       "rows": 4
     },
     "marginal": {
-      "sha256": "5852e9a5bf735d22061cbbe17ad6cc2645ab5caa7fd6c0e398956c5ecc640803",
+      "sha256": "216132669837ce683e53a2098f938f0f78134acdff89bbd3be4d24c115ab9c09",
       "rows": 4
     },
     "conditional": {
-      "sha256": "0a2cb534c5dbb0f82a7d24286a3959953452f729734d3c2c86f81eeecf775ce1",
+      "sha256": "d3491d7ff4e333b54e729e37515831574b146d7ffc76c5c75f516393be43ffdd",
       "rows": 36
     },
     "tail": {
-      "sha256": "02c5b2561140fc3ea220cf267a99e5aa32a3188a81bb484f150c07a7b0895174",
+      "sha256": "e1cda11c53661300e767d59202247fe64243a24969c36d11a8f132df1e770d77",
       "rows": 16
     },
     "gate": {
-      "sha256": "f79f91124ac447061906e540a1f855e49e3d1028632bf18eae73530fef3876c5",
+      "sha256": "e4bd4592f88ba9841eedc5f8ed956ebdcf80f2de4fba4ccc6f4064ca5acc07a7",
       "rows": 1
     }
   },
   "all_fits_valid": true,
-  "calibration_pass": false,
-  "pass": false
+  "calibration_pass": true,
+  "pass": true
 }

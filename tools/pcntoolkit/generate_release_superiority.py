@@ -21,7 +21,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from generate_fixtures import COMPARATOR_VERSION, fit_scenario, scenario_frame, stable_csv
+from generate_fixtures import (
+    COMPARATOR_VERSION,
+    SKEW_HEAVY_LBFGSB_EPSILON,
+    fit_scenario,
+    scenario_frame,
+    stable_csv,
+)
 
 
 CRITICAL_WARNING_PATTERNS = (
@@ -143,7 +149,7 @@ def write_release_superiority(
             f"expected PCNtoolkit {COMPARATOR_VERSION}, got {versions['pcntoolkit']}"
         )
     receipt = {
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "comparator": {"package": "pcntoolkit", "version": COMPARATOR_VERSION},
         "scenarios": scenarios,
         "scenario_classes": {name: SCENARIO_CLASSES[name] for name in scenarios},
@@ -151,6 +157,12 @@ def write_release_superiority(
         "seeds": seeds,
         "split_sizes": {"train": 500, "validation": 100, "test": 500},
         "selection_rules": {name: SELECTION_RULES[name] for name in scenarios},
+        "optimizer_controls": {
+            "skew_heavy": {
+                "optimizer": "l-bfgs-b",
+                "l_bfgs_b_epsilon": SKEW_HEAVY_LBFGSB_EPSILON,
+            }
+        },
         "warning_policy": {
             "critical_patterns": list(CRITICAL_WARNING_PATTERNS),
             "rule": "any critical fit warning invalidates that comparator replicate",
@@ -180,7 +192,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--replicates", type=int, default=20)
-    parser.add_argument("--seed-start", type=int, default=20260824)
+    parser.add_argument("--seed-start", type=int, default=20260924)
     parser.add_argument(
         "--scenarios",
         default=",".join(DEFAULT_SCENARIOS),

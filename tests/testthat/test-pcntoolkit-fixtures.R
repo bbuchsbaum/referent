@@ -2,6 +2,7 @@ fixture_root <- testthat::test_path("..", "fixtures", "pcntoolkit", "v1.3.0")
 
 test_that("PCNtoolkit fixtures are pinned, complete, and unmodified", {
   manifest <- pcn_validate_fixture(fixture_root)
+  expect_identical(manifest$schema_version, "1.1.0")
   expect_identical(manifest$dependencies$pcntoolkit, "1.3.0")
   expect_identical(manifest$generator, "tools/pcntoolkit/generate_fixtures.py")
   expect_setequal(
@@ -10,6 +11,8 @@ test_that("PCNtoolkit fixtures are pinned, complete, and unmodified", {
       "nonlinear_heteroskedastic", "log_linear", "balanced_site",
       "skew_heavy", "unequal_site", "covariate_shift")
   )
+  expect_identical(manifest$optimizer_controls$skew_heavy$optimizer, "l-bfgs-b")
+  expect_equal(manifest$optimizer_controls$skew_heavy$l_bfgs_b_epsilon, 0.01)
 })
 
 test_that("fixture validation fails closed on content drift", {

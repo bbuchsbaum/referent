@@ -199,6 +199,18 @@ separately, so one favourable result cannot hide another scenario's failure.
 The generation receipt records seeds, dependency versions, row identities,
 warning verdicts, and file hashes.
 
+The 0.1.0 confirmation matrix starts at seed 20260924. It was registered after
+diagnosing the original comparator failure and before inspecting any outcomes
+from the confirmation rows. PCNtoolkit's skew-heavy L-BFGS-B fit uses a 0.01
+finite-difference step instead of its 0.1 default; the model and optimizer are
+unchanged, while the smaller step avoids invalid ill-conditioned objective
+probes. The receipt records this control. HBR uses 1,000 tuning draws,
+`target_accept = 0.99`, and separate recorded base/transfer sampling seeds via
+a scoped PyMC bridge because PCNtoolkit 1.3.0 does not forward those controls.
+Referent adaptation priors are selected by leave-one-observed-site-out mean
+conditional log score using only `reference_train` rows; site-5 adaptation and
+transport-test rows do not participate in that selection.
+
 Machine-readable results are retained alongside a human-readable evidence
 table. Documentation may say “matches PCNtoolkit” only for a named evidence
 class and scenario, and may say “outperforms” only for a locked held-out

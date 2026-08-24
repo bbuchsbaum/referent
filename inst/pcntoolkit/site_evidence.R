@@ -27,3 +27,53 @@ pcn_site_gate <- function(summary, coverage_floor = 0.80, mace_ceiling = 0.08,
     summary$mace <= mace_ceiling & abs(summary$mean_z) <= mean_z_ceiling
   data.frame(summary, pass = per_site, stringsAsFactors = FALSE)
 }
+
+pcn_adaptation_grid <- function() {
+  expand.grid(
+    location_prior_n = c(0, 2, 5, 10),
+    scale_prior_n = c(0, 5, 10, 25),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+}
+
+pcn_select_adaptation_candidate <- function(validation) {
+  required <- c("site", "location_prior_n", "scale_prior_n", "mean_log_score")
+  if (!all(required %in% names(validation)) || !nrow(validation) ||
+      any(!is.finite(validation$mean_log_score))) {
+    stop("adaptation validation evidence is incomplete", call. = FALSE)
+  }
+  candidate_site <- validation[
+    c("site", "location_prior_n", "scale_prior_n")
+  ]
+  if (anyDuplicated(candidate_site)) {
+    stop("adaptation validation evidence contains duplicate site results",
+         call. = FALSE)
+  }
+  expected_sites <- length(unique(validation$site))
+  site_counts <- stats::aggregate(
+    site ~ location_prior_n + scale_prior_n, validation,
+    function(x) length(unique(x))
+  )
+  names(site_counts)[names(site_counts) == "site"] <- "validated_sites"
+  if (any(site_counts$validated_sites != expected_sites)) {
+    stop("adaptation validation evidence is incomplete", call. = FALSE)
+  }
+  summary <- stats::aggregate(
+    mean_log_score ~ location_prior_n + scale_prior_n,
+    validation, mean
+  )
+  summary <- merge(
+    summary, site_counts,
+    by = c("location_prior_n", "scale_prior_n"), sort = FALSE
+  )
+  summary <- summary[order(
+    -summary$mean_log_score, summary$location_prior_n, summary$scale_prior_n
+  ), , drop = FALSE]
+  rownames(summary) <- NULL
+  summary$selected <- seq_len(nrow(summary)) == 1L
+  list(
+    selected = summary[1L, c("location_prior_n", "scale_prior_n"), drop = FALSE],
+    summary = summary
+  )
+}

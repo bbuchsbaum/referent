@@ -17,12 +17,17 @@ pcn_read_manifest <- function(root) {
 
 pcn_validate_fixture <- function(root, expected_version = "1.3.0") {
   manifest <- pcn_read_manifest(root)
-  if (!identical(manifest$schema_version, "1.0.0")) {
+  if (!identical(manifest$schema_version, "1.1.0")) {
     stop("unsupported PCNtoolkit fixture schema: ", manifest$schema_version, call. = FALSE)
   }
   if (!identical(manifest$comparator$package, "pcntoolkit") ||
       !identical(manifest$comparator$version, expected_version)) {
     stop("fixture comparator/version does not match the declared target", call. = FALSE)
+  }
+  optimizer <- manifest$optimizer_controls$skew_heavy
+  if (!identical(optimizer$optimizer, "l-bfgs-b") ||
+      !isTRUE(all.equal(optimizer$l_bfgs_b_epsilon, 0.01))) {
+    stop("fixture optimizer controls do not match the declared target", call. = FALSE)
   }
   required <- c(
     "semantic_gaussian.csv", "semantic_shashb.csv", "semantic_metrics.csv",

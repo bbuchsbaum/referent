@@ -16,9 +16,11 @@ raw standardized residual.
 > release candidate. The current fitting surface supports numeric outcomes with
 > Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
 > are reported as unsupported instead of being silently coerced. Exact and
-> matched-estimator PCNtoolkit lanes pass, while the current release-candidate
-> HBR/site and skew-heavy replicated gates retain explicit failing receipts;
-> do not generalise those comparison claims beyond their named scenarios.
+> matched-estimator PCNtoolkit lanes pass. The replicated release matrix finds
+> four named scenarios equivalent and the locked skew-heavy scenario superior;
+> HBR convergence, every-site transport, and independent NHANES cohort gates
+> also pass under their recorded controls. These are scoped results, not a
+> blanket equivalence or superiority claim.
 
 Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
 (or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep

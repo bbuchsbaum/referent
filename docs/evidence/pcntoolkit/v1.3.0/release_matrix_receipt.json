@@ -16,19 +16,19 @@
   "primary_contrast": "scenario-specific mean paired response-scale log score by simulation replicate",
   "calibration_rule": "replicate-bootstrap upper regret <= 0.01 for coverage, MACE, and tail; no single-replicate regret > 0.05",
   "all_referent_fits_valid": true,
-  "all_comparator_fits_valid": false,
+  "all_comparator_fits_valid": true,
   "all_scenarios_calibration_noninferior": true,
   "no_critical_replicate_regression": true,
   "classifications": {
     "linear_gaussian": "equivalent",
     "nonlinear_heteroskedastic": "equivalent",
-    "skew_heavy": "comparator_failure",
+    "skew_heavy": "superior",
     "unequal_site": "equivalent",
     "covariate_shift": "equivalent"
   },
-  "pass": false,
+  "pass": true,
   "files": {
-    "release_superiority_replicates.csv": "355feb12c0403464fc9e83d0134b9120",
-    "release_superiority_summary.csv": "f95e14b8630761b901ddbc0c08c575f4"
+    "release_superiority_replicates.csv": "06a826950537964851f9c09c04cd5167",
+    "release_superiority_summary.csv": "77ff1257d7945164ecceedfcfc4fa811"
   }
 }
