@@ -212,6 +212,15 @@ Referent adaptation priors are selected by leave-one-observed-site-out mean
 conditional log score using only `reference_train` rows; site-5 adaptation and
 transport-test rows do not participate in that selection.
 
+HBR and site evidence retain the simulated rows, posterior predictions,
+per-draw divergence indicators, convergence summaries, Referent predictions,
+prior-selection tables, and site comparison. Both receipts bind every table by
+SHA-256, row count, and exact column schema. The standalone validator recomputes
+row identities, convergence summaries, HBR/site metrics, prior selection, and
+all registered gates. Undefined R-hat is accepted only for retained posterior
+rows whose standard deviation is exactly zero; those rows are counted in the
+stage receipt rather than silently dropped.
+
 Machine-readable results are retained alongside a human-readable evidence
 table. Documentation may say “matches PCNtoolkit” only for a named evidence
 class and scenario, and may say “outperforms” only for a locked held-out

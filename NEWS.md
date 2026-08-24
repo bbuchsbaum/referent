@@ -26,5 +26,7 @@ the fresh-seed skew-heavy matrix is superior with a valid comparator;
 deterministic high-acceptance HBR sampling passes convergence and
 leave-one-site-out-selected adaptation passes every site. The NHANES 2017-2018
 rerun passes computationally but is explicitly post-hoc model-development
-evidence because its earlier failure informed the scale model. It is not used
-as independent confirmation or as support for a conditional-transport claim.
+evidence because its earlier failure informed the scale model. A separately
+preregistered, untouched NHANES 2013-2014 confirmation passes the unchanged
+full calibration contract and is the evidence used for the scoped
+conditional-transport claim.

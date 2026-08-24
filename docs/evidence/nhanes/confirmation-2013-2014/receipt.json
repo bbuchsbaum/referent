@@ -1,17 +1,19 @@
 {
   "schema_version": "1.1.0",
-  "evidence_role": "post_hoc_model_development",
+  "evidence_role": "untouched_confirmation",
   "design_registration": {
-    "status": "post-hoc model development",
-    "reason": "the earlier 2017-2018 conditional-scale failure informed the demographic scale terms before this rerun"
+    "tracker": "mote",
+    "issue": "referent-32n",
+    "commit": "b1301a4e0426eb5b5a83935059053131331670d9",
+    "status": "frozen and published before confirmation execution"
   },
   "estimand": "unweighted adult cohort transport, conditional predictive distribution",
   "train_cohort": "NHANES 2015-2016",
-  "evaluation_cohort": "NHANES 2017-2018",
+  "evaluation_cohort": "NHANES 2013-2014",
   "age_range": [18, 79],
   "outcomes": ["height_cm", "weight_kg", "bmi", "waist_cm"],
   "train_rows": 5392,
-  "evaluation_population_rows": 5151,
+  "evaluation_population_rows": 5592,
   "evaluation_rows": 2000,
   "evaluation_sampling": "fixed-seed simple random sample without replacement (seed 20260824)",
   "uncertainty": "total",
@@ -38,39 +40,39 @@
       "bytes": 1989600
     },
     "demo_test": {
-      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/DEMO_J.XPT",
-      "sha256": "c0b46e0345ea19404928656277c8b0d10b0cca348a9b2fe4fc3c67e8b7ee73ec",
-      "bytes": 3412720
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/DEMO_H.XPT",
+      "sha256": "f8f0cbb3085a323d4cde22349b164878fea1e64dbc404e65b5815c7816b547d7",
+      "bytes": 3833200
     },
     "body_test": {
-      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/BMX_J.XPT",
-      "sha256": "8d675e42d8826ac98714b2c3dd4c5138a5e353fb4424f7eff5e6db4a01ce838a",
-      "bytes": 1466000
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/BMX_H.XPT",
+      "sha256": "fd5e9fc6e6aab0a4aee6e699f51497bbc9b62101f7f43aee924c473e38fd9442",
+      "bytes": 2045520
     }
   },
   "output_files": {
     "overall": {
-      "sha256": "23b4f9f8e6ed7321e44e738c7f295c2434365e5d7a2f9fa59fa3bcd84cf70d6a",
+      "sha256": "f312f5a08e90222cf14c42fc2fb81a9d4fa87d8ea3d90f7efd4abd140441f0d7",
       "rows": 4,
       "columns": [".outcome", "mean_log_score", "mae", "rmse"]
     },
     "marginal": {
-      "sha256": "216132669837ce683e53a2098f938f0f78134acdff89bbd3be4d24c115ab9c09",
+      "sha256": "5a18b70f1b319d90f203fd454d88cf47722cc7f3e7c06801f0664329c619423a",
       "rows": 4,
       "columns": [".outcome", "n", "mean_z", "var_z", "skew_z", "excess_kurtosis_z", "shapiro_w", "mace", "cover_50", "cover_80", "cover_90", "cover_95", "cover_99"]
     },
     "conditional": {
-      "sha256": "d3491d7ff4e333b54e729e37515831574b146d7ffc76c5c75f516393be43ffdd",
+      "sha256": "3a047360d75cad5c6cc0639ab4db5c9e1dbfbca416ba9ca9a7c4506b97696082",
       "rows": 36,
       "columns": [".outcome", "covariate", "level", "n", "location_drift", "location_se", "location_p", "scale_drift", "scale_se", "scale_p"]
     },
     "tail": {
-      "sha256": "e1cda11c53661300e767d59202247fe64243a24969c36d11a8f132df1e770d77",
+      "sha256": "878f58d5e5139871b746a0846495e683493025fe1e6cf2dc0a9ab4fcf195ad69",
       "rows": 16,
       "columns": [".outcome", "tail_level", "expected", "observed", "n", "se"]
     },
     "gate": {
-      "sha256": "e4bd4592f88ba9841eedc5f8ed956ebdcf80f2de4fba4ccc6f4064ca5acc07a7",
+      "sha256": "1fb1263b44a490409093cf4e835818a13a2cef2fe7de655ca9730880fb7ad0a7",
       "rows": 1,
       "columns": ["all_fits_valid", "held_out", "minimum_outcome_n", "complete_evidence", "calibration_pass", "pass"]
     }

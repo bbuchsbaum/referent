@@ -122,9 +122,8 @@ jobs:
           evidence/hbr-site evidence/hbr-site/referent
       - name: Enforce convergence and every-site gates
         run: >-
-          Rscript -e 'h <- jsonlite::read_json("evidence/hbr-site/receipt.json");
-          r <- jsonlite::read_json("evidence/hbr-site/referent/referent_receipt.json");
-          if (!isTRUE(h$all_stages_pass) || !isTRUE(r$all_sites_pass)) quit(status = 1)'
+          Rscript tools/pcntoolkit/validate_hbr_site_evidence.R
+          evidence/hbr-site evidence/hbr-site/referent
       - uses: actions/upload-artifact@v4
         if: always()
         with:

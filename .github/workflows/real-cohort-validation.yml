@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   nhanes-external-cohort:
-    name: NHANES 2015-2016 to 2017-2018
+    name: NHANES 2015-2016 to untouched 2013-2014
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +25,12 @@ jobs:
             any::foreign
             local::.
           needs: check
-      - name: Run independent-cohort validation
+      - name: Run preregistered untouched-cycle confirmation
         run: >-
           Rscript tools/validation/run_nhanes_external_validation.R
           evidence/nhanes-external
           /tmp/nhanes-cache
+          confirmation
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -4,6 +4,7 @@
 
 source("tools/pcntoolkit/benchmark_helpers.R")
 source("tools/pcntoolkit/site_evidence.R")
+source("tools/pcntoolkit/validate_hbr_site_evidence.R")
 
 pcn_fit_site_model <- function(data) {
   data$site <- factor(data$site)
@@ -75,6 +76,7 @@ pcn_validate_adaptation_priors <- function(reference, grid = pcn_adaptation_grid
 }
 
 run_referent_site_evidence <- function(input_dir, output_dir) {
+  pcn_validate_hbr_evidence(input_dir)
   data <- utils::read.csv(file.path(input_dir, "site_data.csv"), stringsAsFactors = FALSE)
   train <- data[data$split == "reference_train", , drop = FALSE]
   observed <- data[data$split == "observed_site_test", , drop = FALSE]
@@ -130,16 +132,52 @@ run_referent_site_evidence <- function(input_dir, output_dir) {
   )
   gated <- pcn_site_gate(summary)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  utils::write.csv(predictions, file.path(output_dir, "referent_predictions.csv"), row.names = FALSE)
-  utils::write.csv(gated, file.path(output_dir, "site_comparison.csv"), row.names = FALSE)
-  selection_validation_path <- file.path(output_dir, "adaptation_selection.csv")
-  selection_summary_path <- file.path(output_dir, "adaptation_selection_summary.csv")
-  utils::write.csv(selection$validation, selection_validation_path, row.names = FALSE)
-  utils::write.csv(selection$summary, selection_summary_path, row.names = FALSE)
+  output_paths <- c(
+    referent_predictions.csv = file.path(output_dir, "referent_predictions.csv"),
+    site_comparison.csv = file.path(output_dir, "site_comparison.csv"),
+    adaptation_selection.csv = file.path(output_dir, "adaptation_selection.csv"),
+    adaptation_selection_summary.csv = file.path(
+      output_dir, "adaptation_selection_summary.csv"
+    )
+  )
+  utils::write.csv(predictions, output_paths[["referent_predictions.csv"]], row.names = FALSE)
+  utils::write.csv(gated, output_paths[["site_comparison.csv"]], row.names = FALSE)
+  utils::write.csv(
+    selection$validation, output_paths[["adaptation_selection.csv"]], row.names = FALSE
+  )
+  utils::write.csv(
+    selection$summary, output_paths[["adaptation_selection_summary.csv"]],
+    row.names = FALSE
+  )
+  input_paths <- c(
+    site_data.csv = file.path(input_dir, "site_data.csv"),
+    pcntoolkit_predictions.csv = file.path(input_dir, "pcntoolkit_predictions.csv"),
+    pcntoolkit_site_summary.csv = file.path(input_dir, "pcntoolkit_site_summary.csv"),
+    hbr_convergence.csv = file.path(input_dir, "hbr_convergence.csv"),
+    hbr_divergences.csv = file.path(input_dir, "hbr_divergences.csv"),
+    receipt.json = file.path(input_dir, "receipt.json")
+  )
+  input_receipts <- lapply(names(input_paths), function(name) {
+    if (identical(name, "receipt.json")) {
+      pcn_evidence_blob_receipt(input_paths[[name]])
+    } else {
+      pcn_evidence_file_receipt(input_paths[[name]])
+    }
+  })
+  names(input_receipts) <- names(input_paths)
+  output_receipts <- lapply(output_paths, pcn_evidence_file_receipt)
   receipt <- list(
+    schema_version = "1.1.0",
     estimand = "separate adaptation and transfer policies; no rowwise parity claim",
     referent_version = as.character(utils::packageVersion("referent")),
     r_version = R.version.string,
+    gate_thresholds = list(
+      coverage90_floor = 0.80,
+      mace_ceiling = 0.08,
+      mean_z_absolute_ceiling = 0.35
+    ),
+    input_files = input_receipts,
+    output_files = output_receipts,
     all_sites_pass = all(gated$pass),
     failed_sites = split(gated$site[!gated$pass], gated$method[!gated$pass]),
     adaptation_prior_selection = list(
@@ -147,11 +185,7 @@ run_referent_site_evidence <- function(input_dir, output_dir) {
       source_split = "reference_train",
       source_sites = selection$source_sites,
       fold_sizes = selection$fold_sizes,
-      selected = unclass(selection$selected),
-      files = list(
-        adaptation_selection.csv = unname(tools::md5sum(selection_validation_path)),
-        adaptation_selection_summary.csv = unname(tools::md5sum(selection_summary_path))
-      )
+      selected = unclass(selection$selected)
     ),
     referent_adaptation = unclass(adapted$adaptation)
   )
@@ -159,6 +193,7 @@ run_referent_site_evidence <- function(input_dir, output_dir) {
     receipt, file.path(output_dir, "referent_receipt.json"),
     auto_unbox = TRUE, pretty = TRUE, null = "null"
   )
+  pcn_validate_site_evidence(input_dir, output_dir)
   invisible(gated)
 }
 

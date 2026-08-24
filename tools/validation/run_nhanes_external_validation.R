@@ -1,21 +1,44 @@
-# Independent real-cohort validation using public CDC NHANES files.
-#
-# Train: 2015-2016 adults. External evaluation: 2017-2018 adults.
-# This lane is deliberately unweighted: it validates transport between two
-# independently sampled cohorts, not survey-weighted U.S. prevalence.
+# Real-cohort validation using public CDC NHANES files. The 2017-2018 lane is
+# post-hoc model development; the separately registered 2013-2014 lane is the
+# untouched confirmation. Both are deliberately unweighted and therefore do
+# not estimate survey-weighted U.S. prevalence.
 
-nhanes_files <- function() {
-  c(
-    demo_train = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/DEMO_I.XPT",
-    body_train = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/BMX_I.XPT",
-    demo_test = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/DEMO_J.XPT",
-    body_test = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/BMX_J.XPT"
+nhanes_evaluation_registry <- function() {
+  list(
+    development = list(
+      cohort = "2017-2018",
+      evidence_role = "post_hoc_model_development",
+      demo = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/DEMO_J.XPT",
+      body = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/BMX_J.XPT"
+    ),
+    confirmation = list(
+      cohort = "2013-2014",
+      evidence_role = "untouched_confirmation",
+      demo = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/DEMO_H.XPT",
+      body = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/BMX_H.XPT"
+    )
   )
 }
 
-nhanes_download <- function(cache_dir) {
+nhanes_evaluation <- function(evaluation) {
+  registry <- nhanes_evaluation_registry()
+  evaluation <- match.arg(evaluation, names(registry))
+  c(list(key = evaluation), registry[[evaluation]])
+}
+
+nhanes_files <- function(evaluation = "confirmation") {
+  selected <- nhanes_evaluation(evaluation)
+  c(
+    demo_train = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/DEMO_I.XPT",
+    body_train = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/BMX_I.XPT",
+    demo_test = selected$demo,
+    body_test = selected$body
+  )
+}
+
+nhanes_download <- function(cache_dir, evaluation = "confirmation") {
   dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
-  urls <- nhanes_files()
+  urls <- nhanes_files(evaluation)
   paths <- file.path(cache_dir, basename(urls))
   for (i in seq_along(urls)) {
     if (!file.exists(paths[[i]]) || file.info(paths[[i]])$size == 0) {
@@ -100,17 +123,19 @@ nhanes_external_assess <- function(fit, data, n_draw) {
   )
 }
 
-run_nhanes_external_validation <- function(output_dir, cache_dir) {
+run_nhanes_external_validation <- function(output_dir, cache_dir,
+                                           evaluation = "confirmation") {
   if (!requireNamespace("referent", quietly = TRUE) ||
       !requireNamespace("foreign", quietly = TRUE) ||
       !requireNamespace("jsonlite", quietly = TRUE) ||
       !requireNamespace("digest", quietly = TRUE)) {
     stop("referent, foreign, jsonlite, and digest are required", call. = FALSE)
   }
-  paths <- nhanes_download(cache_dir)
+  selected <- nhanes_evaluation(evaluation)
+  paths <- nhanes_download(cache_dir, selected$key)
   train <- nhanes_cohort(paths[["demo_train"]], paths[["body_train"]], "2015-2016")
   test_population <- nhanes_cohort(
-    paths[["demo_test"]], paths[["body_test"]], "2017-2018"
+    paths[["demo_test"]], paths[["body_test"]], selected$cohort
   )
   set.seed(20260824L)
   evaluation_n <- min(2000L, nrow(test_population))
@@ -143,23 +168,43 @@ run_nhanes_external_validation <- function(output_dir, cache_dir) {
   }, character(1))
   input_receipts <- lapply(seq_along(paths), function(i) {
     list(
-      url = unname(nhanes_files()[[i]]),
+      url = unname(nhanes_files(selected$key)[[i]]),
       sha256 = digest::digest(file = paths[[i]], algo = "sha256"),
       bytes = unname(file.info(paths[[i]])$size)
     )
   })
   names(input_receipts) <- names(paths)
   output_receipts <- lapply(output_paths, function(path) {
+    table <- utils::read.csv(path, check.names = FALSE)
     list(
       sha256 = digest::digest(file = path, algo = "sha256"),
-      rows = nrow(utils::read.csv(path, check.names = FALSE))
+      rows = nrow(table),
+      columns = names(table)
     )
   })
+  design_registration <- if (identical(selected$key, "confirmation")) {
+    list(
+      tracker = "mote",
+      issue = "referent-32n",
+      commit = "b1301a4e0426eb5b5a83935059053131331670d9",
+      status = "frozen and published before confirmation execution"
+    )
+  } else {
+    list(
+      status = "post-hoc model development",
+      reason = paste(
+        "the earlier 2017-2018 conditional-scale failure informed",
+        "the demographic scale terms before this rerun"
+      )
+    )
+  }
   receipt <- list(
-    schema_version = "1.0.0",
+    schema_version = "1.1.0",
+    evidence_role = selected$evidence_role,
+    design_registration = design_registration,
     estimand = "unweighted adult cohort transport, conditional predictive distribution",
     train_cohort = "NHANES 2015-2016",
-    evaluation_cohort = "NHANES 2017-2018",
+    evaluation_cohort = paste("NHANES", selected$cohort),
     age_range = c(18L, 79L),
     outcomes = outcomes,
     train_rows = nrow(train),
@@ -168,6 +213,14 @@ run_nhanes_external_validation <- function(output_dir, cache_dir) {
     evaluation_sampling = "fixed-seed simple random sample without replacement (seed 20260824)",
     uncertainty = "total",
     n_draw = 1000L,
+    model_specification = list(
+      family = "SHASH",
+      location = "~ s(age, k = 8) + sex + race_ethnicity",
+      scale = "~ s(age, k = 5) + sex + race_ethnicity",
+      skew = "~ 1",
+      tail = "~ 1",
+      seed = 20260824L
+    ),
     package_version = as.character(utils::packageVersion("referent")),
     r_version = R.version.string,
     input_files = input_receipts,
@@ -185,11 +238,16 @@ run_nhanes_external_validation <- function(output_dir, cache_dir) {
 
 if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
-  if (length(args) < 1L || length(args) > 2L) {
-    stop("usage: run_nhanes_external_validation.R OUTPUT_DIR [CACHE_DIR]", call. = FALSE)
+  if (length(args) < 1L || length(args) > 3L) {
+    stop(paste(
+      "usage: run_nhanes_external_validation.R OUTPUT_DIR",
+      "[CACHE_DIR] [confirmation|development]"
+    ), call. = FALSE)
   }
   cache <- if (length(args) == 2L) args[[2L]] else file.path(tempdir(), "nhanes-cache")
-  result <- run_nhanes_external_validation(args[[1L]], cache)
+  if (length(args) == 3L) cache <- args[[2L]]
+  evaluation <- if (length(args) == 3L) args[[3L]] else "confirmation"
+  result <- run_nhanes_external_validation(args[[1L]], cache, evaluation)
   print(result$gate, row.names = FALSE)
   if (!isTRUE(result$gate$pass)) quit(status = 1L)
 }

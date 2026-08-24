@@ -28,6 +28,7 @@ test_that("release workflow runs every declared evidence lane", {
   expect_match(workflow, "--nuts-sampler nutpie", fixed = TRUE)
   expect_match(workflow, "--tune 1000", fixed = TRUE)
   expect_match(workflow, "--target-accept 0.99", fixed = TRUE)
+  expect_match(workflow, "validate_hbr_site_evidence.R", fixed = TRUE)
   expect_match(workflow, "generate_release_superiority.py", fixed = TRUE)
   expect_match(workflow, "--replicates 20", fixed = TRUE)
   expect_match(workflow, "--seed-start 20260924", fixed = TRUE)

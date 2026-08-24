@@ -21,6 +21,7 @@ quantities, convergence receipts, and site-stratified metrics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
@@ -101,26 +102,47 @@ def norm_data(name: str, frame: pd.DataFrame) -> NormData:
     )
 
 
-def convergence(model: NormativeModel, stage: str) -> tuple[pd.DataFrame, dict[str, object]]:
+def convergence(
+    model: NormativeModel, stage: str
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
     idata = model["y"].idata
     # The fitted idata does not contain the temporary per-subject variables
     # created during prediction, so the full posterior is the convergence set.
     summary = az.summary(idata, fmt="wide")
     summary.insert(0, "parameter", summary.index.astype(str))
     summary.insert(0, "stage", stage)
-    divergences = int(idata.sample_stats["diverging"].sum().item())
+    divergence_table = (
+        idata.sample_stats["diverging"]
+        .to_dataframe(name="diverging")
+        .reset_index()[["chain", "draw", "diverging"]]
+    )
+    divergence_table.insert(0, "stage", stage)
+    divergences = int(divergence_table["diverging"].sum())
     max_rhat = float(np.nanmax(summary["r_hat"].to_numpy()))
     min_bulk = float(np.nanmin(summary["ess_bulk"].to_numpy()))
     min_tail = float(np.nanmin(summary["ess_tail"].to_numpy()))
+    undefined_rhat_constant_rows = int(
+        (summary["r_hat"].isna() & summary["sd"].eq(0)).sum()
+    )
     receipt = {
         "stage": stage,
         "divergences": divergences,
         "max_rhat": max_rhat,
         "min_ess_bulk": min_bulk,
         "min_ess_tail": min_tail,
+        "undefined_rhat_constant_rows": undefined_rhat_constant_rows,
         "pass": bool(divergences == 0 and max_rhat <= 1.01 and min_bulk >= 400 and min_tail >= 400),
     }
-    return summary.reset_index(drop=True), receipt
+    return summary.reset_index(drop=True), divergence_table, receipt
+
+
+def csv_receipt(path: Path) -> dict[str, object]:
+    frame = pd.read_csv(path)
+    return {
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "rows": len(frame),
+        "columns": list(frame.columns),
+    }
 
 
 def posterior_normal_draws(model: NormativeModel, frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -220,6 +242,7 @@ def site_summary(predictions: pd.DataFrame) -> pd.DataFrame:
                 "mace": np.mean([abs(q - np.mean(u <= q)) for q in grid]),
                 "mean_z": group["mixture_z"].mean(),
                 "var_z": group["mixture_z"].var(ddof=1),
+                "coverage90_se": np.sqrt(0.9 * 0.1 / len(group)),
             }
         )
     return pd.DataFrame(rows)
@@ -266,7 +289,7 @@ def main() -> None:
         target_accept=args.target_accept,
         random_seed=args.seed,
     )
-    base_convergence, base_receipt = convergence(base, "base")
+    base_convergence, base_divergences, base_receipt = convergence(base, "base")
     observed_predictions = predict_with_mixture(
         base, observed_test, "observed_site", outcome_mean, outcome_sd
     )
@@ -285,18 +308,40 @@ def main() -> None:
         target_accept=args.target_accept,
         random_seed=args.seed + 1,
     )
-    transfer_convergence, transfer_receipt = convergence(transferred, "transfer")
+    transfer_convergence, transfer_divergences, transfer_receipt = convergence(
+        transferred, "transfer"
+    )
     transport_predictions = predict_with_mixture(
         transferred, transport_test, "transferred_site", outcome_mean, outcome_sd
     )
     predictions = pd.concat([observed_predictions, transport_predictions], ignore_index=True)
     convergence_table = pd.concat([base_convergence, transfer_convergence], ignore_index=True)
+    divergence_table = pd.concat(
+        [base_divergences, transfer_divergences], ignore_index=True
+    )
 
-    data.to_csv(args.output / "site_data.csv", index=False, float_format="%.17g")
-    predictions.to_csv(args.output / "pcntoolkit_predictions.csv", index=False, float_format="%.17g")
-    site_summary(predictions).to_csv(args.output / "pcntoolkit_site_summary.csv", index=False, float_format="%.17g")
-    convergence_table.to_csv(args.output / "hbr_convergence.csv", index=False, float_format="%.17g")
+    output_paths = {
+        "site_data.csv": args.output / "site_data.csv",
+        "pcntoolkit_predictions.csv": args.output / "pcntoolkit_predictions.csv",
+        "pcntoolkit_site_summary.csv": args.output / "pcntoolkit_site_summary.csv",
+        "hbr_convergence.csv": args.output / "hbr_convergence.csv",
+        "hbr_divergences.csv": args.output / "hbr_divergences.csv",
+    }
+    data.to_csv(output_paths["site_data.csv"], index=False, float_format="%.17g")
+    predictions.to_csv(
+        output_paths["pcntoolkit_predictions.csv"], index=False, float_format="%.17g"
+    )
+    site_summary(predictions).to_csv(
+        output_paths["pcntoolkit_site_summary.csv"],
+        index=False,
+        float_format="%.17g",
+    )
+    convergence_table.to_csv(
+        output_paths["hbr_convergence.csv"], index=False, float_format="%.17g"
+    )
+    divergence_table.to_csv(output_paths["hbr_divergences.csv"], index=False)
     receipt = {
+        "schema_version": "1.1.0",
         "comparator": "pcntoolkit",
         "version": importlib.metadata.version("pcntoolkit"),
         "draws": args.draws,
@@ -324,8 +369,14 @@ def main() -> None:
             "min_ess_tail": 400,
             "divergences": 0,
         },
+        "convergence_policy": {
+            "undefined_rhat": (
+                "allowed only for retained posterior-summary rows with sd exactly zero"
+            )
+        },
         "stages": [base_receipt, transfer_receipt],
         "all_stages_pass": bool(base_receipt["pass"] and transfer_receipt["pass"]),
+        "files": {name: csv_receipt(path) for name, path in output_paths.items()},
     }
     (args.output / "receipt.json").write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"

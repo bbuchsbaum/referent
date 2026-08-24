@@ -28,14 +28,27 @@ model addresses the observed diagnostic failure on the development cohort; it
 does not support an independent conditional-transport claim.
 
 Before any NHANES 2013-2014 outcomes were inspected, Mote issue
-`referent-32n` froze a genuinely untouched confirmation: the already-fixed
-2015-2016 model, 2013-2014 evaluation cycle, eligibility rules, outcomes,
-sample size and seed, uncertainty mode, and unchanged calibration gates. Any
-result from that confirmation will be retained whether it passes or fails.
+`referent-32n` and published commit `b1301a4` froze a genuinely untouched
+confirmation: the already-fixed 2015-2016 model, 2013-2014 evaluation cycle,
+eligibility rules, outcomes, sample size and seed, uncertainty mode, and
+unchanged calibration gates.
+
+That confirmation was then executed once. It used all 5,392 eligible training
+rows and a fixed-seed sample of 2,000 of 5,592 eligible 2013-2014 participants;
+the minimum outcome count was 1,892. All fits were valid and the marginal,
+tail, shape, and conditional gates passed. Across outcomes, MACE ranged from
+0.0049 to 0.0142 and 95% coverage from 0.944 to 0.955. The retained artifacts
+are in `confirmation-2013-2014/`, and their receipt points back to the prior
+Mote/Git registration. This supports the named, unweighted cross-cycle
+conditional-transport claim; it is not a national prevalence claim or evidence
+for arbitrary cohorts.
 
 Run with:
 
 ```sh
 Rscript tools/validation/run_nhanes_external_validation.R \
-  evidence/nhanes-external /tmp/nhanes-cache
+  evidence/nhanes-development /tmp/nhanes-cache development
+
+Rscript tools/validation/run_nhanes_external_validation.R \
+  evidence/nhanes-confirmation /tmp/nhanes-cache confirmation
 ```
