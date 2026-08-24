@@ -7,7 +7,7 @@
 \usage{
 ref_write(reference, path, compress = "xz")
 
-ref_read(path)
+ref_read(path, trusted = FALSE)
 }
 \arguments{
 \item{reference}{A \link{ref_freeze} or \link{ref_fit}. Plain fits are frozen before
@@ -16,6 +16,9 @@ writing.}
 \item{path}{Path to an RDS bundle.}
 
 \item{compress}{Passed to \code{\link[=saveRDS]{saveRDS()}}.}
+
+\item{trusted}{Must be exactly \code{TRUE} to acknowledge that \code{path} came from an
+authenticated, trusted source. The check occurs before deserialization.}
 }
 \value{
 \code{ref_write()} invisibly returns \code{path}; \code{ref_read()} returns a
@@ -24,6 +27,13 @@ validated \link{ref_freeze}.
 \description{
 These wrappers make the on-disk compatibility contract explicit. \code{ref_read()}
 migrates the unversioned development bundle used before Referent 0.1.0 and
-rejects unknown schemas. Prediction also validates a frozen bundle, so an
-incompatible object cannot bypass the check by using \code{readRDS()} directly.
+rejects unknown schemas. Prediction also validates a frozen bundle.
+}
+\section{Security}{
+
+RDS is R's native object format, not a data-only exchange format, and
+deserializing a malicious RDS file can execute code. \code{ref_read()} therefore
+refuses to deserialize unless \code{trusted = TRUE} is supplied explicitly. Only
+do that for a bundle from an authenticated, trusted source. Schema validation
+happens after deserialization and does not make an untrusted RDS file safe.
 }

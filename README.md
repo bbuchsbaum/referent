@@ -90,7 +90,7 @@ generics above rather than depend on an internal representation.
 | Remove site effects from the data themselves | `predict(type = "harmonised")` |
 | Joint deviation across outcomes | `ref_joint()` |
 | Threshold exceedances with FDR | `ref_flag()` |
-| Freeze, validate, and exchange a versioned reference | `ref_freeze()`, `ref_write()`, `ref_read()` |
+| Freeze, persist, and validate a trusted versioned reference | `ref_freeze()`, `ref_write()`, `ref_read()` |
 | Longitudinal change | `ref_dynamics()`, `ref_transition()`, `ref_forecast()`, `ref_derivative()` |
 | Graphics | `autoplot()` methods, `fortify_centiles()`, `theme_referent()` |
 

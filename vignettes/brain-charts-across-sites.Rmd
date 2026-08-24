@@ -136,7 +136,7 @@ block <- as.integer(commandArgs(trailingOnly = TRUE)[[1]])
 columns <- readRDS("outcome_blocks.rds")[[block]]   # list of column-name vectors
 wide <- arrow::read_parquet("reference.parquet", col_select = c("age", "sex", "site", columns))
 fit <- ref_fit(spec, wide, outcomes = all_of(columns))
-saveRDS(ref_freeze(fit), sprintf("bundles/block_%04d.rds", block))
+ref_write(ref_freeze(fit), sprintf("bundles/block_%04d.rds", block))
 ```
 
 ```
@@ -146,7 +146,8 @@ Rscript fit_block.R $SLURM_ARRAY_TASK_ID
 ```
 
 Scoring a new cohort is then `vctrs::vec_rbind()` over
-`predict(readRDS(path), newdata)` for each bundle. Because bundles are small,
+`predict(ref_read(path, trusted = TRUE), newdata)` for each trusted bundle.
+Because bundles are small,
 the 100 of them for 100k vertices are a few hundred megabytes, and scoring
 reads them one at a time.
 
@@ -376,12 +377,12 @@ ref_freeze(adapted, criteria = "healthy controls, 20-80 years", units = "mm^3")
 # Ship and reuse a reference
 
 A reference is useful to other sites only if it can be applied without the
-training data. `ref_freeze()` produces that object; `saveRDS()` ships it.
+training data. `ref_freeze()` produces that object; `ref_write()` persists it.
 
 ```{r ship}
 bundle <- ref_freeze(fit, criteria = "healthy controls, 20-80 years", units = "mm^3")
 bundle_path <- file.path(tempdir(), "reference-v1.rds")
-saveRDS(bundle, bundle_path)
+ref_write(bundle, bundle_path)
 file.size(bundle_path)
 ```
 
@@ -391,15 +392,17 @@ reference (covariate ranges and factor levels), the calibration and
 adaptation slots if any were estimated, the reference-sample baseline used by
 `standardized_log_score`, and the model card. It excludes the training rows,
 the model frame, fitted values, and residuals. No individual observation can
-be recovered from it, which is what makes it safe to share where the data
-are not.
+be recovered from it, which makes it suitable for privacy-preserving sharing.
+That privacy property does not make the RDS container safe to open: RDS is
+executable R serialization, so accept bundles only from an authenticated,
+trusted source and verify their provenance through an independent channel.
 
 A receiving site needs only the file and the package. Everything that applies
 to a `ref_fit` applies to the bundle: scoring, support checks, adaptation, and
 calibration.
 
 ```{r reuse}
-reference <- readRDS(bundle_path)
+reference <- ref_read(bundle_path, trusted = TRUE)
 reference
 local_scores <- predict(reference, newdata = held_out, outcomes = "y",
                         allow_extrapolation = TRUE)

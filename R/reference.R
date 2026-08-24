@@ -50,13 +50,21 @@ ref_freeze <- function(fit,
 #'
 #' These wrappers make the on-disk compatibility contract explicit. `ref_read()`
 #' migrates the unversioned development bundle used before Referent 0.1.0 and
-#' rejects unknown schemas. Prediction also validates a frozen bundle, so an
-#' incompatible object cannot bypass the check by using `readRDS()` directly.
+#' rejects unknown schemas. Prediction also validates a frozen bundle.
+#'
+#' @section Security:
+#' RDS is R's native object format, not a data-only exchange format, and
+#' deserializing a malicious RDS file can execute code. `ref_read()` therefore
+#' refuses to deserialize unless `trusted = TRUE` is supplied explicitly. Only
+#' do that for a bundle from an authenticated, trusted source. Schema validation
+#' happens after deserialization and does not make an untrusted RDS file safe.
 #'
 #' @param reference A [ref_freeze] or [ref_fit]. Plain fits are frozen before
 #'   writing.
 #' @param path Path to an RDS bundle.
 #' @param compress Passed to [saveRDS()].
+#' @param trusted Must be exactly `TRUE` to acknowledge that `path` came from an
+#'   authenticated, trusted source. The check occurs before deserialization.
 #' @return `ref_write()` invisibly returns `path`; `ref_read()` returns a
 #'   validated [ref_freeze].
 #' @export
@@ -74,7 +82,14 @@ ref_write <- function(reference, path, compress = "xz") {
 
 #' @rdname ref_write
 #' @export
-ref_read <- function(path) {
+ref_read <- function(path, trusted = FALSE) {
+  if (!identical(trusted, TRUE)) {
+    cli::cli_abort(c(
+      "Refusing to deserialize an untrusted RDS bundle.",
+      "i" = "RDS files can execute code during or after deserialization.",
+      "i" = "Pass {.code trusted = TRUE} only for a bundle from an authenticated, trusted source."
+    ))
+  }
   reference <- readRDS(path)
   if (!inherits(reference, "ref_freeze")) {
     cli::cli_abort("{.arg path} does not contain a {.cls ref_freeze} bundle.")

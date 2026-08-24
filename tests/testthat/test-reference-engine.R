@@ -31,7 +31,8 @@ test_that("versioned bundle IO migrates legacy bundles and rejects future schema
   bundle <- ref_freeze(fit)
   path <- withr::local_tempfile(fileext = ".rds")
   expect_identical(ref_write(bundle, path), path)
-  loaded <- ref_read(path)
+  expect_error(ref_read(path), "Refusing to deserialize")
+  loaded <- ref_read(path, trusted = TRUE)
   expect_identical(loaded$bundle_schema_version, "1.0.0")
   expect_equal(
     predict(loaded, dat[1:4, ], uncertainty = "conditional")$z,
@@ -44,12 +45,34 @@ test_that("versioned bundle IO migrates legacy bundles and rejects future schema
   legacy_path <- withr::local_tempfile(fileext = ".rds")
   saveRDS(legacy, legacy_path)
   expect_error(predict(legacy, dat[1:2, ]), "unversioned")
-  expect_warning(migrated <- ref_read(legacy_path), "Migrating")
+  expect_warning(migrated <- ref_read(legacy_path, trusted = TRUE), "Migrating")
   expect_identical(migrated$migration$from, "unversioned")
 
   future <- bundle
   future$bundle_schema_version <- "2.0.0"
   expect_error(predict(future, dat[1:2, ]), "Unsupported.*2.0.0")
+})
+
+test_that("ref_read rejects an untrusted RDS before deserialization", {
+  sentinel <- withr::local_tempfile()
+  payload <- new.env(parent = emptyenv())
+  makeActiveBinding(
+    "bundle_schema_version",
+    local({
+      marker <- sentinel
+      function(value) {
+        file.create(marker)
+        "1.0.0"
+      }
+    }),
+    payload
+  )
+  class(payload) <- c("ref_freeze", "ref_fit")
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(payload, path)
+
+  expect_error(ref_read(path), "Refusing to deserialize")
+  expect_false(file.exists(sentinel))
 })
 
 test_that("a frozen reference does not serialise the frame its spec was built in", {

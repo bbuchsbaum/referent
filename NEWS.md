@@ -13,7 +13,9 @@ Initial scoped release of the CDF-first normative-modelling API.
 - Longitudinal dynamics, transitions, and forecasts share one recorded
   marginal-uncertainty estimand and disclose plug-in kernel uncertainty.
 - Frozen references use bundle schema 1.0.0 with validated `ref_write()` and
-  `ref_read()` migration for unversioned development bundles.
+  `ref_read()` migration for unversioned development bundles. Because RDS is
+  executable serialization, `ref_read()` requires an explicit `trusted = TRUE`
+  acknowledgement before deserializing a bundle from an authenticated source.
 - Numerical validation includes offline PCNtoolkit 1.3.0 oracles, a replicated
   five-scenario release matrix, HBR/site receipts, independent NHANES cohort
   validation, cross-platform R CMD check, and scale/allocation budgets.
