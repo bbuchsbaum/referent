@@ -17,13 +17,14 @@ Initial scoped release of the CDF-first normative-modelling API.
   executable serialization, `ref_read()` requires an explicit `trusted = TRUE`
   acknowledgement before deserializing a bundle from an authenticated source.
 - Numerical validation includes offline PCNtoolkit 1.3.0 oracles, a replicated
-  five-scenario release matrix, HBR/site receipts, independent NHANES cohort
-  validation, cross-platform R CMD check, and scale/allocation budgets.
+  five-scenario release matrix, HBR/site receipts, NHANES cohort diagnostics,
+  cross-platform R CMD check, and scale/allocation budgets.
 
-The 0.1.0 release-candidate evidence now passes its registered gates without
-relaxing them. Four replicated PCNtoolkit scenarios are equivalent and the
-independently seeded skew-heavy confirmation scenario is superior with a valid
-comparator; deterministic high-acceptance HBR sampling passes convergence,
-leave-one-site-out-selected adaptation passes every site, and the independent
-NHANES lane passes marginal, tail, shape, and conditional calibration. Claims
-remain limited to the named evidence classes, scenarios, and cohorts.
+The 0.1.0 release-candidate evidence passes its registered computational gates
+without relaxing them. Four replicated PCNtoolkit scenarios are equivalent and
+the fresh-seed skew-heavy matrix is superior with a valid comparator;
+deterministic high-acceptance HBR sampling passes convergence and
+leave-one-site-out-selected adaptation passes every site. The NHANES 2017-2018
+rerun passes computationally but is explicitly post-hoc model-development
+evidence because its earlier failure informed the scale model. It is not used
+as independent confirmation or as support for a conditional-transport claim.

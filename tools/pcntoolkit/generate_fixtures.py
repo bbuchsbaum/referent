@@ -300,7 +300,7 @@ def fit_scenario(frame: pd.DataFrame, name: str) -> pd.DataFrame:
         # step. On the registered skew-heavy matrix that makes otherwise
         # valid L-BFGS-B fits probe ill-conditioned posterior matrices. A
         # 0.01 step retains the pinned model and optimizer while avoiding
-        # those invalid probes across the preregistered replicate set.
+        # those invalid probes across the locked fresh-seed replicate set.
         kwargs["l_bfgs_b_epsilon"] = SKEW_HEAVY_LBFGSB_EPSILON
 
     fit_data = NormData.from_dataframe(

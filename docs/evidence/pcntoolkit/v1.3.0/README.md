@@ -23,15 +23,15 @@ Five deliberately matched fitted scenarios pass all prediction, scale, Z, and
 coverage margins. Estimator-divergent scenarios remain diagnostics.
 
 The single checked-in skew/heavy-tail fixture remains a diagnostic result. In
-the stronger, independently seeded confirmation matrix, linear Gaussian,
+the stronger fresh-seed matrix, linear Gaussian,
 nonlinear heteroskedastic, unequal-site, and covariate-shift scenarios are all
 classified `equivalent`. The skew-heavy log-score contrast favours Referent by
 0.3961 (95% replicate-bootstrap interval 0.3785 to 0.4120), with passing
 calibration guardrails and valid fits in every replicate, so this named
 scenario is classified `superior`. The PCNtoolkit receipt records the 0.01
 L-BFGS-B finite-difference step that removed the earlier invalid objective
-probes; the confirmation seeds were registered before their outcomes were
-generated.
+probes. The seed block and result first entered version control together, so
+this is not described as independently preregistered.
 
 HBR and new-site transfer stay marked `non_equivalent`: PCNtoolkit draw
 averages and Referent predictive mixtures are different estimands. The 0.1.0

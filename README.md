@@ -18,9 +18,11 @@ raw standardized residual.
 > are reported as unsupported instead of being silently coerced. Exact and
 > matched-estimator PCNtoolkit lanes pass. The replicated release matrix finds
 > four named scenarios equivalent and the locked skew-heavy scenario superior;
-> HBR convergence, every-site transport, and independent NHANES cohort gates
-> also pass under their recorded controls. These are scoped results, not a
-> blanket equivalence or superiority claim.
+> HBR convergence and every-site transport also pass under their recorded
+> controls. The NHANES 2017-2018 rerun is post-hoc model-development evidence,
+> not independent confirmation; no conditional-transport claim rests on that
+> cohort. These are scoped results, not a blanket equivalence or superiority
+> claim.
 
 Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
 (or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep
@@ -120,9 +122,9 @@ velocity centiles, and conditional forecasts off the same process.
   outputs, MSLL/SMSE/EV/MACE), numerical-validation policy, and what is
   deliberately missing. The scoped, machine-readable evidence is in
   [docs/evidence/pcntoolkit/v1.3.0](docs/evidence/pcntoolkit/v1.3.0/README.md).
-- [NHANES external-cohort evidence](docs/evidence/nhanes/README.md): a
-  reproducible 2015-2016 to 2017-2018 transport lane with retained calibration
-  diagnostics and source hashes.
+- [NHANES cohort evidence](docs/evidence/nhanes/README.md): retained post-hoc
+  2015-2016 to 2017-2018 development diagnostics plus the frozen contract for
+  a genuinely untouched cycle confirmation.
 - [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/):
   missing and unsupported covariates, transported unseen sites, small local
   samples, partial panel fits, honest assessment, and unidentified dynamics.

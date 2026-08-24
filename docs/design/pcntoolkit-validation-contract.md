@@ -199,9 +199,10 @@ separately, so one favourable result cannot hide another scenario's failure.
 The generation receipt records seeds, dependency versions, row identities,
 warning verdicts, and file hashes.
 
-The 0.1.0 confirmation matrix starts at seed 20260924. It was registered after
-diagnosing the original comparator failure and before inspecting any outcomes
-from the confirmation rows. PCNtoolkit's skew-heavy L-BFGS-B fit uses a 0.01
+The 0.1.0 fresh-seed matrix starts at seed 20260924. The seed block was selected
+after diagnosing the original comparator failure, but the frozen design and
+its result first entered version control together; it is therefore not called
+independently preregistered. PCNtoolkit's skew-heavy L-BFGS-B fit uses a 0.01
 finite-difference step instead of its 0.1 default; the model and optimizer are
 unchanged, while the smaller step avoids invalid ill-conditioned objective
 probes. The receipt records this control. HBR uses 1,000 tuning draws,
