@@ -224,4 +224,39 @@ test_that("HBR and site validators reject drift, false verdicts, and omissions",
     ),
     "cover every retained evaluation row"
   )
+
+  resigned_summary <- file.path(
+    tempdir(), "referent-site-resigned-summary-drift"
+  )
+  dir.create(resigned_summary, recursive = TRUE, showWarnings = FALSE)
+  expect_true(all(file.copy(
+    file.path(evidence, files), resigned_summary, overwrite = TRUE
+  )))
+  comparison <- utils::read.csv(
+    file.path(resigned_summary, "site_comparison.csv")
+  )
+  comparison$mean_z[[1L]] <- comparison$mean_z[[1L]] + 0.01
+  utils::write.csv(
+    comparison, file.path(resigned_summary, "site_comparison.csv"),
+    row.names = FALSE
+  )
+  site <- jsonlite::read_json(
+    file.path(resigned_summary, "site_referent_receipt.json"),
+    simplifyVector = FALSE
+  )
+  site$output_files[["site_comparison.csv"]] <-
+    validator$pcn_evidence_file_receipt(
+      file.path(resigned_summary, "site_comparison.csv")
+    )
+  jsonlite::write_json(
+    site, file.path(resigned_summary, "site_referent_receipt.json"),
+    auto_unbox = TRUE, pretty = TRUE, null = "null"
+  )
+  expect_error(
+    validator$pcn_validate_site_evidence(
+      resigned_summary, resigned_summary,
+      "hbr_receipt.json", "site_referent_receipt.json"
+    ),
+    "differs from recomputed values"
+  )
 })

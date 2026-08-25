@@ -1,0 +1,1 @@
+{"actor":"codex-referent-audit","entity":"referent-evidence-audit","kind":"reserve_open","mode":"exclusive","op":"20260825T023227.537896Z-p27756-c0000-raf78-hf79438","paths":[".beads/issues.jsonl","tests/testthat/test-pcntoolkit-hbr-site.R"],"reservation_id":"rv-01M0VC634H63WQRP3SYQRBHSGN","ts":"2026-08-25T02:32:27.537896Z","ttl_s":3600,"v":1}
