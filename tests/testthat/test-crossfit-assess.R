@@ -15,6 +15,7 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
   expect_s3_class(attr(cf, "deployment"), "ref_fit")
   expect_identical(attr(cf, "uncertainty"), "conditional")
   expect_true(is.character(attr(cf, "data_hash")))
+  expect_identical(attr(cf, "data_hash_version"), 2L)
   expect_equal(sort(cf$.row), seq_len(nrow(dat)))
   expect_equal(sort(unique(cf$.fold)), 1:4)
   # clusters stay together
@@ -46,6 +47,26 @@ test_that("assessment requires held-out provenance and hashes full row content",
   expect_false(identical(digest_data(changed), digest_data(train)))
   sc <- predict(fit, changed, uncertainty = "conditional", allow_extrapolation = TRUE)
   expect_false(any(sc$.in_sample))
+
+  compact <- data.frame(row = 1:1000)
+  materialized <- data.frame(row = (1:1000) + 0L)
+  expect_identical(compact, materialized)
+  expect_false(identical(
+    digest_data(compact, serialize_version = 3L),
+    digest_data(materialized, serialize_version = 3L)
+  ))
+  expect_identical(digest_data(compact), digest_data(materialized))
+
+  legacy <- fit
+  legacy$data_hash_version <- NULL
+  columns <- unique(c(legacy$covariates, legacy$outcomes))
+  legacy$data_hash <- digest_data(
+    tibble::as_tibble(train)[, columns, drop = FALSE], serialize_version = 3L
+  )
+  expect_true(ref_assess(
+    legacy, train, allow_in_sample = TRUE
+  )$in_sample)
+  expect_identical(ref_freeze(fit)$data_hash_version, 2L)
 })
 
 test_that("ref_assess makes one stable provenance decision per call", {

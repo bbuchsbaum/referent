@@ -72,12 +72,22 @@ ref_calibrate <- function(fit, data, by = NULL,
       cli::cli_abort("The score table uses {.val {score_uncertainty}} uncertainty, not {.val {uncertainty}}.")
     }
     deployment <- attr(data, "deployment")
-    if (is.null(deployment) || !identical(deployment$data_hash, fit$data_hash)) {
+    deployment_hash_version <- if (is.null(deployment)) {
+      NA_integer_
+    } else {
+      as.integer(deployment$data_hash_version %||% 3L)
+    }
+    fit_hash_version <- as.integer(fit$data_hash_version %||% 3L)
+    if (is.null(deployment) || !identical(deployment$data_hash, fit$data_hash) ||
+        !identical(deployment_hash_version, fit_hash_version)) {
       cli::cli_abort("Calibration scores do not belong to this deployment fit.")
     }
     uncertainty <- score_uncertainty
     n_draw <- attr(data, "n_draw")
     calibration_hash <- attr(data, "data_hash")
+    calibration_hash_version <- as.integer(
+      attr(data, "data_hash_version") %||% deployment_hash_version
+    )
     calibration_source <- "crossfit"
     scores <- data
     by_vec <- NULL
@@ -98,6 +108,7 @@ ref_calibrate <- function(fit, data, by = NULL,
     calibration_hash <- digest_data(
       data[, unique(c(base$covariates, base$outcomes)), drop = FALSE]
     )
+    calibration_hash_version <- 2L
     calibration_source <- "heldout"
   }
   maps <- lapply(split(scores, scores$.outcome), function(sc) {
@@ -116,6 +127,7 @@ ref_calibrate <- function(fit, data, by = NULL,
       uncertainty = uncertainty,
       n_draw = if (identical(uncertainty, "total")) as.integer(n_draw) else NA_integer_,
       data_hash = calibration_hash,
+      data_hash_version = calibration_hash_version,
       source = calibration_source,
       pre = pre
     ),

@@ -99,7 +99,11 @@ is_calibration_data <- function(fit, newdata) {
       nrow(newdata) != cal$n) {
     return(FALSE)
   }
-  identical(digest_data(newdata[, cols, drop = FALSE]), cal$data_hash)
+  hash_version <- as.integer(cal$data_hash_version %||% 3L)
+  identical(
+    digest_data(newdata[, cols, drop = FALSE], hash_version),
+    cal$data_hash
+  )
 }
 
 assess_from_scores <- function(fit, scores, dists, newdata, by_vec = NULL) {

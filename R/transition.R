@@ -168,8 +168,12 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
 
 is_dynamics_data <- function(dynamic, data) {
   cols <- dynamic$data_columns
+  hash_version <- as.integer(dynamic$data_hash_version %||% 3L)
   length(cols) > 0L && all(cols %in% names(data)) && nrow(data) == dynamic$data_n &&
-    identical(digest_data(data[, cols, drop = FALSE]), dynamic$data_hash)
+    identical(
+      digest_data(data[, cols, drop = FALSE], hash_version),
+      dynamic$data_hash
+    )
 }
 
 #' @export

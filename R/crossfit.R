@@ -80,7 +80,8 @@ ref_crossfit <- function(spec,
     } else {
       NA_integer_
     },
-    data_hash = deployment$data_hash
+    data_hash = deployment$data_hash,
+    data_hash_version = as.integer(deployment$data_hash_version %||% 3L)
   )
 }
 
