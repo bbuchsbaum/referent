@@ -106,10 +106,13 @@ test_that("assessment plots: calibration, qq, worm, conditional", {
   # qq and worm share the envelope: the worm is the qq chart minus the expected line
   pq <- autoplot(a, type = "qq")
   pw <- autoplot(a, type = "worm")
+  expect_true(grepl("\n", plot_label(pq, "subtitle"), fixed = TRUE))
+  expect_true(grepl("\n", plot_label(pw, "subtitle"), fixed = TRUE))
   bq <- expect_builds(pq)
   bw <- expect_builds(pw)
   clq <- layer_classes(pq)
   expect_equal(sum(clq == "GeomRibbon"), 2L)
+  expect_true(all(grepl("^simultaneous:", bq$data[[which(clq == "GeomText")]]$label)))
   expect_equal(nrow(bw$data[[which(layer_classes(pw) == "GeomPoint")]]), 2L * 80L)
   env_q <- pq$data
   env_w <- pw$data
@@ -177,6 +180,7 @@ test_that("dynamics plots: kernel, held-out calibration, transitions, and anchor
   pc <- autoplot(dyn, type = "calibration", data = held, id = participant_id, time = age)
   bc <- expect_builds(pc)
   expect_match(plot_label(pc, "subtitle"), "held-out innovation Z")
+  expect_true(grepl("\n", plot_label(pc, "subtitle"), fixed = TRUE))
   expect_equal(plot_label(pc, "y"), "Innovation Z")
   tr <- ref_transition(dyn, data = held, id = participant_id, time = age)
   pts <- bc$data[[which(layer_classes(pc) == "GeomPoint")]]
@@ -263,4 +267,3 @@ test_that("thrive lines are ref_forecast() on a grid of one-visit histories", {
   expect_builds(p)
   expect_true("GeomRibbon" %in% layer_classes(p))
 })
-

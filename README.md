@@ -12,8 +12,10 @@ a threshold exceedance with a known chance rate, not an abnormality.
 The package is CDF-first: a Z-score is one representation of a centile, not a
 raw standardized residual.
 
-> **Development status:** `referent` 0.1.0 is an initial, deliberately scoped
-> release candidate. The current fitting surface supports numeric outcomes with
+> **Development status:** `referent` 0.1.0 is an initial, deliberately scoped,
+> source-only release candidate in [PR #4](https://github.com/bbuchsbaum/referent/pull/4).
+> It is not yet on the default branch or available as a tagged release. The
+> current fitting surface supports numeric outcomes with
 > Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
 > are reported as unsupported instead of being silently coerced. Exact and
 > matched-estimator PCNtoolkit lanes pass. The replicated release matrix finds
@@ -24,8 +26,9 @@ raw standardized residual.
 > same frozen conditional-calibration contract. These are scoped results, not a
 > blanket equivalence or superiority claim.
 
-Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
-(or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep
+For the candidate documentation, use `browseVignettes("referent")` after
+installing it. The [published documentation site](https://bbuchsbaum.github.io/referent/)
+tracks the default branch and may lag an open candidate. Start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/), and keep
 [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/)
 nearby for support, transport, calibration, panel-fit, and longitudinal
 failure modes. The complete article map is below.
@@ -34,8 +37,12 @@ failure modes. The complete article map is below.
 
 ```r
 # install.packages("pak")
-pak::pak("bbuchsbaum/referent")
+# Install the current source-only 0.1.0 candidate from PR #4:
+pak::pak("bbuchsbaum/referent#4")
 ```
+
+The PR-qualified reference is intentional while 0.1.0 remains source-only;
+`bbuchsbaum/referent` without `#4` installs the repository's default branch.
 
 ## A first reference model
 
@@ -54,10 +61,16 @@ fit
 target <- ref_simulate(100, kind = "gaussian", scale = "age", seed = 2)
 scores <- predict(fit, newdata = target, type = "scores")
 scores[1:3, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
+table(scores$support)
 
-ref_assess(fit, newdata = target)$marginal[, c("mean_z", "var_z", "cover_95")]
+assessment <- ref_assess(fit, newdata = target)
+assessment$marginal[, c("n", "mean_z", "var_z", "cover_95")]
 autoplot(fit, type = "centiles", by = sex, newdata = target)
 ```
+
+Support is part of the scoring result: the table makes boundary masking
+visible, while `n` states the number of rows that actually entered the held-out
+assessment.
 
 Predictive distributions are
 [distributional](https://pkg.mitchelloharawild.com/distributional/)

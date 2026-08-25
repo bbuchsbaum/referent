@@ -477,7 +477,7 @@ plot_qq <- function(assessment, level = 0.95, detrend = FALSE,
       expected = xlim[[1L]] + 0.04 * diff(xlim),
       y = ylim[[2L]] - 0.03 * diff(ylim),
       label = sprintf(
-        "outside simultaneous: %d of %d\noutside pointwise: %d (%.1f%%)",
+        "simultaneous: %d/%d\npointwise: %d (%.1f%%)",
         k_sim, n, k_pt, 100 * k_pt / n
       )
     )
@@ -527,15 +527,24 @@ plot_qq <- function(assessment, level = 0.95, detrend = FALSE,
   if (multi) {
     p <- p + ggplot2::facet_wrap(~.outcome, nrow = 1)
   }
+  subtitle <- paste(
+    c(
+      if (!is.null(note)) note,
+      strwrap(
+        paste0(
+          pct, "% pointwise and simultaneous envelopes for a calibrated model; ",
+          format(100 * (1 - level), trim = TRUE),
+          "% of points are expected outside the pointwise band"
+        ),
+        width = 48L
+      )
+    ),
+    collapse = "\n"
+  )
   finish_plot(
     p,
     title = if (multi) NULL else as.character(df$.outcome[[1L]]),
-    subtitle = paste0(
-      if (!is.null(note)) paste0(note, "; "),
-      pct, "% pointwise and simultaneous envelopes for a calibrated model; ",
-      format(100 * (1 - level), trim = TRUE),
-      "% of points are expected outside the pointwise band"
-    ),
+    subtitle = subtitle,
     xlab = "Expected Z",
     ylab = if (detrend) paste(ylab, "minus expected") else ylab
   ) +
