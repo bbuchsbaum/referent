@@ -108,7 +108,7 @@ ref_calibrate <- function(fit, data, by = NULL,
     calibration_hash <- digest_data(
       data[, unique(c(base$covariates, base$outcomes)), drop = FALSE]
     )
-    calibration_hash_version <- 2L
+    calibration_hash_version <- 4L
     calibration_source <- "heldout"
   }
   maps <- lapply(split(scores, scores$.outcome), function(sc) {

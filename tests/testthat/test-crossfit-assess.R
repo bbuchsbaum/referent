@@ -15,7 +15,7 @@ test_that("cross-fitted scores are out of sample, cover every row once, and are 
   expect_s3_class(attr(cf, "deployment"), "ref_fit")
   expect_identical(attr(cf, "uncertainty"), "conditional")
   expect_true(is.character(attr(cf, "data_hash")))
-  expect_identical(attr(cf, "data_hash_version"), 2L)
+  expect_identical(attr(cf, "data_hash_version"), 4L)
   expect_equal(sort(cf$.row), seq_len(nrow(dat)))
   expect_equal(sort(unique(cf$.fold)), 1:4)
   # clusters stay together
@@ -52,21 +52,45 @@ test_that("assessment requires held-out provenance and hashes full row content",
   materialized <- data.frame(row = (1:1000) + 0L)
   expect_identical(compact, materialized)
   expect_false(identical(
-    digest_data(compact, serialize_version = 3L),
-    digest_data(materialized, serialize_version = 3L)
+    digest_data(compact, hash_version = 3L),
+    digest_data(materialized, hash_version = 3L)
   ))
   expect_identical(digest_data(compact), digest_data(materialized))
+
+  simulated <- ref_simulate(80, seed = 12)
+  simulated_tibble <- tibble::as_tibble(simulated)
+  expect_false(identical(
+    digest_data(simulated, hash_version = 2L),
+    digest_data(simulated_tibble, hash_version = 2L)
+  ))
+  expect_identical(digest_data(simulated), digest_data(simulated_tibble))
+  simulated_fit <- ref_fit(
+    ref_spec(ref_gaussian(), location = ~ age + sex),
+    simulated,
+    outcomes = "y"
+  )
+  expect_true(ref_assess(
+    simulated_fit, simulated, allow_in_sample = TRUE
+  )$in_sample)
 
   legacy <- fit
   legacy$data_hash_version <- NULL
   columns <- unique(c(legacy$covariates, legacy$outcomes))
   legacy$data_hash <- digest_data(
-    tibble::as_tibble(train)[, columns, drop = FALSE], serialize_version = 3L
+    tibble::as_tibble(train)[, columns, drop = FALSE], hash_version = 3L
   )
   expect_true(ref_assess(
     legacy, train, allow_in_sample = TRUE
   )$in_sample)
-  expect_identical(ref_freeze(fit)$data_hash_version, 2L)
+  version_two <- fit
+  version_two$data_hash_version <- 2L
+  version_two$data_hash <- digest_data(
+    tibble::as_tibble(train)[, columns, drop = FALSE], hash_version = 2L
+  )
+  expect_true(ref_assess(
+    version_two, train, allow_in_sample = TRUE
+  )$in_sample)
+  expect_identical(ref_freeze(fit)$data_hash_version, 4L)
 })
 
 test_that("ref_assess makes one stable provenance decision per call", {

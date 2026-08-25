@@ -94,7 +94,7 @@ ref_fit <- function(spec, data, outcomes, id = NULL, ...) {
       models = models,
       id_name = id_name,
       data_hash = digest_data(data[, c(covariate_names, outcome_names), drop = FALSE]),
-      data_hash_version = 2L,
+      data_hash_version = 4L,
       reference_baseline = reference_baseline(data, outcome_names),
       n = nrow(data),
       covariates = covariate_names,
@@ -187,13 +187,31 @@ pull_column <- function(data, quo, default = NULL) {
   rlang::eval_tidy(quo, data = data)
 }
 
-digest_data <- function(data, serialize_version = 2L) {
+digest_data <- function(data, hash_version = 4L) {
   nms <- sort(names(data))
-  data <- as.data.frame(data[, nms, drop = FALSE])
-  rownames(data) <- NULL
+  hash_version <- as.integer(hash_version)
+  if (identical(hash_version, 4L)) {
+    # Bind the ordered observed columns, not data-frame-level metadata such as
+    # simulation truth or import provenance. Versions 2 and 3 below retain the
+    # former whole-frame serialization so existing fitted objects still verify.
+    payload <- lapply(nms, function(nm) {
+      column <- data[[nm]]
+      names(column) <- NULL
+      column
+    })
+    names(payload) <- enc2utf8(nms)
+    return(digest::digest(
+      payload, algo = "sha256", serialize = TRUE, serializeVersion = 2L
+    ))
+  }
+  if (!hash_version %in% c(2L, 3L)) {
+    cli::cli_abort("Unsupported data hash version {.val {hash_version}}.")
+  }
+  legacy_payload <- as.data.frame(data[, nms, drop = FALSE])
+  rownames(legacy_payload) <- NULL
   digest::digest(
-    data, algo = "sha256", serialize = TRUE,
-    serializeVersion = as.integer(serialize_version)
+    legacy_payload, algo = "sha256", serialize = TRUE,
+    serializeVersion = hash_version
   )
 }
 
