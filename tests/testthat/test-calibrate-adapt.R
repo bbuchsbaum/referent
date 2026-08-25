@@ -3,7 +3,7 @@ test_that("PIT recalibration is a valid map that does not collapse tails", {
   cal <- ref_simulate(120, seed = 19)
   test <- ref_simulate(80, seed = 20)
   fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
-  cal_fit <- ref_calibrate(fit, data = cal)
+  cal_fit <- ref_calibrate(fit, data = cal, uncertainty = "conditional")
   expect_s3_class(cal_fit, "ref_fit")
   expect_s3_class(cal_fit$calibration, "ref_calibration")
   sc <- predict(cal_fit, newdata = test, uncertainty = "conditional")
@@ -29,7 +29,8 @@ test_that("calibration by group uses the group map and pools unknown groups", {
   cal <- dat[dat$site == "B", ][1:60, ]
   test <- dat[dat$site == "B", ][61:100, ]
   fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
-  cal_fit <- ref_calibrate(fit, data = rbind(cal, train[1:60, ]), by = site)
+  cal_fit <- ref_calibrate(fit, data = rbind(cal, train[1:60, ]), by = site,
+                           uncertainty = "conditional")
   expect_equal(cal_fit$calibration$by, "site")
   raw <- predict(fit, newdata = test, uncertainty = "conditional")
   sc <- predict(cal_fit, newdata = test, uncertainty = "conditional")
@@ -117,7 +118,7 @@ test_that("reference bundles keep calibration and adaptation", {
   dat <- ref_simulate(300, seed = 27)
   fit <- ref_fit(simple_spec(), data = dat[1:150, ], outcomes = "y")
   fit <- ref_adapt(fit, data = dat[151:200, ], parameters = "location")
-  fit <- ref_calibrate(fit, data = dat[201:250, ])
+  fit <- ref_calibrate(fit, data = dat[201:250, ], uncertainty = "conditional")
   ref <- ref_freeze(fit)
   expect_s3_class(ref$calibration, "ref_calibration")
   expect_s3_class(ref$adaptation, "ref_adaptation")
@@ -195,7 +196,7 @@ test_that("calibration moves the density with the centile and integrates to one"
   cal <- ref_simulate(600, seed = 52)
   cal$y <- cal$y + 1.2 * stats::rt(nrow(cal), df = 4)
   fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
-  cf <- ref_calibrate(fit, data = cal)
+  cf <- ref_calibrate(fit, data = cal, uncertainty = "conditional")
   map <- cf$calibration$maps$y$.global
   expect_s3_class(map, "ref_pit_map")
 
@@ -227,7 +228,7 @@ test_that("the calibrated median is the calibrated 0.5 centile", {
   cal <- ref_simulate(600, seed = 54)
   cal$y <- cal$y + 3 + 1.2 * stats::rt(nrow(cal), df = 4)
   fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
-  cf <- ref_calibrate(fit, data = cal)
+  cf <- ref_calibrate(fit, data = cal, uncertainty = "conditional")
   map <- cf$calibration$maps$y$.global
   expect_gt(abs(map$mu), 0.5)
 
@@ -249,7 +250,7 @@ test_that("the calibration gate leaves an already-calibrated model alone", {
   train <- ref_simulate(400, seed = 61)
   cal <- ref_simulate(900, seed = 62)
   fit <- ref_fit(simple_spec(), data = train, outcomes = "y")
-  cf <- ref_calibrate(fit, data = cal)
+  cf <- ref_calibrate(fit, data = cal, uncertainty = "conditional")
   map <- cf$calibration$maps$y$.global
   expect_equal(unlist(map[c("mu", "sigma", "eps", "delta")]),
                c(mu = 0, sigma = 1, eps = 0, delta = 1))
@@ -270,5 +271,37 @@ test_that("ref_calibrate accepts out-of-fold scores from ref_crossfit", {
   fit <- ref_calibrate(attr(cf, "deployment"), cf)
   expect_s3_class(fit$calibration, "ref_calibration")
   expect_equal(fit$calibration$n, nrow(dat))
+  expect_identical(fit$calibration$uncertainty, "conditional")
   expect_error(ref_calibrate(attr(cf, "deployment"), cf, by = site), "score table")
+})
+
+test_that("calibration is bound to held-out provenance and its predictive estimand", {
+  train <- ref_simulate(220, seed = 73)
+  cal <- ref_simulate(100, seed = 74)
+  test <- ref_simulate(30, seed = 75)
+  fit <- ref_fit(simple_spec(), train, "y")
+
+  expect_error(ref_calibrate(fit, train), "training data")
+  calibrated <- ref_calibrate(fit, cal, uncertainty = "conditional")
+  expect_identical(calibrated$calibration$uncertainty, "conditional")
+  expect_error(ref_assess(calibrated, cal, uncertainty = "conditional"),
+               "calibration data")
+  expect_error(
+    predict(calibrated, test, uncertainty = "total"),
+    "calibrated for.*conditional"
+  )
+  expect_s3_class(
+    predict(calibrated, test, uncertainty = "conditional"),
+    "ref_scores"
+  )
+
+  cf <- ref_crossfit(simple_spec(), train, "y", folds = 3, uncertainty = "total",
+                     n_draw = 64)
+  calibrated_total <- ref_calibrate(attr(cf, "deployment"), cf)
+  expect_identical(calibrated_total$calibration$uncertainty, "total")
+  expect_identical(calibrated_total$calibration$n_draw, 64L)
+  expect_error(
+    predict(calibrated_total, test, uncertainty = "total", n_draw = 32),
+    "64 coefficient draws"
+  )
 })

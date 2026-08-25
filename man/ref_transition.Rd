@@ -42,4 +42,10 @@ When the process for an outcome is not identified
 history-conditioned quantity is \code{NA} and \code{support} is \code{"unidentified"}.
 Duplicate visit times within a subject give a warning and \code{NA}
 velocities for the zero-length transition.
+
+\code{inferential_status} is \code{"heldout"} only when the rows differ from the
+marginal and dynamics training data and the process and measurement
+components are identified. It is otherwise \code{"in_sample"},
+\code{"measurement_not_separated"}, or \code{"unidentified"}. This is provenance,
+not a claim that calibration has been empirically established.
 }

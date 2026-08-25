@@ -188,15 +188,9 @@ pull_column <- function(data, quo, default = NULL) {
 
 digest_data <- function(data) {
   nms <- sort(names(data))
-  data <- data[, nms, drop = FALSE]
-  fingerprint <- paste(vapply(data, function(col) {
-    if (is.numeric(col)) {
-      sprintf("%.8g", sum(as.numeric(col), na.rm = TRUE))
-    } else {
-      paste(utils::head(as.character(col), 8L), collapse = ",")
-    }
-  }, character(1)), collapse = ";")
-  paste(nrow(data), paste(nms, collapse = ","), fingerprint, sep = "|")
+  data <- as.data.frame(data[, nms, drop = FALSE])
+  rownames(data) <- NULL
+  digest::digest(data, algo = "sha256", serialize = TRUE)
 }
 
 fit_statuses <- function(fit) {
@@ -220,7 +214,7 @@ print.ref_fit <- function(x, ...) {
     cli::cli_text("adapted: {paste(x$adaptation$parameters, collapse = ', ')} (local n = {x$adaptation$n_local})")
   }
   if (!is.null(x$calibration)) {
-    cli::cli_text("calibrated: n = {x$calibration$n}{if (is.null(x$calibration$by)) '' else paste0(', by ', x$calibration$by)}")
+    cli::cli_text("calibrated: {x$calibration$uncertainty %||% 'unknown'} uncertainty, n = {x$calibration$n}{if (is.null(x$calibration$by)) '' else paste0(', by ', x$calibration$by)}")
   }
   failed <- names(st)[st != "ok"]
   if (length(failed)) {
@@ -312,6 +306,7 @@ predict.ref_fit <- function(object,
                              by = NULL,
                              to = NULL,
                              ...) {
+  validate_ref_bundle(object)
   type <- match.arg(type)
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
@@ -408,12 +403,15 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
       if (is.null(d) || !length(d)) d else dist_warped(d, transform$lambda)
     })
   }
+  attr(dists, "uncertainty") <- uncertainty
+  attr(dists, "n_draw") <- if (identical(uncertainty, "total")) n_draw else NA_integer_
   dists
 }
 
 # Assemble the long score table from per-outcome distributions, then
 # apply the calibration map and the extrapolation mask.
 scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE) {
+  validate_calibration_estimand(object$calibration, dists)
   n <- nrow(newdata)
   support <- classify_support(object$support_ref, newdata)$support
   in_sample <- is_in_sample_data(object, newdata)
@@ -492,11 +490,37 @@ dplyr_bind <- function(xs) {
 }
 
 is_in_sample_data <- function(fit, newdata) {
-  cols <- intersect(c(fit$covariates, fit$outcomes), names(newdata))
-  if (!length(cols) || nrow(newdata) != fit$n) {
+  cols <- unique(c(fit$covariates, fit$outcomes))
+  if (!length(cols) || !all(cols %in% names(newdata)) || nrow(newdata) != fit$n) {
     return(FALSE)
   }
   identical(digest_data(newdata[, cols, drop = FALSE]), fit$data_hash)
+}
+
+validate_calibration_estimand <- function(calibration, dists) {
+  if (is.null(calibration)) {
+    return(invisible(TRUE))
+  }
+  actual <- attr(dists, "uncertainty")
+  expected <- calibration$uncertainty
+  if (is.null(expected) || is.null(actual)) {
+    cli::cli_abort("Calibration uncertainty provenance is missing; refit the calibration map.")
+  }
+  if (!identical(actual, expected)) {
+    cli::cli_abort(
+      "This fit was calibrated for {.val {expected}} uncertainty, not {.val {actual}} uncertainty."
+    )
+  }
+  if (identical(expected, "total")) {
+    actual_draw <- attr(dists, "n_draw")
+    expected_draw <- calibration$n_draw
+    if (!identical(as.integer(actual_draw), as.integer(expected_draw))) {
+      cli::cli_abort(
+        "This fit was calibrated with {expected_draw} coefficient draws, not {actual_draw}."
+      )
+    }
+  }
+  invisible(TRUE)
 }
 
 #' @export

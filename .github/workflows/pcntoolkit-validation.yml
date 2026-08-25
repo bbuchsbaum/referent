@@ -1,0 +1,166 @@
+name: PCNtoolkit validation
+
+on:
+  pull_request:
+    paths:
+      - "R/**"
+      - "tests/**"
+      - "tools/pcntoolkit/**"
+      - "vignettes/pcntoolkit.Rmd"
+      - "DESCRIPTION"
+      - ".github/workflows/pcntoolkit-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "R/**"
+      - "tests/**"
+      - "tools/pcntoolkit/**"
+      - "vignettes/pcntoolkit.Rmd"
+      - "DESCRIPTION"
+      - ".github/workflows/pcntoolkit-validation.yml"
+  schedule:
+    - cron: "17 6 * * 1"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Validation tier to run
+        required: true
+        default: weekly
+        type: choice
+        options:
+          - weekly
+          - release
+
+permissions:
+  contents: read
+
+jobs:
+  offline-oracles:
+    name: Offline semantic and fitted oracles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: |
+            any::devtools
+            local::.
+          needs: check
+      - name: Run checked-in oracles without Python or network access
+        run: >-
+          Rscript -e 'devtools::test(filter =
+          "pcntoolkit-(fixtures|semantics|concordance|superiority|hbr-site)",
+          stop_on_failure = TRUE)'
+
+  weekly-comparator:
+    name: Regenerate PCNtoolkit fixture and evidence
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.tier == 'weekly' || inputs.tier == 'release'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: local::.
+          needs: check
+      - name: Regenerate pinned PCNtoolkit 1.3.0 fixture
+        run: uv run tools/pcntoolkit/generate_fixtures.py --output /tmp/pcntoolkit-v1.3.0
+      - name: Reject unreviewed comparator drift
+        run: >-
+          Rscript tools/pcntoolkit/check_fixture_drift.R
+          tests/fixtures/pcntoolkit/v1.3.0 /tmp/pcntoolkit-v1.3.0
+      - name: Render machine-readable evidence
+        run: >-
+          Rscript tools/pcntoolkit/render_evidence.R
+          evidence/pcntoolkit/v1.3.0
+          --fixture-root /tmp/pcntoolkit-v1.3.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcntoolkit-weekly-evidence
+          path: evidence/pcntoolkit/v1.3.0
+
+  release-hbr-site:
+    name: Release HBR and site-transfer evidence
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tier == 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: local::.
+          needs: check
+      - name: Run HBR and PCNtoolkit transfer with convergence receipts
+        run: >-
+          uv run tools/pcntoolkit/run_hbr_site_evidence.py
+          --output evidence/hbr-site --draws 1500 --tune 1000
+          --chains 4 --cores 4 --nuts-sampler nutpie --target-accept 0.99
+      - name: Run Referent adaptation and per-site gates
+        run: >-
+          Rscript tools/pcntoolkit/run_site_transport_evidence.R
+          evidence/hbr-site evidence/hbr-site/referent
+      - name: Enforce convergence and every-site gates
+        run: >-
+          Rscript tools/pcntoolkit/validate_hbr_site_evidence.R
+          evidence/hbr-site evidence/hbr-site/referent
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pcntoolkit-release-hbr-site-evidence
+          path: evidence/hbr-site
+
+  release-scenario-matrix:
+    name: Release replicated scenario-matrix evidence
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tier == 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: local::.
+          needs: check
+      - name: Generate independent PCNtoolkit comparison replicates
+        run: >-
+          uv run tools/pcntoolkit/generate_release_superiority.py
+          --output evidence/release-superiority --replicates 20
+          --seed-start 20260924
+          --scenarios linear_gaussian,nonlinear_heteroskedastic,skew_heavy,unequal_site,covariate_shift
+      - name: Fit Referent models and enforce scenario-specific held-out gates
+        run: >-
+          Rscript tools/pcntoolkit/run_release_superiority.R
+          evidence/release-superiority evidence/release-superiority
+          499 4999 2000
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pcntoolkit-release-scenario-matrix-evidence
+          path: evidence/release-superiority

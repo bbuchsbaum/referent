@@ -226,6 +226,10 @@ fortify_thrive <- function(dynamic,
       sqrt(max(drop(t(g) %*% pr$vcov %*% g), 0))
     }, numeric(1))
   }
+  # Correlation at zero lag is an identity, not a numerically estimated
+  # quantity. Enforce that invariant before the delta-method calculation.
+  r[h == 0] <- 1
+  r_se[h == 0] <- 0
 
   ix <- expand.grid(h = seq_along(h), a = seq_along(anchors),
                     t = seq_along(from), k = seq_along(thrive))
@@ -248,7 +252,12 @@ fortify_thrive <- function(dynamic,
 
   grid <- centile_grid(fit, x_nm, n = length(tt))
   grid[[x_nm]] <- tt
-  dists <- predict_dists(fit, grid, uncertainty = "conditional")[[outcome]]
+  dists <- predict_dists(
+    fit,
+    grid,
+    uncertainty = dynamic$uncertainty,
+    n_draw = dynamic$n_draw
+  )[[outcome]]
   qat <- function(zz) as.numeric(dist_quantile(dists, stats::pnorm(zz)))
 
   out <- tibble::tibble(
@@ -268,9 +277,34 @@ fortify_thrive <- function(dynamic,
     upper = if (is.na(q)) NA_real_ else qat(z + q * sd_z),
     support = classify_temporal_support(dynamic, t0, tt, rep(1L, length(tt)))
   )
+
+  # Use the public forecast path for the plotted conditional quantile. The
+  # analytic normal-score expression above remains useful for the displayed
+  # centile and the kernel delta-method band, but converting an anchor through
+  # a finite coefficient-draw mixture is not exactly self-inverting. Calling
+  # ref_forecast() here keeps the plotted value identical to what a user gets
+  # from the stored marginal-uncertainty estimand.
+  for (segment in unique(out$.segment)) {
+    idx <- which(out$.segment == segment)
+    anchor_idx <- idx[out$horizon[idx] == 0]
+    future_idx <- idx[out$horizon[idx] > 0]
+    if (!length(anchor_idx) || !length(future_idx)) {
+      next
+    }
+    history <- grid[anchor_idx[[1]], , drop = FALSE]
+    history[[outcome]] <- out$value[anchor_idx[[1]]]
+    forecast <- ref_forecast(
+      dynamic,
+      history = history,
+      times = out$time[future_idx],
+      outcome = outcome
+    )
+    out$value[future_idx] <- as.numeric(
+      dist_quantile(forecast$dist, out$thrive[future_idx])
+    )
+  }
   out <- out[order(out$.segment, out$horizon), , drop = FALSE]
   attr(out, "x_name") <- x_nm
   attr(out, "level") <- level
   out
 }
-

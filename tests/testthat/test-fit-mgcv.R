@@ -57,6 +57,29 @@ test_that("total uncertainty widens the Gaussian predictive analytically", {
   expect_true(all(abs(pt - 0.5) <= abs(pc - 0.5) + 1e-12))
 })
 
+test_that("critical optimizer warnings make an otherwise converged engine fit unstable", {
+  expect_equal(
+    mgcv_fit_status(TRUE, "Fitting terminated with step failure - check results carefully"),
+    "unstable"
+  )
+  expect_equal(mgcv_fit_status(TRUE, "iteration limit reached without convergence"),
+               "unstable")
+  expect_equal(mgcv_fit_status(TRUE, "a harmless diagnostic"), "ok")
+  expect_equal(mgcv_fit_status(FALSE, NULL), "nonconverged")
+})
+
+test_that("total uncertainty fails closed when coefficient draws cannot be generated", {
+  dat <- ref_simulate(120, seed = 35)
+  fit <- ref_fit(simple_spec(scale = TRUE), dat, "y")
+  local_mocked_bindings(
+    mvtnorm_draw = function(...) stop("bad covariance")
+  )
+  expect_error(
+    predict(fit, dat[1:4, ], uncertainty = "total", type = "distribution"),
+    "Could not propagate total uncertainty"
+  )
+})
+
 test_that("save/read round trip reproduces scores", {
   set.seed(8)
   dat <- ref_simulate(120, seed = 8)

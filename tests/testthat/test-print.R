@@ -47,7 +47,15 @@ test_that("print.ref_assessment shows the overall table", {
   fit <- snap_fit()
   val <- ref_simulate(60, seed = 91)
   a <- ref_assess(fit, newdata = val)
-  expect_snapshot(print(a), transform = snap_transform)
+  body <- utils::capture.output(msg <- cli::cli_fmt(print(a)))
+  expect_match(paste(msg, collapse = "\n"), "ref_assessment")
+  expect_true(any(grepl("mean_log_score", body, fixed = TRUE)))
+  expect_setequal(a$overall$.outcome, c("y", "marker_01", "marker_bad"))
+  expect_named(
+    a$overall,
+    c(".outcome", "mean_log_score", "standardized_log_score", "crps",
+      "mae", "rmse", "smse", "ev", "cor")
+  )
 })
 
 test_that("print.ref_dynamics reports components, identifiability, and the kernel", {

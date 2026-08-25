@@ -10,6 +10,8 @@
 .omc/
 .claude/
 .mote/
+__pycache__/
+*.py[cod]
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
 tmp/

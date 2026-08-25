@@ -1,0 +1,2 @@
+"scenario","n_test","clusters","log_score_difference","ci_lower","ci_upper","referent_coverage90","pcntoolkit_coverage90","referent_mace","pcntoolkit_mace","referent_tail05","pcntoolkit_tail05","calibration_pass","classification"
+"skew_heavy",501,501,0.36027824873934,0.266718513458327,0.470123182627758,0.890219560878243,0.924151696606786,0.00918163672654691,0.056686626746507,0.0598802395209581,0.0598802395209581,TRUE,"superior"

@@ -8,6 +8,16 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r vignette-options, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6.5,
+  fig.height = 4.2,
+  dpi = 96
+)
+```
+
 ```{r setup, message = FALSE, warning = FALSE}
 library(referent)
 reference <- ref_simulate(400, kind = "gaussian", scale = "age", seed = 1)

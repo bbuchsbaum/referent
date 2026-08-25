@@ -4,7 +4,15 @@
 \alias{ref_select}
 \title{Lexicographic out-of-sample model ladder}
 \usage{
-ref_select(specs, data, outcomes, folds = 5, shape_threshold = 0.02, ...)
+ref_select(
+  specs,
+  data,
+  outcomes,
+  folds = 5,
+  shape_threshold = 0.02,
+  allow_uncalibrated = FALSE,
+  ...
+)
 }
 \arguments{
 \item{specs}{A named list of \link{ref_spec} objects, simplest first.}
@@ -17,6 +25,10 @@ ref_select(specs, data, outcomes, folds = 5, shape_threshold = 0.02, ...)
 
 \item{shape_threshold}{Extra log-score gain required to accept a
 covariate-dependent skew/tail model.}
+
+\item{allow_uncalibrated}{If \code{FALSE} (the default), abort when no usable
+candidate passes every calibration gate. Set to \code{TRUE} only for an
+explicitly labelled exploratory comparison.}
 
 \item{...}{Passed to \code{\link[=ref_crossfit]{ref_crossfit()}}.}
 }
@@ -51,10 +63,12 @@ The calibration gate passes a model when, for every outcome with
 \eqn{n} out-of-fold scores, \eqn{|\bar z| \le 0.10 + 2/\sqrt{n}},
 \eqn{0.80 - 2\sqrt{2/n} \le \mathrm{var}(z) \le 1.25 + 2\sqrt{2/n}},
 the 95\% coverage lies in \eqn{[0.93, 0.97] \pm 2\sqrt{0.05 \cdot 0.95/n}},
-and the observed 5\% two-sided tail rate lies in
-\eqn{0.05 \pm (0.015 + 2\sqrt{0.05 \cdot 0.95/n})}. The fixed margins
+and each reported two-sided tail rate lies within its binomial
+tolerance. The gate also checks MACE, skewness, excess kurtosis, and
+material conditional location/scale drift. The fixed margins
 are practical tolerances; the \eqn{2/\sqrt{n}} terms are two standard
 errors under perfect calibration, so small samples are not rejected
 for noise alone. The \code{calibrated} column of \code{comparison} records the
-gate's verdict per model.
+gate's verdict per model. If every usable candidate fails, selection
+aborts unless the caller explicitly opts into an uncalibrated result.
 }

@@ -1,0 +1,120 @@
+{
+  "schema_version": "1.1.0",
+  "estimand": "separate adaptation and transfer policies; no rowwise parity claim",
+  "referent_version": "0.1.0",
+  "r_version": "R version 4.5.1 (2025-06-13)",
+  "gate_thresholds": {
+    "coverage90_floor": 0.8,
+    "mace_ceiling": 0.08,
+    "mean_z_absolute_ceiling": 0.35
+  },
+  "input_files": {
+    "site_data.csv": {
+      "sha256": "261346b98fea033d9e22bc17f842017c1c1240f98308be2bef2fd46b9ee9b951",
+      "rows": 420,
+      "columns": ["row_id", "site", "split", "x", "y"]
+    },
+    "pcntoolkit_predictions.csv": {
+      "sha256": "336ca1d95922303e7ebf3814e0ec4327aafe6ad045a9f1973bb1d33ddf577cad",
+      "rows": 195,
+      "columns": ["lane", "row_id", "site", "observed", "reported_mean_draw_z", "reported_mean_draw_log_density", "reported_mean_draw_q05", "reported_mean_draw_q50", "reported_mean_draw_q95", "mixture_centile", "mixture_z", "mixture_log_density", "mixture_q05", "mixture_q50", "mixture_q95"]
+    },
+    "pcntoolkit_site_summary.csv": {
+      "sha256": "9cc6537a1fbb69273832ef333e29c4a4e92467fdb2ac3735765e16d5a459ca1f",
+      "rows": 5,
+      "columns": ["method", "lane", "site", "n", "mean_log_score", "median_rmse", "coverage90", "mace", "mean_z", "var_z", "coverage90_se"]
+    },
+    "hbr_convergence.csv": {
+      "sha256": "2814e4c260ef7898e7edf44888ac0a61ae84197c1a7208465ac4c69926821190",
+      "rows": 53,
+      "columns": ["stage", "parameter", "mean", "sd", "hdi_3%", "hdi_97%", "mcse_mean", "mcse_sd", "ess_bulk", "ess_tail", "r_hat"]
+    },
+    "hbr_divergences.csv": {
+      "sha256": "72f5f620d51ec7a2bc60bad28f982396e41eedda0a9c1ef6913275f7d8c61124",
+      "rows": 12000,
+      "columns": ["stage", "chain", "draw", "diverging"]
+    },
+    "receipt.json": {
+      "sha256": "4cf5c7355d4436972106543f9253c22743879bdbee585abd9e8d86800c7b5589",
+      "bytes": 3272
+    }
+  },
+  "output_files": {
+    "referent_predictions.csv": {
+      "sha256": "cbec25bf24e542aabc430a296bb593fd9510e0d75cc6ec40af739c718220b34c",
+      "rows": 195,
+      "columns": ["method", "lane", "row_id", "site", "observed", "centile", "log_density", "q05", "q50", "q95"]
+    },
+    "site_comparison.csv": {
+      "sha256": "868d5ca8923ac4d3980a69c9898f5c86ce58ae9fac32d4a85b4bc1a9ef9ae2ea",
+      "rows": 10,
+      "columns": ["method", "lane", "site", "n", "mean_log_score", "median_rmse", "coverage90", "mace", "mean_z", "var_z", "coverage90_se", "pass"]
+    },
+    "adaptation_selection.csv": {
+      "sha256": "a5d80752bd930e043850d799904ae0007eac71551dd6dc2a1e6b71c41a170875",
+      "rows": 64,
+      "columns": ["site", "adaptation_n", "validation_n", "location_prior_n", "scale_prior_n", "mean_log_score"]
+    },
+    "adaptation_selection_summary.csv": {
+      "sha256": "adce786fbd34840086af9cac69c22db50df8576affa8c697198c857109da2ac7",
+      "rows": 16,
+      "columns": ["location_prior_n", "scale_prior_n", "mean_log_score", "validated_sites", "selected"]
+    }
+  },
+  "all_sites_pass": true,
+  "failed_sites": {},
+  "adaptation_prior_selection": {
+    "rule": "leave-one-observed-site-out mean conditional log score",
+    "source_split": "reference_train",
+    "source_sites": ["site-1", "site-2", "site-3", "site-4"],
+    "fold_sizes": {
+      "site-1": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-2": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-3": {
+        "adaptation": 25,
+        "validation": 25
+      },
+      "site-4": {
+        "adaptation": 25,
+        "validation": 25
+      }
+    },
+    "selected": {
+      "location_prior_n": 0,
+      "scale_prior_n": 25
+    }
+  },
+  "referent_adaptation": {
+    "by": "site",
+    "parameters": ["location", "scale"],
+    "offsets": {
+      "y": {
+        "site-5": {
+          "location": 1.2714,
+          "scale": 0.1807,
+          "n": 25,
+          "location_se": 0.2017,
+          "scale_se": 0.092,
+          "parameters": ["location", "scale"]
+        },
+        ".all": {
+          "location": 1.2714,
+          "scale": 0.1807,
+          "n": 25,
+          "location_se": 0.2017,
+          "scale_se": 0.092,
+          "parameters": ["location", "scale"]
+        }
+      }
+    },
+    "n_local": 25,
+    "location_prior_n": 0,
+    "scale_prior_n": 25
+  }
+}

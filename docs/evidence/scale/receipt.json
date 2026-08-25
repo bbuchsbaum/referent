@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "release",
+  "sizes": {
+    "gaussian_train": 10000,
+    "gaussian_test": 3000,
+    "shash_train": 1500,
+    "shash_test": 750
+  },
+  "package_version": "0.1.0",
+  "r_version": "R version 4.5.1 (2025-06-13)",
+  "platform": "aarch64-apple-darwin20",
+  "all_pass": true,
+  "result_md5": "762dbf401ea9e720f3759f339e489ce5"
+}

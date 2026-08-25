@@ -1,7 +1,7 @@
 Package: referent
 Type: Package
 Title: Distributional Reference Models and Individual Deviation Scores
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person(given = "Brad", family = "Buchsbaum",
            email = "brad.buchsbaum@gmail.com",
@@ -15,13 +15,14 @@ Description: Estimates the conditional predictive distribution of one or
     is CDF-first: Z-scores are derived representations of a full
     conditional distribution, not raw standardized residuals.
 License: MIT + file LICENSE
-URL: https://bbuchsbaum.github.io/referent,
+URL: https://bbuchsbaum.github.io/referent/,
     https://github.com/bbuchsbaum/referent
 BugReports: https://github.com/bbuchsbaum/referent/issues
 Depends:
     R (>= 4.2.0)
 Imports:
     cli,
+    digest,
     distributional (>= 0.5.0),
     generics,
     ggplot2,
@@ -36,6 +37,7 @@ Suggests:
     future,
     ggdist,
     future.apply,
+    jsonlite,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0),

@@ -52,6 +52,7 @@
     Message
       
       -- referent model card ---------------------------------------------------------
+      bundle schema: 1.0.0
       family: gaussian
       engine: mgcv
       outcomes: y, marker_01, and marker_bad
@@ -63,27 +64,14 @@
       Covariate ranges
       age: [20.21, 79.85]
 
-# print.ref_assessment shows the overall table
-
-    Code
-      print(a)
-    Message
-      <ref_assessment> n = 60
-    Output
-      # A tibble: 3 x 9
-       .outcome mean_log_score standardized_log_score crps mae rmse smse
-       <chr> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
-      1 marker_01 # # # # # #
-      2 marker_bad NaN NA NA NaN NaN NA 
-      3 y # # # # # #
-      # i 2 more variables: ev <dbl>, cor <dbl>
-
 # print.ref_dynamics reports components, identifiability, and the kernel
 
     Code
       print(dyn)
     Message
-      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample, total
+      uncertainty
+      kernel uncertainty: plug-in (not propagated)
       subjects: 200; time range [#, #]; lag range [2, 2]
       ! measurement not separated: no short-interval repeats; measurement noise is not separated from rank dynamics
     Output
@@ -99,7 +87,9 @@
     Code
       print(dyn0)
     Message
-      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample
+      <ref_dynamics> 1 outcome; requested kernel: matern32; Z: in_sample, total
+      uncertainty
+      kernel uncertainty: plug-in (not propagated)
       subjects: 200; time range [#, #]; lag range [0, 0]
       ! change not identified: too few repeated observations to identify within-person dependence
     Output
@@ -127,7 +117,7 @@
     Code
       print(cal$calibration)
     Message
-      <ref_calibration> n = 50, by site
+      <ref_calibration> total uncertainty, n = 50, by site
 
 ---
 

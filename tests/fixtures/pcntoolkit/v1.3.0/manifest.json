@@ -1,0 +1,141 @@
+{
+  "centiles": [
+    0.05,
+    0.25,
+    0.5,
+    0.75,
+    0.95
+  ],
+  "comparator": {
+    "package": "pcntoolkit",
+    "version": "1.3.0"
+  },
+  "dependencies": {
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "pcntoolkit": "1.3.0",
+    "scipy": "1.18.1"
+  },
+  "files": {
+    "fitted_inputs.csv": {
+      "columns": [
+        "scenario",
+        "row_id",
+        "split",
+        "x1",
+        "x2",
+        "sex_M",
+        "site",
+        "y"
+      ],
+      "md5": "f50b7a12cf965c9738de0d77a1e4cb71",
+      "rows": 9909
+    },
+    "fitted_predictions.csv": {
+      "columns": [
+        "scenario",
+        "row_id",
+        "observed",
+        "median",
+        "predictive_sd",
+        "centile",
+        "z",
+        "log_density",
+        "q05",
+        "q25",
+        "q50",
+        "q75",
+        "q95"
+      ],
+      "md5": "ee8f4abf17e7fafdcf01d63840112217",
+      "rows": 4509
+    },
+    "semantic_gaussian.csv": {
+      "columns": [
+        "case",
+        "mu",
+        "sigma",
+        "y",
+        "p",
+        "density",
+        "log_density",
+        "cdf",
+        "log_cdf",
+        "upper_tail",
+        "log_upper_tail",
+        "quantile",
+        "z"
+      ],
+      "md5": "c57ef7d0f38803786fa2c0d6b0d5eac6",
+      "rows": 5
+    },
+    "semantic_metrics.csv": {
+      "columns": [
+        "metric",
+        "value"
+      ],
+      "md5": "fe62594af703abe7bb7a78aea7737666",
+      "rows": 14
+    },
+    "semantic_shashb.csv": {
+      "columns": [
+        "case",
+        "mu_b",
+        "sigma_b",
+        "epsilon",
+        "delta",
+        "y",
+        "p",
+        "moment_1",
+        "moment_2",
+        "mu_r",
+        "sigma_r",
+        "density",
+        "log_density",
+        "cdf",
+        "log_cdf",
+        "upper_tail",
+        "log_upper_tail",
+        "quantile",
+        "z"
+      ],
+      "md5": "71b91f9b31799bef1215c25bc29b428e",
+      "rows": 5
+    }
+  },
+  "generator": "tools/pcntoolkit/generate_fixtures.py",
+  "normalisations": {
+    "log_density": "PCNtoolkit logp minus log(population SD of the fitted outcome); log-transformed scenarios also minus log(y)",
+    "predictive_sd": "(q95 - q05) / (2 * qnorm(0.95)) on the reported outcome scale"
+  },
+  "optimizer_controls": {
+    "skew_heavy": {
+      "l_bfgs_b_epsilon": 0.01,
+      "optimizer": "l-bfgs-b"
+    }
+  },
+  "python": "3.12.11",
+  "scenario_classes": {
+    "balanced_site": "same_estimand",
+    "covariate_shift": "matched_estimator",
+    "linear_gaussian": "matched_estimator",
+    "log_linear": "matched_estimator",
+    "multiple_encoded": "matched_estimator",
+    "nonlinear_heteroskedastic": "same_estimand",
+    "null_linear": "matched_estimator",
+    "skew_heavy": "same_estimand",
+    "unequal_site": "same_estimand"
+  },
+  "schema_version": "1.1.0",
+  "seeds": {
+    "balanced_site": 1106,
+    "covariate_shift": 1109,
+    "linear_gaussian": 1102,
+    "log_linear": 1105,
+    "multiple_encoded": 1103,
+    "nonlinear_heteroskedastic": 1104,
+    "null_linear": 1101,
+    "skew_heavy": 1107,
+    "unequal_site": 1108
+  }
+}

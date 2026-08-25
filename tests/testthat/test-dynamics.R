@@ -89,6 +89,8 @@ test_that("kernel recovery: r(lag) at the median lag within 0.08 of truth on irr
   expect_true(pr$ell_identified)
   expect_identical(pr$process$name, "matern32")
   expect_identical(dyn$z_source, "out_of_fold")
+  expect_identical(dyn$uncertainty, "total")
+  expect_identical(dyn$kernel_uncertainty, "plug_in")
   expect_equal(sum(pr$components), 1, tolerance = 1e-10)
   expect_true(all(is.finite(pr$se)))
   expect_true(is.finite(pr$r_median_se) && pr$r_median_se > 0)
@@ -119,6 +121,9 @@ test_that("out-of-sample calibration of innovation_z and change_z on irregular 3
   expect_equal(tr$velocity_centile, stats::pnorm(tr$innovation_z))
   expect_false("z_gain" %in% names(tr))
   expect_equal(tr$measurement_sd[[1]], dyn$processes$y$psi$sigma_e)
+  expect_true(all(tr$inferential_status == "heldout"))
+  expect_true(all(tr$reference_uncertainty == "total"))
+  expect_true(all(tr$kernel_uncertainty == "plug_in"))
   expect_true(all(tr$history_n[tr$history_n > 1] >= 2))
 })
 
@@ -180,7 +185,8 @@ test_that("unidentified dynamics give NA history-conditioned quantities and no f
   }
   expect_true(all(is.finite(tr$observed_velocity)))
   expect_true(all(tr$support == "unidentified"))
-  expect_false(any(tr$calibrated))
+  expect_false(any(tr$process_identified))
+  expect_true(all(tr$inferential_status == "unidentified"))
   hist <- dat[dat$participant_id == dat$participant_id[[1]], ]
   expect_error(ref_forecast(dyn, history = hist, times = max(hist$age) + 1), "not identified")
   expect_true(all(is.na(fortify_kernel(dyn)$correlation)))
@@ -277,6 +283,49 @@ test_that("forecast density law holds after conditioning", {
   expect_s3_class(vctrs::vec_data(d)[[1]], "dist_conditioned")
   p <- c(0.2, 0.5, 0.8)
   expect_equal(dist_cdf(d, dist_quantile(d, p)), p, tolerance = 1e-6)
+  expect_identical(fc$reference_uncertainty, "total")
+  expect_identical(fc$kernel_uncertainty, "plug_in")
+})
+
+test_that("longitudinal objects bind and propagate the marginal uncertainty estimand", {
+  dat <- ref_simulate(360, kind = "longitudinal", seed = 27)
+  fit <- ref_fit(
+    ref_spec(ref_gaussian(), location = ~ age + sex, scale = ~ s(age, k = 4)),
+    dat, "y"
+  )
+  total <- ref_dynamics(fit, dat, participant_id, age, crossfit = 0,
+                        uncertainty = "total", n_draw = 64)
+  conditional <- ref_dynamics(fit, dat, participant_id, age, crossfit = 0,
+                              uncertainty = "conditional")
+  expect_identical(total$uncertainty, "total")
+  expect_identical(total$n_draw, 64L)
+  expect_identical(conditional$uncertainty, "conditional")
+
+  heldout <- ref_simulate(60, kind = "longitudinal", seed = 28)
+  tr <- ref_transition(total, heldout, participant_id, age)
+  expect_true(all(tr$reference_uncertainty == "total"))
+  expect_true(all(tr$inferential_status == "heldout"))
+  hist <- heldout[heldout$participant_id == heldout$participant_id[[1]], ]
+  fc_total <- ref_forecast(total, hist, max(hist$age) + 1)
+  fc_cond <- ref_forecast(conditional, hist, max(hist$age) + 1)
+  expect_identical(fc_total$reference_uncertainty, "total")
+  expect_false(isTRUE(all.equal(variance(fc_total$dist), variance(fc_cond$dist))))
+})
+
+test_that("longitudinal fitting refuses marginal transformations it cannot reproduce", {
+  dat <- ref_simulate(240, kind = "longitudinal", seed = 29)
+  fit <- ref_fit(long_spec(), dat[1:180, ], "y")
+  calibrated <- ref_calibrate(fit, dat[181:220, ], uncertainty = "total")
+  expect_error(
+    ref_dynamics(calibrated, dat, participant_id, age),
+    "PIT-calibrated"
+  )
+
+  adapted <- ref_adapt(fit, dat[181:220, ], by = site)
+  expect_error(
+    ref_dynamics(adapted, dat, participant_id, age, crossfit = 3),
+    "adaptation.*cross-fitting"
+  )
 })
 
 test_that("ref_derivative reproduces a linear slope and its standard error", {

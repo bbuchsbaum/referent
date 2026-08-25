@@ -32,8 +32,8 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
   # model goes through `gam()`.
   use_bam <- isTRUE(spec$use_bam) && n >= spec$bam_min_n && mgcv_fam == "gaussian"
   fitter0 <- if (use_bam) mgcv::bam else mgcv::gam
-  # mgcv step-failure warnings are recorded on the fit rather than raised;
-  # `status` reflects convergence.
+  # Preserve mgcv warnings as evidence. Critical optimiser diagnostics make
+  # the fit unusable even when mgcv leaves `converged = TRUE` behind.
   warnings <- character()
   fitter <- function(...) {
     withCallingHandlers(
@@ -81,10 +81,25 @@ fit_engine_mgcv <- function(spec, data, outcome, ...) {
     sm
   })
   c(stub, list(
-    status = if (isTRUE(model$converged %||% TRUE)) "ok" else "nonconverged",
+    status = mgcv_fit_status(model$converged %||% TRUE, warnings),
     message = if (length(warnings)) paste(unique(warnings), collapse = "; ") else NULL,
     model = model
   ))
+}
+
+mgcv_fit_status <- function(converged, warnings = NULL) {
+  if (!isTRUE(converged)) {
+    return("nonconverged")
+  }
+  critical <- paste(
+    c("step failure", "iteration limit", "not converg", "indefinite",
+      "non[- ]positive definite", "hessian", "singular"),
+    collapse = "|"
+  )
+  if (length(warnings) && any(grepl(critical, warnings, ignore.case = TRUE))) {
+    return("unstable")
+  }
+  "ok"
 }
 
 # Frozen bundles drop the family from each gam (see `strip_gam()`); the
@@ -331,7 +346,10 @@ mgcv_dist_total <- function(model, newdata, fam, fit_one, cond, n_draw, seed = 1
   draws <- tryCatch(
     withr::with_seed(seed, mvtnorm_draw(n_draw, beta_hat, vp)),
     error = function(e) {
-      matrix(beta_hat, nrow = n_draw, ncol = length(beta_hat), byrow = TRUE)
+      cli::cli_abort(
+        "Could not propagate total uncertainty from the coefficient covariance.",
+        parent = e
+      )
     }
   )
   par <- params_from_eta(eta_from_lp(lp, t(draws)), model, fam, fit_one, cond)

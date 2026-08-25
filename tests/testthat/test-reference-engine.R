@@ -1,8 +1,9 @@
 test_that("a frozen reference predicts identically after a saveRDS/readRDS round trip", {
   dat <- ref_simulate(200, seed = 100)
   fit <- ref_fit(simple_spec(), data = dat[1:140, ], outcomes = c("y", "marker_01"))
-  fit <- ref_calibrate(fit, data = dat[141:170, ])
+  fit <- ref_calibrate(fit, data = dat[141:170, ], uncertainty = "conditional")
   ref <- ref_freeze(fit, criteria = "healthy volunteers", units = "mm")
+  expect_identical(ref$bundle_schema_version, "1.0.0")
   tmp <- withr::local_tempfile(fileext = ".rds")
   suppressWarnings(saveRDS(ref, tmp))
   ref2 <- readRDS(tmp)
@@ -22,6 +23,56 @@ test_that("a frozen reference predicts identically after a saveRDS/readRDS round
   expect_equal(ref2$units, "mm")
   expect_equal(fit_statuses(ref2), c(y = "ok", marker_01 = "ok"))
   expect_equal(tidy(ref2)$outcome, c("y", "marker_01"))
+})
+
+test_that("versioned bundle IO migrates legacy bundles and rejects future schemas", {
+  dat <- ref_simulate(120, seed = 104)
+  fit <- ref_fit(simple_spec(), dat, "y")
+  bundle <- ref_freeze(fit)
+  path <- withr::local_tempfile(fileext = ".rds")
+  expect_identical(ref_write(bundle, path), path)
+  expect_error(ref_read(path), "Refusing to deserialize")
+  loaded <- ref_read(path, trusted = TRUE)
+  expect_identical(loaded$bundle_schema_version, "1.0.0")
+  expect_equal(
+    predict(loaded, dat[1:4, ], uncertainty = "conditional")$z,
+    predict(bundle, dat[1:4, ], uncertainty = "conditional")$z
+  )
+
+  legacy <- bundle
+  legacy$bundle_type <- NULL
+  legacy$bundle_schema_version <- NULL
+  legacy_path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(legacy, legacy_path)
+  expect_error(predict(legacy, dat[1:2, ]), "unversioned")
+  expect_warning(migrated <- ref_read(legacy_path, trusted = TRUE), "Migrating")
+  expect_identical(migrated$migration$from, "unversioned")
+
+  future <- bundle
+  future$bundle_schema_version <- "2.0.0"
+  expect_error(predict(future, dat[1:2, ]), "Unsupported.*2.0.0")
+})
+
+test_that("ref_read rejects an untrusted RDS before deserialization", {
+  sentinel <- withr::local_tempfile()
+  payload <- new.env(parent = emptyenv())
+  makeActiveBinding(
+    "bundle_schema_version",
+    local({
+      marker <- sentinel
+      function(value) {
+        file.create(marker)
+        "1.0.0"
+      }
+    }),
+    payload
+  )
+  class(payload) <- c("ref_freeze", "ref_fit")
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(payload, path)
+
+  expect_error(ref_read(path), "Refusing to deserialize")
+  expect_false(file.exists(sentinel))
 })
 
 test_that("a frozen reference does not serialise the frame its spec was built in", {

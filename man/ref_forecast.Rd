@@ -32,7 +32,7 @@ The forecast refuses to run when the process for \code{outcome} is not
 identified (see \code{\link[=ref_dynamics]{ref_dynamics()}}): a history-conditioned distribution
 from an unestimated kernel would be silently wrong. History rows with a
 non-finite time or outcome are dropped and the number actually used is
-returned as \code{history_n}. Epistemic uncertainty of the reference location
-is carried in the marginal distributions but the uncertainty of the
-kernel parameters is not propagated into the forecast.
+returned as \code{history_n}. The exact marginal uncertainty estimand stored by
+\code{\link[=ref_dynamics]{ref_dynamics()}} is reused. Kernel parameters remain plug-in estimates;
+their uncertainty is explicitly recorded but not propagated.
 }

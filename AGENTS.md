@@ -1,15 +1,18 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+This project uses **Mote** for issue tracking and path coordination. Do not use
+Beads for new work.
 
 ## Quick Reference
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+mote doctor
+mote ready
+mote show <id>
+mote preflight --issue <id> --paths <path> [<path> ...]
+mote begin <id> --paths <path> [<path> ...]
+mote note <id> --kind progress "what changed"
+mote done <id> --note "finished"
 ```
 
 ## Non-Interactive Shell Commands
@@ -36,25 +39,18 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
+## Mote Issue Tracker
 
 ### Rules
 
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Use `mote` for all task tracking and path reservations.
+- Run `mote doctor`, open a named session, and inspect `mote in-flight` before
+  claiming work.
+- Never hand-edit `.mote/ops/*.json`; Mote operations are the durable record.
+- Reserve exact paths before editing and stage only the operations belonging to
+  the current issue.
+- Do not use TodoWrite, TaskCreate, markdown TODO lists, or Beads as parallel
+  trackers.
 
 ## Session Completion
 
@@ -62,13 +58,12 @@ bd close <id>         # Complete work
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
+1. **File Mote issues for remaining work** - Create issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
+3. **Update Mote status** - Finish completed work or hand off unfinished work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
@@ -81,4 +76,3 @@ bd close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->

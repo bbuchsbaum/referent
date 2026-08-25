@@ -12,13 +12,23 @@ a threshold exceedance with a known chance rate, not an abnormality.
 The package is CDF-first: a Z-score is one representation of a centile, not a
 raw standardized residual.
 
-> **Development status:** `referent` is an early development package
-> (`0.0.0.9000`). The current fitting surface supports numeric outcomes with
+> **Development status:** `referent` 0.1.0 is an initial, deliberately scoped,
+> source-only release candidate in [PR #4](https://github.com/bbuchsbaum/referent/pull/4).
+> It is not yet on the default branch or available as a tagged release. The
+> current fitting surface supports numeric outcomes with
 > Gaussian or sinh-arcsinh (SHASH) predictive families; categorical outcomes
-> are reported as unsupported instead of being silently coerced.
+> are reported as unsupported instead of being silently coerced. Exact and
+> matched-estimator PCNtoolkit lanes pass. The replicated release matrix finds
+> four named scenarios equivalent and the locked skew-heavy scenario superior;
+> HBR convergence and every-site transport also pass under their recorded
+> controls. The NHANES 2017-2018 rerun is post-hoc model-development evidence,
+> while a separately preregistered, untouched 2013-2014 confirmation passes the
+> same frozen conditional-calibration contract. These are scoped results, not a
+> blanket equivalence or superiority claim.
 
-Browse the [documentation site](https://bbuchsbaum.github.io/referent/)
-(or `browseVignettes("referent")` after installing), and start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/). Keep
+For the candidate documentation, use `browseVignettes("referent")` after
+installing it. The [published documentation site](https://bbuchsbaum.github.io/referent/)
+tracks the default branch and may lag an open candidate. Start with [Getting started](https://bbuchsbaum.github.io/referent/articles/getting-started/), and keep
 [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/)
 nearby for support, transport, calibration, panel-fit, and longitudinal
 failure modes. The complete article map is below.
@@ -27,8 +37,12 @@ failure modes. The complete article map is below.
 
 ```r
 # install.packages("pak")
-pak::pak("bbuchsbaum/referent")
+# Install the current source-only 0.1.0 candidate from PR #4:
+pak::pak("bbuchsbaum/referent#4")
 ```
+
+The PR-qualified reference is intentional while 0.1.0 remains source-only;
+`bbuchsbaum/referent` without `#4` installs the repository's default branch.
 
 ## A first reference model
 
@@ -47,10 +61,16 @@ fit
 target <- ref_simulate(100, kind = "gaussian", scale = "age", seed = 2)
 scores <- predict(fit, newdata = target, type = "scores")
 scores[1:3, c(".id", "observed", "median", "centile", "z", "tail_prob", "support")]
+table(scores$support)
 
-ref_assess(fit, newdata = target)$marginal[, c("mean_z", "var_z", "cover_95")]
+assessment <- ref_assess(fit, newdata = target)
+assessment$marginal[, c("n", "mean_z", "var_z", "cover_95")]
 autoplot(fit, type = "centiles", by = sex, newdata = target)
 ```
+
+Support is part of the scoring result: the table makes boundary masking
+visible, while `n` states the number of rows that actually entered the held-out
+assessment.
 
 Predictive distributions are
 [distributional](https://pkg.mitchelloharawild.com/distributional/)
@@ -87,7 +107,7 @@ generics above rather than depend on an internal representation.
 | Remove site effects from the data themselves | `predict(type = "harmonised")` |
 | Joint deviation across outcomes | `ref_joint()` |
 | Threshold exceedances with FDR | `ref_flag()` |
-| Freeze and document a reference | `ref_freeze()` |
+| Freeze, persist, and validate a trusted versioned reference | `ref_freeze()`, `ref_write()`, `ref_read()` |
 | Longitudinal change | `ref_dynamics()`, `ref_transition()`, `ref_forecast()`, `ref_derivative()` |
 | Graphics | `autoplot()` methods, `fortify_centiles()`, `theme_referent()` |
 
@@ -112,7 +132,12 @@ velocity centiles, and conditional forecasts off the same process.
   forecasts.
 - [Coming from PCNtoolkit](https://bbuchsbaum.github.io/referent/articles/pcntoolkit/): concept and metric
   mapping (warped BLR, HBR batch effects and random slopes, harmonised
-  outputs, MSLL/SMSE/EV/MACE), and what is deliberately missing.
+  outputs, MSLL/SMSE/EV/MACE), numerical-validation policy, and what is
+  deliberately missing. The scoped, machine-readable evidence is in
+  [docs/evidence/pcntoolkit/v1.3.0](docs/evidence/pcntoolkit/v1.3.0/README.md).
+- [NHANES cohort evidence](docs/evidence/nhanes/README.md): retained post-hoc
+  2015-2016 to 2017-2018 development diagnostics plus a preregistered,
+  genuinely untouched 2013-2014 cycle confirmation.
 - [Troubleshooting reference-model workflows](https://bbuchsbaum.github.io/referent/articles/troubleshooting/):
   missing and unsupported covariates, transported unseen sites, small local
   samples, partial panel fits, honest assessment, and unidentified dynamics.
@@ -121,3 +146,4 @@ Contributor design notes:
 
 - [A design for an R normative-modeling library](docs/design/distributional-reference-models.md)
 - [Velocity should be a core consequence of the model, not a bolt-on](docs/design/longitudinal-velocity.md)
+- [PCNtoolkit validation contract](docs/design/pcntoolkit-validation-contract.md)

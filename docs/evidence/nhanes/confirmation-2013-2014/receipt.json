@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.1.0",
+  "evidence_role": "untouched_confirmation",
+  "design_registration": {
+    "tracker": "mote",
+    "issue": "referent-32n",
+    "commit": "b1301a4e0426eb5b5a83935059053131331670d9",
+    "status": "frozen and published before confirmation execution"
+  },
+  "estimand": "unweighted adult cohort transport, conditional predictive distribution",
+  "train_cohort": "NHANES 2015-2016",
+  "evaluation_cohort": "NHANES 2013-2014",
+  "age_range": [18, 79],
+  "outcomes": ["height_cm", "weight_kg", "bmi", "waist_cm"],
+  "train_rows": 5392,
+  "evaluation_population_rows": 5592,
+  "evaluation_rows": 2000,
+  "evaluation_sampling": "fixed-seed simple random sample without replacement (seed 20260824)",
+  "uncertainty": "total",
+  "n_draw": 1000,
+  "model_specification": {
+    "family": "SHASH",
+    "location": "~ s(age, k = 8) + sex + race_ethnicity",
+    "scale": "~ s(age, k = 5) + sex + race_ethnicity",
+    "skew": "~ 1",
+    "tail": "~ 1",
+    "seed": 20260824
+  },
+  "package_version": "0.1.0",
+  "r_version": "R version 4.5.1 (2025-06-13)",
+  "input_files": {
+    "demo_train": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/DEMO_I.XPT",
+      "sha256": "c9297c6c37ae8f78f29be9568fa2a03cf3b112616a39afee04030fc775a66a0d",
+      "bytes": 3756480
+    },
+    "body_train": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2015/DataFiles/BMX_I.XPT",
+      "sha256": "d31da84e14212b4e58e8340598a5b8e2144fac83333563e966eb1b332e4141d6",
+      "bytes": 1989600
+    },
+    "demo_test": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/DEMO_H.XPT",
+      "sha256": "f8f0cbb3085a323d4cde22349b164878fea1e64dbc404e65b5815c7816b547d7",
+      "bytes": 3833200
+    },
+    "body_test": {
+      "url": "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/BMX_H.XPT",
+      "sha256": "fd5e9fc6e6aab0a4aee6e699f51497bbc9b62101f7f43aee924c473e38fd9442",
+      "bytes": 2045520
+    }
+  },
+  "output_files": {
+    "overall": {
+      "sha256": "f312f5a08e90222cf14c42fc2fb81a9d4fa87d8ea3d90f7efd4abd140441f0d7",
+      "rows": 4,
+      "columns": [".outcome", "mean_log_score", "mae", "rmse"]
+    },
+    "marginal": {
+      "sha256": "5a18b70f1b319d90f203fd454d88cf47722cc7f3e7c06801f0664329c619423a",
+      "rows": 4,
+      "columns": [".outcome", "n", "mean_z", "var_z", "skew_z", "excess_kurtosis_z", "shapiro_w", "mace", "cover_50", "cover_80", "cover_90", "cover_95", "cover_99"]
+    },
+    "conditional": {
+      "sha256": "3a047360d75cad5c6cc0639ab4db5c9e1dbfbca416ba9ca9a7c4506b97696082",
+      "rows": 36,
+      "columns": [".outcome", "covariate", "level", "n", "location_drift", "location_se", "location_p", "scale_drift", "scale_se", "scale_p"]
+    },
+    "tail": {
+      "sha256": "878f58d5e5139871b746a0846495e683493025fe1e6cf2dc0a9ab4fcf195ad69",
+      "rows": 16,
+      "columns": [".outcome", "tail_level", "expected", "observed", "n", "se"]
+    },
+    "gate": {
+      "sha256": "1fb1263b44a490409093cf4e835818a13a2cef2fe7de655ca9730880fb7ad0a7",
+      "rows": 1,
+      "columns": ["all_fits_valid", "held_out", "minimum_outcome_n", "complete_evidence", "calibration_pass", "pass"]
+    }
+  },
+  "all_fits_valid": true,
+  "calibration_pass": true,
+  "pass": true
+}

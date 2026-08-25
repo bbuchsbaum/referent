@@ -3,7 +3,7 @@ test_that("frozen bundle is small and reproduces the fit after a round trip", {
   for (nm in names(perf_specs())) {
     fit <- ref_fit(perf_specs()[[nm]], d$ref, c("y", "marker_01"))
     fit <- ref_adapt(fit, d$new, by = site, parameters = c("location", "scale"))
-    fit <- ref_calibrate(fit, d$new, by = site)
+    fit <- ref_calibrate(fit, d$new, by = site, uncertainty = "conditional")
     bundle <- ref_freeze(fit)
     path <- withr::local_tempfile(fileext = ".rds")
     # spec formulas made in the test helper env serialise with a package-env
@@ -15,14 +15,20 @@ test_that("frozen bundle is small and reproduces the fit after a round trip", {
     expect_equal(nrow(thawed$models$y$model$model), 0L)
     expect_null(thawed$models$y$model$family)
     expect_null(thawed$models$y$model$fitted.values)
-    for (u in c("conditional", "total")) {
-      expect_equal(
-        predict(thawed, d$new, uncertainty = u),
-        predict(fit, d$new, uncertainty = u),
-        tolerance = 1e-10, label = paste(nm, u)
-      )
-    }
-    expect_equal(ref_assess(thawed, d$new)$overall, ref_assess(fit, d$new)$overall,
+    expect_equal(
+      predict(thawed, d$new, uncertainty = "conditional"),
+      predict(fit, d$new, uncertainty = "conditional"),
+      tolerance = 1e-10, label = paste(nm, "conditional")
+    )
+    expect_equal(
+      predict(thawed, d$new, uncertainty = "total", type = "distribution"),
+      predict(fit, d$new, uncertainty = "total", type = "distribution"),
+      tolerance = 1e-10, label = paste(nm, "total distribution")
+    )
+    expect_equal(ref_assess(thawed, d$new, uncertainty = "conditional",
+                            allow_calibration_reuse = TRUE)$overall,
+                 ref_assess(fit, d$new, uncertainty = "conditional",
+                            allow_calibration_reuse = TRUE)$overall,
                  tolerance = 1e-10)
     expect_equal(ref_support(thawed, d$new), ref_support(fit, d$new))
     expect_equal(tidy(thawed)$n, tidy(fit)$n)

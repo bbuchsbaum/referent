@@ -1,0 +1,7 @@
+"metric","observed","limit","pass"
+"gaussian_fit_seconds",0.888,60,TRUE
+"gaussian_predict_seconds",0.144,30,TRUE
+"shash_fit_seconds",0.476,60,TRUE
+"shash_predict_seconds",0.0829999999999997,120,TRUE
+"maximum_allocated_bytes",789287872,8e+09,TRUE
+"bundle_bytes",609696,1e+07,TRUE

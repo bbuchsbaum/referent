@@ -20,6 +20,8 @@ ref_freeze <- function(fit,
                            missing_policy = "complete-case per outcome; predictors are never imputed") {
   structure(
     list(
+      bundle_type = "referent_reference",
+      bundle_schema_version = "1.0.0",
       spec = strip_spec_env(fit$spec),
       outcomes = fit$outcomes,
       models = lapply(fit$models, strip_fit_one),
@@ -42,6 +44,88 @@ ref_freeze <- function(fit,
     ),
     class = c("ref_freeze", "ref_fit")
   )
+}
+
+#' Read and write versioned reference bundles
+#'
+#' These wrappers make the on-disk compatibility contract explicit. `ref_read()`
+#' migrates the unversioned development bundle used before Referent 0.1.0 and
+#' rejects unknown schemas. Prediction also validates a frozen bundle.
+#'
+#' @section Security:
+#' RDS is R's native object format, not a data-only exchange format, and
+#' deserializing a malicious RDS file can execute code. `ref_read()` therefore
+#' refuses to deserialize unless `trusted = TRUE` is supplied explicitly. Only
+#' do that for a bundle from an authenticated, trusted source. Schema validation
+#' happens after deserialization and does not make an untrusted RDS file safe.
+#'
+#' @param reference A [ref_freeze] or [ref_fit]. Plain fits are frozen before
+#'   writing.
+#' @param path Path to an RDS bundle.
+#' @param compress Passed to [saveRDS()].
+#' @param trusted Must be exactly `TRUE` to acknowledge that `path` came from an
+#'   authenticated, trusted source. The check occurs before deserialization.
+#' @return `ref_write()` invisibly returns `path`; `ref_read()` returns a
+#'   validated [ref_freeze].
+#' @export
+ref_write <- function(reference, path, compress = "xz") {
+  if (!inherits(reference, "ref_fit")) {
+    cli::cli_abort("{.arg reference} must be a {.cls ref_fit} or {.cls ref_freeze}.")
+  }
+  if (!inherits(reference, "ref_freeze")) {
+    reference <- ref_freeze(reference)
+  }
+  validate_ref_bundle(reference)
+  saveRDS(reference, file = path, compress = compress, version = 3)
+  invisible(path)
+}
+
+#' @rdname ref_write
+#' @export
+ref_read <- function(path, trusted = FALSE) {
+  if (!identical(trusted, TRUE)) {
+    cli::cli_abort(c(
+      "Refusing to deserialize an untrusted RDS bundle.",
+      "i" = "RDS files can execute code during or after deserialization.",
+      "i" = "Pass {.code trusted = TRUE} only for a bundle from an authenticated, trusted source."
+    ))
+  }
+  reference <- readRDS(path)
+  if (!inherits(reference, "ref_freeze")) {
+    cli::cli_abort("{.arg path} does not contain a {.cls ref_freeze} bundle.")
+  }
+  if (is.null(reference$bundle_schema_version)) {
+    cli::cli_warn("Migrating an unversioned legacy Referent bundle to schema 1.0.0.")
+    reference$bundle_type <- "referent_reference"
+    reference$bundle_schema_version <- "1.0.0"
+    reference$migration <- list(from = "unversioned", to = "1.0.0")
+  }
+  validate_ref_bundle(reference)
+  reference
+}
+
+validate_ref_bundle <- function(reference) {
+  if (!inherits(reference, "ref_freeze")) {
+    return(invisible(TRUE))
+  }
+  schema <- reference$bundle_schema_version
+  if (is.null(schema)) {
+    cli::cli_abort("This frozen bundle is unversioned; load and migrate it with {.fn ref_read}.")
+  }
+  if (!identical(reference$bundle_type, "referent_reference") ||
+      !identical(schema, "1.0.0")) {
+    cli::cli_abort(
+      "Unsupported Referent bundle schema {.val {schema}}; this runtime supports exactly 1.0.0."
+    )
+  }
+  required <- c("spec", "outcomes", "models", "covariates", "support_ref",
+                "data_hash", "reference_baseline", "n", "versions")
+  missing <- required[!vapply(required, function(name) !is.null(reference[[name]]),
+                             logical(1))]
+  if (length(missing)) {
+    cli::cli_abort("Frozen bundle is missing required field{?s}: {.field {missing}}.")
+  }
+  invisible(TRUE)
 }
 
 strip_fit_one <- function(fit_one) {
@@ -71,7 +155,9 @@ strip_spec_env <- function(spec) {
 
 #' @export
 print.ref_freeze <- function(x, ...) {
+  validate_ref_bundle(x)
   cli::cli_h1("referent model card")
+  cli::cli_text("bundle schema: {x$bundle_schema_version}")
   cli::cli_text("family: {x$spec$family$name}")
   cli::cli_text("engine: {x$spec$engine}")
   tr <- spec_transform(x$spec)

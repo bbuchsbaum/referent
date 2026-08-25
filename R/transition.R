@@ -18,6 +18,12 @@
 #' Duplicate visit times within a subject give a warning and `NA`
 #' velocities for the zero-length transition.
 #'
+#' `inferential_status` is `"heldout"` only when the rows differ from the
+#' marginal and dynamics training data and the process and measurement
+#' components are identified. It is otherwise `"in_sample"`,
+#' `"measurement_not_separated"`, or `"unidentified"`. This is provenance,
+#' not a claim that calibration has been empirically established.
+#'
 #' @param dynamic A [ref_dynamics] object.
 #' @param data Subject visits.
 #' @param id Subject identifier.
@@ -57,7 +63,9 @@ transition_template <- function() {
     velocity_lower = numeric(), velocity_upper = numeric(),
     velocity_centile = numeric(), innovation_z = numeric(),
     history_n = integer(), predictive_sd = numeric(), measurement_sd = numeric(),
-    support = character(), calibrated = logical()
+    support = character(), process_identified = logical(),
+    measurement_separated = logical(), inferential_status = character(),
+    reference_uncertainty = character(), kernel_uncertainty = character()
   )
 }
 
@@ -67,7 +75,11 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
   }
   pr <- dynamic$processes[[outcome]]
   identified <- isTRUE(pr$identified)
-  marg <- predict_dists(dynamic$reference, data, uncertainty = "conditional")[[outcome]]
+  marginal_training <- is_in_sample_data(dynamic$reference, data)
+  dynamics_training <- is_dynamics_data(dynamic, data)
+  evaluation_role <- if (marginal_training || dynamics_training) "in_sample" else "heldout"
+  marg <- predict_dists(dynamic$reference, data, uncertainty = dynamic$uncertainty,
+                        n_draw = dynamic$n_draw)[[outcome]]
   z <- dist_z(marg, data[[outcome]])
   sd_marg <- sqrt(variance(marg))
   meas_sd <- if (identified) pr$psi$sigma_e else NA_real_
@@ -108,6 +120,13 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
       } else {
         classify_temporal_support(dynamic, time_vec[i1], time_vec[i2], length(hist))
       }
+      inferential_status <- if (!identified) {
+        "unidentified"
+      } else if (!isTRUE(dynamic$identifiability$measurement)) {
+        "measurement_not_separated"
+      } else {
+        evaluation_role
+      }
       tibble::tibble(
         .id = s,
         .outcome = outcome,
@@ -132,7 +151,11 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
         predictive_sd = sd_marg[[i2]],
         measurement_sd = meas_sd,
         support = support,
-        calibrated = identified && isTRUE(dynamic$identifiability$measurement)
+        process_identified = identified,
+        measurement_separated = isTRUE(dynamic$identifiability$measurement),
+        inferential_status = inferential_status,
+        reference_uncertainty = dynamic$uncertainty,
+        kernel_uncertainty = dynamic$kernel_uncertainty
       )
     })
   })
@@ -141,6 +164,12 @@ transition_outcome <- function(dynamic, data, outcome, id_vec, time_vec) {
     return(NULL)
   }
   dplyr_bind(pieces)
+}
+
+is_dynamics_data <- function(dynamic, data) {
+  cols <- dynamic$data_columns
+  length(cols) > 0L && all(cols %in% names(data)) && nrow(data) == dynamic$data_n &&
+    identical(digest_data(data[, cols, drop = FALSE]), dynamic$data_hash)
 }
 
 #' @export

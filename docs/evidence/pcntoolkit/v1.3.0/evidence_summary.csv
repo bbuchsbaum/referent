@@ -1,0 +1,7 @@
+"lane","evidence_class","status","primary_quantity","value","threshold_or_interval","comparator_version"
+"Gaussian distribution semantics","exact","pass","maximum absolute CDF error",1.11022302462516e-16,"<= 1e-10","1.3.0"
+"SHASHb parameter conversion","parameter_converted","pass","maximum absolute log-density error",8.88178419700125e-16,"<= 1e-7","1.3.0"
+"matched fitted estimators","matched_estimator","pass","matched scenarios passing all margins",5,"5 of 5","1.3.0"
+"skew-heavy held-out utility","same_estimand","superior","mean paired log-score difference",0.36027824873934,"95% CI 0.266719 to 0.470123","1.3.0"
+"HBR posterior aggregation","non_equivalent","release_evidence_required","draw aggregation semantics",NA,"R-hat <= 1.01; ESS bulk/tail >= 400; zero divergences","1.3.0"
+"new-site transport","non_equivalent","release_evidence_required","site-stratified calibration",NA,"every site must pass; pooled metrics are insufficient","1.3.0"
