@@ -1,0 +1,1 @@
+{"actor":"codex-referent-provenance","entity":"referent-provenance-ci","kind":"reserve_open","mode":"exclusive","op":"20260825T025858.143271Z-p55560-c0000-r5677-h12504f","paths":["R/assess.R","R/fit.R","tests/testthat/test-crossfit-assess.R"],"reservation_id":"rv-01M0VDPMEZDSHQYKAYZZ52E6QN","ts":"2026-08-25T02:58:58.143271Z","ttl_s":3600,"v":1}

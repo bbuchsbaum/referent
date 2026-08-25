@@ -72,7 +72,8 @@ ref_assess <- function(fit, newdata, by = NULL,
   }
   uncertainty <- match.arg(uncertainty)
   newdata <- tibble::as_tibble(newdata)
-  if (is_in_sample_data(fit, newdata) && !isTRUE(allow_in_sample)) {
+  in_sample <- is_in_sample_data(fit, newdata)
+  if (in_sample && !isTRUE(allow_in_sample)) {
     cli::cli_abort(
       "{.arg newdata} are the model's training data; use {.fn ref_crossfit} or set {.arg allow_in_sample = TRUE} for a labelled diagnostic."
     )
@@ -84,7 +85,10 @@ ref_assess <- function(fit, newdata, by = NULL,
   }
   by_vec <- pull_column(newdata, rlang::enquo(by), default = NULL)
   dists <- predict_dists(fit, newdata, uncertainty = uncertainty)
-  scores <- scores_from_dists(fit, dists, newdata, allow_extrapolation = FALSE)
+  scores <- scores_from_dists(
+    fit, dists, newdata, allow_extrapolation = FALSE,
+    in_sample = in_sample
+  )
   assess_from_scores(fit, scores, dists, newdata, by_vec)
 }
 

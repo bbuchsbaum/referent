@@ -48,6 +48,25 @@ test_that("assessment requires held-out provenance and hashes full row content",
   expect_false(any(sc$.in_sample))
 })
 
+test_that("ref_assess makes one stable provenance decision per call", {
+  train <- ref_simulate(140, seed = 82)
+  fit <- ref_fit(simple_spec(), train, "y")
+  calls <- 0L
+  local_mocked_bindings(
+    is_in_sample_data = function(fit, newdata) {
+      calls <<- calls + 1L
+      identical(calls, 1L)
+    },
+    .package = "referent"
+  )
+
+  assessment <- ref_assess(fit, train, allow_in_sample = TRUE)
+
+  expect_identical(calls, 1L)
+  expect_true(assessment$in_sample)
+  expect_true(all(assessment$scores$.in_sample))
+})
+
 test_that("ref_assess recovers nominal coverage and a positive log-score gain", {
   train <- ref_simulate(300, seed = 13)
   test <- ref_simulate(400, seed = 14)

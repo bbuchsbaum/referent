@@ -409,12 +409,17 @@ predict_dists <- function(object, newdata, uncertainty = "conditional",
 }
 
 # Assemble the long score table from per-outcome distributions, then
-# apply the calibration map and the extrapolation mask.
-scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE) {
+# apply the calibration map and the extrapolation mask. `ref_assess()` passes
+# the provenance decision it made before prediction so a single assessment
+# cannot change labels between its safety gate and its returned scores.
+scores_from_dists <- function(object, dists, newdata, allow_extrapolation = TRUE,
+                              in_sample = NULL) {
   validate_calibration_estimand(object$calibration, dists)
   n <- nrow(newdata)
   support <- classify_support(object$support_ref, newdata)$support
-  in_sample <- is_in_sample_data(object, newdata)
+  if (is.null(in_sample)) {
+    in_sample <- is_in_sample_data(object, newdata)
+  }
   ids <- score_ids(object, newdata)
   covs <- intersect(object$covariates, names(newdata))
   missing_cov <- if (length(covs)) {
