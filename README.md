@@ -1,5 +1,10 @@
 # referent
 
+<!-- badges: start -->
+[![test-coverage](https://github.com/bbuchsbaum/referent/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/bbuchsbaum/referent/actions/workflows/test-coverage.yaml)
+[![Codecov test coverage](https://codecov.io/gh/bbuchsbaum/referent/branch/main/graph/badge.svg)](https://app.codecov.io/gh/bbuchsbaum/referent?branch=main)
+<!-- badges: end -->
+
 Distributional reference models and individual deviation scores.
 
 `referent` estimates the conditional predictive distribution of one or more
